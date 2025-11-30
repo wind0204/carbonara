@@ -1,0 +1,14 @@
+#if !defined CARBONARA_CONFIG_H_
+#define CARBONARA_CONFIG_H_
+
+
+
+#define Carbonara_VERSION_MAJOR @Carbonara_VERSION_MAJOR@
+#define Carbonara_VERSION_MINOR @Carbonara_VERSION_MINOR@
+#define Carbonara_APP_NAME "@Carbonara_APP_NAME@"
+#define Carbonara_APP_VERSION_MAJOR @Carbonara_APP_VERSION_MAJOR@
+#define Carbonara_APP_VERSION_MINOR @Carbonara_APP_VERSION_MINOR@
+
+
+
+#endif // CARBONARA_CONFIG_H_

@@ -1,0 +1,2315 @@
+#if defined(__i386) || defined(__i386__) || defined(_M_IX86) || defined(__x86_64) \
+    || defined(__x86_64__) || defined(__amd64) || defined(_M_X64)
+  #ifdef _MSC_VER
+    #include <intrin.h>
+  #else
+    #include <x86intrin.h>
+  #endif
+#endif
+
+
+#if defined(__linux)
+  #include <linux/prctl.h>  // Definition of PR_* constants
+  #include <sys/prctl.h>  // prctl function, delete it when you've migrated to SDL threads.
+#elif defined(_WIN32)
+#endif
+
+
+#if defined(ENABLE_PROFILING)
+  #include <spall.h>
+
+  #define SPALL_BEGIN( name_tag ) spall_buffer_begin( &spall_ctx, p_spall_buf,  \
+      (name_tag),                                                               \
+      sizeof((name_tag)) - 1,                                                   \
+      _rdtsc()                                                                  \
+      );
+  #define SPALL_END() spall_buffer_end( &spall_ctx, p_spall_buf, _rdtsc() );
+
+  static SpallProfile spall_ctx;
+  static thread_local SpallBuffer * p_spall_buf;
+  static SpallBuffer spall_buf_for_main;
+
+#else  // defined(ENABLE_PROFILING)
+  #define SPALL_BEGIN( name_tag )
+  #define SPALL_END()
+
+#endif  // defined(ENABLE_PROFILING)
+
+
+#include <SDL3/SDL_video.h>
+#include <SDL3/SDL.h>
+
+#define SDL_MAIN_USE_CALLBACKS
+#include <SDL3/SDL_main.h>  // include SDL3/SDL_main.h in the source where "main" function is
+                            // supposed to be defined in.
+
+#include <sys/cdefs.h>
+#include <signal.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <errno.h>
+#include <stdlib.h>
+#include <vulkan/vk_enum_string_helper.h>
+
+//#include <image_DXT.h>
+#define TC_TEXTURE_LOAD_IMPLEMENTATION
+#define TC_TEXTURE_LOAD_VULKAN_FORMATS
+#include <tc_texture_load.h>
+
+
+#include "carbonara-job.h"
+#include "carbonara-singleton.h"
+#include "carbonara-config.h"
+#include "carbonara-mm.h"
+#include "list-jobs.h"
+#include "compute-magic.h"
+#include "carbonara.h"
+#include "appdev_support-processor_map.h"
+#include "appdev_support-thread.h"
+#include "memorable_arena.h"
+#include "err_msg.h"
+#include "carbonara-graphics.h"
+#include "info_struct.h"
+#include "util-hwloc.h"
+#include "util-c_lang-basic.h"
+#include "appdev_support-timer.h"
+#include "vulkan_functions.h"
+#if defined(__i386) || defined(__i386__) || defined(_M_IX86) || defined(__x86_64) \
+    || defined(__x86_64__) || defined(__amd64) || defined(_M_X64)
+  #include "util-c_lang-x86.h"
+#endif
+
+
+//-------------------------------------------------------------------------------------------------
+
+struct carbonara cara_single;
+static thread * threads;
+static char * buf_asset_loader;
+static char * buf_asset_loader2;
+
+
+//-------------------------------------------------------------------------------------------------
+
+// The maximum number of periodically executed jobs
+constexpr size_t max_nr_pjobs = 512 - 1;
+
+
+//-------------------------------------------------------------------------------------------------
+
+static enum err_msg verbosee_integrity_check_bc7_2048( const char * data );
+
+
+//-------------------------------------------------------------------------------------------------
+static void handle_sigint( int sig );
+static void handle_sigsegv( int sig );
+static void worker_loop( struct cara_worker_state * worker_state );
+
+/**
+ * \brief Launch a new worker.
+ */
+static void * launch_worker( void * arg );
+
+/**
+ * \brief Initialize the SDL part of the engine
+ */
+static uint8_t init_sdl(void);
+
+
+//-------------------------------------------------------------------------------------------------
+void jf_police_patrol( [[maybe_unused]] struct cara_worker_state * ws )
+{
+  const unsigned int mxcsr = _mm_getcsr();
+  if ( (mxcsr & _MM_FLUSH_ZERO_ON) ) {
+    fprintf( stderr, "[Debug] F" );
+  }
+  if ( (mxcsr & _MM_DENORMALS_ZERO_ON)) {
+    fprintf( stderr, "[Debug] D" );
+  }
+  if ( (mxcsr & _MM_ROUND_MASK) != _MM_ROUND_NEAREST ) {
+    fprintf( stderr, "[Debug] R" );
+  }
+  assume( !(mxcsr & _MM_FLUSH_ZERO_ON) );
+  assume( !(mxcsr & _MM_DENORMALS_ZERO_ON) );
+  assume( (mxcsr & _MM_ROUND_MASK) == _MM_ROUND_NEAREST );
+
+  //uint16_t fpu_control_word;
+}
+
+
+//-------------------------------------------------------------------------------------------------
+void SDL_AppQuit( [[maybe_unused]] void *appstate, SDL_AppResult result )
+{
+  SPALL_BEGIN("stuff_done_in_SDL_AppQuit");
+
+  // You do not need to call SDL_Quit in this function, as SDL will call it after this function
+  // returns and before the process terminates, but it is safe to explicitly do so.
+  switch ( result ) {
+    case SDL_APP_FAILURE:
+      break;
+    case SDL_APP_SUCCESS:
+      clear_processor_map(cara_single.proc_map);
+      ma_free(cara_single.mem_arena, 0, cara_single.proc_map);
+
+      remove_appdev_support_thread();
+
+      ma_end_arena(cara_single.mem_arena);
+      break;
+    default:
+      unreachable();
+  }
+
+  // TODO something.
+
+
+  SPALL_END();  // stuff_done_in_SDL_AppQuit
+
+#ifdef ENABLE_PROFILING
+  // Remember to quit or flush your buffers before you exit!
+  // If you don't, you might not get the last few events waiting to be written
+  spall_buffer_quit(&spall_ctx, &spall_buf_for_main);
+
+  // Freeing our buffer's memory now that spall_buffer_quit has flushed it for us.
+  free( spall_buf_for_main.data );
+
+  spall_quit(&spall_ctx);
+#endif
+}
+
+
+//-------------------------------------------------------------------------------------------------
+SDL_AppResult SDL_AppEvent( [[maybe_unused]] void *appstate, [[maybe_unused]] SDL_Event *event )
+{
+  // If this function returns SDL_APP_FAILURE, SDL will call SDL_AppQuit and terminate the process
+  // with an exit code that reports an error to the platform.
+  // If it returns SDL_APP_SUCCESS, SDL calls SDL_AppQuit and terminates with an exit code that
+  // reports success to the platform.
+
+  // TODO a kind of "swapchain" buffers or a circular buffer?
+
+  return SDL_APP_CONTINUE;
+}
+
+
+//-------------------------------------------------------------------------------------------------
+SDL_AppResult SDL_AppIterate( [[maybe_unused]] void *appstate )
+{
+  static uint64_t a = 0;
+  /*
+  static uint_fast8_t is_frame_id_even = 0;
+
+  const uint_least32_t the_sign = atomic_load_explicit(
+      &cara_single.sign_to_end, memory_order_acquire );
+  if ( unlikely(the_sign > 128) ) {
+    return SDL_APP_SUCCESS;
+  }
+
+
+
+  //if ( atomic_load_explicit(&cara_vulkan.tmp_var_ready, memory_order_acquire) == 0 ) {
+  //  hold_up_thread( 1000 * 100 );
+  //  return SDL_APP_CONTINUE;
+  //}
+
+
+  //
+  // TODO Check timestamps
+  //
+
+
+//-------------------------------------------------------------------------------------------------
+  // TODO Write code here for now but move them out of SDL_AppIterate later.
+  VkResult result;
+
+  //
+  // Prepare a VkCommandBufferBeginInfo
+  //
+
+  // Primary command buffers can call (execute) commands recorded in the secondary command buffers.
+  // Executed secondary command buffers don't inherit the state from the primary command buffers
+  // that executed them. What's more, the state of the primary command buffer is also undefined
+  // after the execution of the secondary command buffer is recorded (when we record a primary
+  // command buffer, and execute a secondary command buffer in it, and we want to continue
+  // recording the primary command buffer, we need to set its state once again).
+  // There is only one exception to the state inheritance rule - when the primary command buffer is
+  // inside a render pass and we execute a secondary command buffer from it, the primary command
+  // buffer's render pass and subpass states are preserved.
+  VkCommandBufferBeginInfo cmd_buf_begin_info;
+  cmd_buf_begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+  cmd_buf_begin_info.pNext = nullptr;
+  cmd_buf_begin_info.flags =
+    VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT |  // Each recording of the command buffer will
+                                                   // only be submitted once, and the command
+                                                   // buffer will be reset and recorded again
+                                                   // between each submission.
+    0;
+  cmd_buf_begin_info.pInheritanceInfo = nullptr;
+             // a pointer to a VkCommandBufferInheritanceInfo structure, used if `commandBuffer`
+             // is a secondary command buffer. If this is a primary command buffer, then this
+             // value is ignored.
+
+
+  //
+  // Start uploading data to the GPU
+  //
+
+  // Begin recording on the primary buffer
+  VkCommandBuffer trans_buf =
+    cara_vk.transfer_bufs.primary_cmd_buf;
+  // TODO synchronization needed
+  result = vkBeginCommandBuffer( trans_buf, &cmd_buf_begin_info );
+  if( result != VK_SUCCESS ) {
+    fprintf( stderr, "[Carbonara] Could not begin command(transfer) buffer recording operation. "
+        "'%s'\n", string_VkResult(result) );
+    return SDL_APP_FAILURE;
+  }
+
+  // TODO Record a transfer command or execute a secondary command buffer
+
+
+  //
+  // Acquire a swapchain image
+  //
+  uint32_t img_idx;
+    // Host access to `swapchain` must be externally synchronized
+    // Host access to `semaphore` must be externally synchronized
+    // Host access to `fence` must be externally synchronized
+  // TODO synchronization needed
+  result = vkAcquireNextImageKHR( cara_vk.log_dev,
+      cara_vk.swapchain,
+      100000000,        // It specifies how long the function waits, in nanoseconds, if no image is
+                        // available.
+      cara_vk.wsi_semaphore_acquire, // VK_NULL_HANDLE or a semaphore to signal.
+      VK_NULL_HANDLE,                         // VK_NULL_HANDLE or a fence to signal.
+                        // WARNING semaphore and fence must not both be equal to VK_NULL_HANDLE
+      &img_idx );
+  // When we acquire an image, we still may not use it immediately for our purposes. We need to
+  // wait for all previously submitted operations that referenced this image to finish. For this
+  // purpose, a fence can be used, using which an application can check when it is safe to modify
+  // an image. But we can also tell the driver that it should wait before it starts processing new
+  // commands that use a given image. For this purpose, a semaphore is used, which, in general, is
+  // a better option.
+  switch ( result ) {
+    default:
+      //
+      // TODO Recreate the swapchain?
+      //
+      break;
+    case VK_SUCCESS:
+    case VK_SUBOPTIMAL_KHR:
+      //
+      // TODO
+      // images used by the presentation engine must have a VK_IMAGE_LAYOUT_PRESENT_SRC_KHR
+      // layout. But if we want to render into an image, it must have a
+      // VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL layout. The operation of changing the layout is
+      // called a transition (refer to the Setting an image memory barrier recipe from Chapter 4,
+      // Resources and Memory).
+      break;
+  }
+
+
+  //
+  // TODO Create a VkImageView for the swapchain image
+  //
+
+
+  //
+  // Render the scene
+  //
+  is_frame_id_even = 1 ^ is_frame_id_even;
+  atomic_store_explicit(
+      &cara_single.is_frame_id_even, is_frame_id_even, memory_order_release );
+
+  // The commented lines below are about getting a secondary command buffer:
+  //constexpr uint_fast8_t worker_idx = foobar;
+  //VkCommandBuffer cmd_buf = cara_get_arr_command_buffers_for_graphics(
+  //    cara_single.proc_map->nr_processors, is_frame_id_even )[
+  //  worker_idx * cara_max_nr_subpasses];
+  VkCommandBuffer cmd_buf =
+    cara_vk.arr_framebufs[is_frame_id_even].primary_cmd_buf;
+fprintf( stderr, "[DEBUG] cmd_buf=%lu; cara_vk.arr_framebuffers[%u].primary_command_buffer=%lu\n",
+  ptr2ui(cmd_buf), is_frame_id_even, ptr2ui(cara_vk.arr_framebufs[is_frame_id_even].primary_cmd_buf) );
+  // TODO synchronization needed
+  result = vkBeginCommandBuffer( cmd_buf, &cmd_buf_begin_info );
+  if( result != VK_SUCCESS ) {
+    fprintf( stderr, "[Carbonara] Could not begin command buffer recording operation. '%s'\n",
+        string_VkResult(result) );
+    return SDL_APP_FAILURE;
+  }
+
+  // TODO Draw background
+  // TODO Draw a triangle
+  // For performance reasons, we should submit as many batches as possible in as few function calls as possible.
+  // We shouldn't submit command buffers if they were already submitted and their execution hasn't ended yet. We can do this only when command buffers were recorded with a VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT flag, but we should avoid using this flag for performance reasons.
+  // TODO Draw a pyramid
+  // TODO Pan the camera
+  // TODO Move the pyramid
+  // TODO Create multiple light sources
+  // TODO Cast shadows
+  // TODO Move the light sources
+
+  // Submit the command buffer to the queue
+  constexpr uint64_t signalSemaphoreValues[2] = {
+    csb_test_1,   // New value for the timeline semaphore.
+    0             // Ignored when it's a binary semaphore.
+  };
+  constexpr uint64_t wait_val = csb_test_1;  // Wait for the semaphore to become csb_test_1
+
+  VkTimelineSemaphoreSubmitInfo timeline_info;
+  timeline_info.sType = VK_STRUCTURE_TYPE_TIMELINE_SEMAPHORE_SUBMIT_INFO;
+  timeline_info.pNext = NULL;
+  timeline_info.waitSemaphoreValueCount = 1;
+  timeline_info.pWaitSemaphoreValues = &wait_val;
+  timeline_info.signalSemaphoreValueCount = 2;
+  timeline_info.pSignalSemaphoreValues = signalSemaphoreValues;
+  const VkSemaphore signal_semaphores[2] = {
+    cara_vk.main_semaphore_after_A,  // Signal work completion
+    cara_vk.wsi_semaphore_present    // Unblock presentation
+  };
+
+  VkPipelineStageFlags pipeline_stages[1] = {
+    VK_PIPELINE_STAGE_VERTEX_SHADER_BIT,  // TODO Why wait in vertex shader stage?
+  };
+
+  VkSubmitInfo submit_info;
+  submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+  submit_info.pNext = &timeline_info;
+  submit_info.waitSemaphoreCount = 1;
+  submit_info.pWaitSemaphores = &cara_vk.main_semaphore_before_A;
+  submit_info.pWaitDstStageMask = pipeline_stages;
+  submit_info.signalSemaphoreCount  = 2;
+  submit_info.pSignalSemaphores = signal_semaphores;
+  submit_info.commandBufferCount = 0;
+  submit_info.pCommandBuffers = nullptr;
+
+  // TODO synchronization needed
+  // TODO Use vkQueueSubmit2 instead.
+  vkQueueSubmit( cara_vk.graphics_q, 1, &submit_info, VK_NULL_HANDLE );
+
+
+  // End recording
+  // TODO synchronization needed
+  result = vkEndCommandBuffer( cmd_buf ); 
+  if( result != VK_SUCCESS ) { 
+    fprintf( stderr, "[Carbonara] Error occurred during command buffer recording. '%s'\n",
+        string_VkResult(result) );
+    return SDL_APP_FAILURE;
+  }
+
+  // Explicitly reset the command buffers instead of implicitly resetting by beginning to record
+  constexpr bool release_resources = false;  // XXX what is this?
+  // For transfer commands
+  // TODO Host access to `commandPool` must be externally synchronized
+  result = vkResetCommandPool(
+      cara_vk.log_dev,
+      cara_vk.transfer_bufs.arr_cmd_pools[
+        cara_single.proc_map->nr_processors ],
+      release_resources ? VK_COMMAND_POOL_RESET_RELEASE_RESOURCES_BIT : 0 );
+  if( result != VK_SUCCESS ) { 
+    fprintf( stderr, "[Carbonara] Error occurred during command buffer reset. '%s'\n",
+        string_VkResult(result) );
+    return SDL_APP_FAILURE;
+  }
+  // For graphics commands
+  // TODO Host access to `commandPool` must be externally synchronized
+  result = vkResetCommandPool(
+      cara_vk.log_dev,
+      cara_vk.arr_framebufs[is_frame_id_even].arr_cmd_pools[
+        cara_single.proc_map->nr_processors ],
+      release_resources ? VK_COMMAND_POOL_RESET_RELEASE_RESOURCES_BIT : 0 );
+  if( result != VK_SUCCESS ) { 
+    fprintf( stderr, "[Carbonara] Error occurred during command buffer reset. '%s'\n",
+        string_VkResult(result) );
+    return SDL_APP_FAILURE;
+  }
+
+
+
+//-------------------------------------------------------------------------------------------------
+  // This part stays in SDL_AppIterate or the graphics leader
+
+  //
+  // TODO Present the rendered image
+  //
+
+  // TODO Before we can submit an image, we need to change its layout to a VK_IMAGE_LAYOUT_PRESENT_SRC_KHR or the presentation engine may be not able to correctly display such an image.
+
+  // TODO Present one image per swapchain
+  VkPresentInfoKHR present_info;
+  present_info.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+  present_info.pNext = nullptr;
+  present_info.waitSemaphoreCount = 1;
+  present_info.pWaitSemaphores = &cara_vk.wsi_semaphore_present;
+  present_info.swapchainCount = 1;
+  present_info.pSwapchains = &cara_vk.swapchain;
+  present_info.pImageIndices = &img_idx;
+  present_info.pResults = nullptr;  // Applications that do not need per-swapchain results can
+                                    // use NULL for pResults.
+
+  // TODO Host access to queue must be externally synchronized
+  result = vkQueuePresentKHR( cara_vk.graphics_q, &present_info );
+  switch( result ) {
+  case VK_SUCCESS:
+    return SDL_APP_CONTINUE;
+  default:
+    fprintf( stderr, "[Carbonara] Error presenting an image. '%s'\n",
+        string_VkResult(result) );
+    return SDL_APP_FAILURE;
+  }
+
+
+
+*/
+  if ( a % 1000000 == 0 ) {
+    fprintf( stdout, "[TEST] a = %lu\n", a );
+    if ( a > 1000000 ) {
+      raise(SIGHUP);
+    }
+  }
+  a++;
+
+  return SDL_APP_CONTINUE;
+}
+
+
+//-------------------------------------------------------------------------------------------------
+SDL_AppResult SDL_AppInit(
+    [[maybe_unused]] void **appstate,
+    [[maybe_unused]] int argc,
+    [[maybe_unused]] char *argv[] )
+{
+  // If this function returns SDL_APP_FAILURE, SDL will call SDL_AppQuit and terminate the process
+  // with an exit code that reports an error to the platform.
+  // If it returns SDL_APP_SUCCESS, SDL calls SDL_AppQuit and terminates with an exit code that
+  // reports success to the platform.
+  fprintf( stdout, "[TEST] %s %d-%d\n", Carbonara_APP_NAME, Carbonara_VERSION_MAJOR, Carbonara_VERSION_MINOR );
+  atomic_init( &cara_vk.tmp_var_ready, 0 );
+
+#if defined(__i386) || defined(__i386__) || defined(_M_IX86) || defined(__x86_64)\
+  || defined(__x86_64__) || defined(__amd64) || defined(_M_X64)
+  union ucl_x86_proc_info x86_proc_info;
+  x86_proc_info.whole = init_util_c_lang();
+
+#if defined UTILIZE_AVX2
+  if ( !x86_proc_info.avx2 ) {
+    fprintf( stderr, "[Carbonara] The CPU doesn't support AVX2 instructions.\n" );
+    if ( x86_proc_info.sse42 ) {
+      fprintf( stderr, "[Carbonara] Please run the SSE4.2 version instead.\n" );
+    } else {
+      fprintf( stderr,
+          "[Carbonara] SSE4.2 is not supported either, The CPU is not supported!\n" );
+    }
+    //return 1;
+    return SDL_APP_FAILURE;
+  }
+
+#elif defined UTILIZE_SSE4_2
+  if ( x86_proc_info.avx2 ) {
+    fprintf( stdout,
+        "[Carbonara] The CPU does support AVX2, why did you executed SSE4.2 version?\n" );
+    if ( x86_proc_info.sse42 ) {
+      fprintf( stdout, "[Carbonara] launching the SSE4.2 version anyway. "
+          "You might experience suboptimal performance.\n" );
+    } else {
+      fprintf( stderr,
+          "[Carbonara] It's weird that SSE4.2 is not supported while AVX2 is. aborting!\n" );
+      //return 1;
+      return SDL_APP_FAILURE;
+    }
+  } else {
+    if ( !x86_proc_info.sse42 ) {
+      fprintf( stderr, "[Carbonara] SSE4.2 is not supported by the CPU. aborting!\n" );
+      //return 1;
+      return SDL_APP_FAILURE;
+    }
+  }
+#endif
+
+#if defined UTILIZE_BMI2
+  if ( !x86_proc_info.bmi2 ) {
+    fprintf( stderr, "[Carbonara] The CPU doesn't support BMI2 instructions. aboritng!\n" );
+    //return 1;
+    return SDL_APP_FAILURE;
+  }
+#endif
+
+#endif
+
+  enum err_msg err;
+  err = init_appdev_support_thread();
+  if ( err ) {
+    fprintf( stderr, "Failed to initialize multi-threading utilities. (reason: %s)\n",
+        err_msg_text[err] );
+    //return 1;
+    return SDL_APP_FAILURE;
+  }
+
+  init_appdev_support_processor_map();
+  //init_graphics();
+  init_info_struct( x86_proc_info.whole );
+
+  atomic_init( &cara_single.sign_to_end, 0 );
+  atomic_init( &cara_single.sign_to_start, 0 );
+  err = init_carbonara( 16*1024*1024, x86_proc_info.whole );
+  if ( err ) {
+    fprintf( stderr, "Failed to launch. (reason: %s)\n", err_msg_text[err] );
+    //return 1;
+    return SDL_APP_FAILURE;
+  }
+
+
+  while( 128 >= atomic_load_explicit(&cara_single.sign_to_start, memory_order_acquire) ) {
+    hold_up_thread( 1000*750 );
+  }
+
+
+  return SDL_APP_CONTINUE;
+}
+
+
+//-------------------------------------------------------------------------------------------------
+static uint8_t init_sdl(void)
+{
+#ifdef DEBUG_MODE
+  // By default the application and gpu categories are enabled at the INFO level, the
+  // assert category is enabled at the WARN level, test is enabled at the VERBOSE level
+  // and all other categories are enabled at the ERROR level.
+  SDL_SetLogPriority(SDL_LOG_CATEGORY_GPU, SDL_LOG_PRIORITY_DEBUG);
+  SDL_SetLogPriority(SDL_LOG_CATEGORY_AUDIO, SDL_LOG_PRIORITY_DEBUG);
+  SDL_SetLogPriority(SDL_LOG_CATEGORY_ERROR, SDL_LOG_PRIORITY_DEBUG);
+  SDL_SetLogPriority(SDL_LOG_CATEGORY_ASSERT, SDL_LOG_PRIORITY_DEBUG);
+  SDL_SetLogPriority(SDL_LOG_CATEGORY_RENDER, SDL_LOG_PRIORITY_DEBUG);
+  SDL_SetLogPriority(SDL_LOG_CATEGORY_APPLICATION, SDL_LOG_PRIORITY_DEBUG);
+  SDL_SetLogPriority(SDL_LOG_CATEGORY_INPUT, SDL_LOG_PRIORITY_DEBUG);
+  SDL_SetLogPriority(SDL_LOG_CATEGORY_VIDEO, SDL_LOG_PRIORITY_DEBUG);
+  SDL_SetLogPriority(SDL_LOG_CATEGORY_SYSTEM, SDL_LOG_PRIORITY_DEBUG);
+  SDL_SetLogPriority(SDL_LOG_CATEGORY_CUSTOM, SDL_LOG_PRIORITY_DEBUG);
+#endif
+
+  if ( SDL_SetHint(SDL_HINT_QUIT_ON_LAST_WINDOW_CLOSE, "0") == 0 ) {
+    fprintf( stderr, "[Carbonara] SDL didn't accept SDL_HINT_QUIT_ON_LAST_WINDOW_CLOSE! "
+        "SDL_Error: %s\n", SDL_GetError() );
+    return 1;
+  }
+
+  if ( SDL_SetHint(SDL_HINT_NO_SIGNAL_HANDLERS, "1") == 0 ) {
+    fprintf( stderr, "[Carbonara] SDL didn't accept SDL_HINT_NO_SIGNAL_HANDLERS! SDL_Error: %s\n",
+        SDL_GetError() );
+    return 1;
+  }
+
+  if ( SDL_SetHint(SDL_HINT_APP_NAME, Carbonara_APP_NAME) == 0 ) {
+    fprintf( stderr, "[Carbonara] SDL didn't change SDL_HINT_APP_NAME! SDL_Error: %s\n",
+        SDL_GetError() );
+    return 1;
+  }
+
+  if ( SDL_Init( SDL_INIT_AUDIO |
+        SDL_INIT_VIDEO |  // NOTE SDL_INIT_VIDEO initiates SDL_INIT_EVENTS as well
+        SDL_INIT_HAPTIC | SDL_INIT_JOYSTICK |
+        0 ) == 0 ) {
+    fprintf( stderr, "[Carbonara] SDL could not initialize! SDL_Error: %s\n", SDL_GetError() );
+    return 1;
+  }
+
+  return 0;
+}
+
+
+//-------------------------------------------------------------------------------------------------
+enum err_msg init_carbonara( uint32_t len_each_arena, uint64_t proc_info )
+{
+  //atomic_init(&cara_single.nr_job_arg_groups_taken, 0);
+  atomic_init(&cara_single.nr_job_batch_descriptors_taken, 0);
+
+  cara_single.len_each_arena = len_each_arena;
+
+
+  // Prepare processor_map
+  cara_single.proc_map = prepare_processor_map();
+
+  union ucl_x86_proc_info x86_proc_info;
+  x86_proc_info.whole = proc_info;
+  x86_proc_info.large_page_size_class = cara_single.proc_map->large_page_size_class;
+  assume(x86_proc_info.large_page_size_class != 0);
+  proc_info = x86_proc_info.whole;
+
+  cara_single.proc_info = proc_info;
+  enum err_msg err;
+#ifdef ENABLE_PROFILING
+  err = init_appdev_support_timer(x86_proc_info.whole, 0);
+  if ( err ) {
+    fprintf( stderr, "[ADS-timer] err_msg from init_appdev_support_timer = \"%s\"\n",
+        err_msg_text[err] );
+    switch ( err ) {
+      case err_msg_not_found:
+        fprintf( stderr, "  We could not find /dev/cpu/0/msr\n" );
+        break;
+      case err_msg_permission_denied:
+        fprintf( stderr, "  We could not determine the non-turbo frequency of the processor.\n" );
+        break;
+      default:
+        unreachable();
+    }
+    fprintf( stderr, "Please contact the developer to get support.\n" );
+    //return 1;
+    return err;
+  }
+
+  const __float128 tsc_freq = nr_tsc_in_1s;
+  const __float128 timestamp_to_ns = 1.0 / ( (1.0 / 1000000000.0) * tsc_freq );
+  //const __float128 pc_freq = SDL_GetPerformanceFrequency();
+  //const __float128 timestamp_to_ns = (1.0 / 1000000000.0) * pc_freq;
+
+  constexpr char fpath_spall[] = "/dev/shm/Carb.spall";
+  //constexpr char fpath_spall[] = "Carb.spall";
+  /*
+     init_file takes 2 things:
+     - the name of your trace, ex: "hello_world.spall"
+     - the timestamp_unit used to convert from your timer's timestamps to nanoseconds
+     */
+  if ( !spall_init_file(fpath_spall, (double)timestamp_to_ns, &spall_ctx) ) {
+    fprintf( stderr, "[Tracer] failed to setup SPALL with '%s'\n", fpath_spall );
+  }
+  
+  // The buffer for the "main" thread
+  //constexpr size_t spall_buf_sz = 1 * 1024 * 1024;
+  constexpr size_t spall_buf_sz = 512 * 1024;
+  spall_buf_for_main = (SpallBuffer) {
+    .pid = 0,
+      .tid = UINT16_MAX,
+      .length = spall_buf_sz,
+      .data = malloc(spall_buf_sz),
+  };
+
+  // From advanced_threads_example_linux.c:
+  /*
+     Here's another neat trick:
+     We're touching the pages ahead of time here, so we get a smoother trace.
+     By pre-faulting all the pages in our event buffer, we avoid waiting for pages to load
+     while user code runs. This can make a noticable difference for data consistency, especially
+     with bigger buffers.
+     */
+  memset(spall_buf_for_main.data, 0, spall_buf_for_main.length);
+
+  if ( !spall_buffer_init(&spall_ctx, &spall_buf_for_main) ) {
+    fprintf( stderr, "[Worker] failed to init the spall buffer.\n" );
+  }
+  p_spall_buf = &spall_buf_for_main;
+#endif  // ENABLE_PROFILING
+  SPALL_BEGIN( "init_carb-after_prepare_processor_map" );
+
+  //size_t large_page_size = page_sizes[x86_proc_info.large_page_size_class];
+  cara_single.mem_arena = aligned_alloc(CACHELINE_LEN, sizeof(memorable_arena_t));
+  if ( !cara_single.mem_arena ) {
+    fprintf( stderr, "[Carbonara] Error in allocation: %s\n", err_msg_text[err_msg_out_of_memory] );
+    return err_msg_out_of_memory;
+  }
+  cara_single.mem_arena->id = 0;
+  err = ma_init_arena(
+      proc_info,
+      cara_single.mem_arena,
+      cara_single.len_each_arena,
+      cara_single.proc_map->nr_processors
+      );
+  // cara_single.mem_arena->head->arr_lrm
+  if ( err ) {
+    fprintf( stderr, "[Carbonara] Error in allocation: %s\n", err_msg_text[err] );
+    return err;
+  }
+
+  struct ma_sub_arena * ma_head = ma_get_sub_arena(cara_single.mem_arena, 1);
+
+
+  // Prepare array lists
+  struct cara_malloc_helper * malloc_helper;
+  malloc_helper = (void*) ma_malloc( ma_head,
+      _get_nr_units_to_cover( sizeof(struct cara_malloc_helper), CACHELINE_LEN ),
+      0,
+      0 );
+  malloc_helper->node_recently_used = cara_single.mem_arena->head;
+  //malloc_helper->alignment = CACHELINE_LEN;
+
+  uint_fast8_t elem_size = CACHELINE_LEN;
+  if ( elem_size < sizeof(struct cara_job_batch_desc_64) ) {
+    elem_size = sizeof(struct cara_job_batch_desc_64);
+  }
+
+  //const uint32_t node_size = sizeof(struct cara_job_batch_desc_64) * 4
+  const uint32_t node_size_b4_rev = elem_size * cara_single.proc_map->nr_processors;
+  uint32_t node_size = _align_to_power_of_two( node_size_b4_rev, ALIGN_FOR_AVX512 );
+  node_size = _align_to_the_close_power_of_two( node_size );
+
+  /*
+  cara_single.job_arg_pool = infos_al_init(
+      .node_size=node_size,
+      .elem_size=elem_size,
+      .custom_malloc=cara_malloc_dynamic_wide_aligned,
+      .custom_free=cara_free_dynamic,
+      .userdata=malloc_helper,
+      );
+
+  cara_init_job_arg_pool_node(cara_single.job_arg_pool->list->head->data);
+  */
+
+  cara_single.job_list = infos_al_create(
+      malloc_helper,
+      cara_malloc,
+      node_size, elem_size, 0
+      );
+
+  cara_init_job_list_node(cara_single.job_list->list.head.data);
+
+
+  // Keep the processor_map in the mm_memo_map
+  struct processor_map * p_orig_proc_map = cara_single.proc_map;
+  cara_single.proc_map = ma_malloc(
+      ma_head,
+      _get_nr_units_to_cover(
+        sizeof(struct processor_map) + p_orig_proc_map->nr_processors * (
+          sizeof(struct ms_worker_info) + sizeof(struct u_hwloc_bitmap_s) ),
+        CACHELINE_LEN ),
+      0,
+      0 );
+
+  /*
+  cara_single.proc_map = cara_malloc_dyn( sizeof(struct mm_colored_string) + sizeof(struct processor_map)
+        + cara_single.proc_map->nr_processors * (sizeof(struct ms_worker_info) + sizeof(struct __hwloc_bitmap_s) +
+       HWLOC_BITMAP_PREALLOC_ULONGS * sizeof(unsigned long)), &malloc_helper);
+       */
+  memcpy(
+      cara_single.proc_map,
+      p_orig_proc_map,
+      sizeof(struct processor_map) + p_orig_proc_map->nr_processors * (
+        sizeof(struct ms_worker_info) + sizeof(struct u_hwloc_bitmap_s))
+      );
+
+  cara_single.proc_map->processors = (struct ms_worker_info *)
+    (cara_single.proc_map + 1);
+  const uint_fast16_t offset_bitmap_loc = sizeof(struct processor_map) +
+    p_orig_proc_map->nr_processors * sizeof(struct ms_worker_info);
+  for ( unsigned int ui = 0; ui < p_orig_proc_map->nr_processors; ui++ ) {
+    cara_single.proc_map->processors[ui].cpuset =
+      (void*) cara_single.proc_map +
+      offset_bitmap_loc + ui * sizeof(struct u_hwloc_bitmap_s);
+    //assume ( ! cara_single.proc_map->processors[ui].user_data );
+  }
+  free(p_orig_proc_map);
+
+#ifdef DEBUG_MODE
+  fprintf( stdout, "[MA] capacity = %u\n", ma_head->capacity );
+  fprintf( stdout, "[MA] nr_free_chunks = %u\n", ma_head->smm.total_space_left );
+  //fprintf( stdout, "[MA] bitmap = mm+%lu\n", (uint8_t*)mm->bitmap - (uint8_t*)mm );
+  //fprintf( stdout, "[MA] tip_dynamic = mm+%lu\n", (uint8_t*)mm->tip_dynamic - (uint8_t*)mm );
+  //fprintf( stdout, "[MA] tip_grower = mm+%lu\n", (uint8_t*)mm->tip_grower - (uint8_t*)mm );
+  //fprintf( stdout, "[MA] len_bitmap_aligned_part = %ld\n", mm->len_bitmap_aligned_part );
+  //fprintf( stdout, "[MA] len_unaligned_part_front = %u\n", mm->len_unaligned_part_front );
+  //fprintf( stdout, "[MA] len_unaligned_part_back = %u\n", mm->len_unaligned_part_back );
+  fprintf( stdout, "[MA] addr. of the memo_map = [%#018lx]\n", ptr2ui(ma_head) );
+#endif
+
+
+  // Set up the first batch of jobs
+  struct cara_job_batch_desc_64 * batch = infos_al_get_elem(cara_single.job_list, 0);
+  for ( uint_fast8_t job_idx = 1; job_idx < CARBONARA_MAX_NR_JOBS_IN_A_JOB_DESC_64;
+      job_idx++ ) {
+    batch->job_func_idx[job_idx] = 0;
+    batch->job_flags[job_idx] = 0;
+  }
+  batch->job_func_idx[0] = jf_idx_kickstart;
+  batch->job_flags[0] = job_flag_foremans_task;
+  /*
+  batch->cache_location[0] = 0;
+  batch->cache_pattern[0] = 0;
+  batch->job_idx_func_arg_group[0] = UINT16_MAX;
+  */
+  atomic_store_explicit( &batch->progress, 0, memory_order_release );
+  atomic_store_explicit( &batch->preferred_core, UINT8_MAX, memory_order_release );
+  atomic_fetch_add_explicit( &cara_single.nr_job_batch_descriptors_taken, 1,
+      memory_order_release );
+
+
+  // NOTE The core crystal clock frequency of the ART(Always Running Timer) in an amd64 CPU is
+  // usually around 25MHz, 24MHz ~19.2MHz, which means the resolution is 40ns, 41.666ns or
+  // 52.083ns and the least common multiple is 5000ns i.e. 5us.
+  //__float128 pc_freq = SDL_GetPerformanceFrequency();
+  __float128 pc_freq = get_performance_frequency();
+  const uint64_t nr_pc_in_5us = (typeof(nr_pc_in_5us)) (pc_freq / 1000000 * 5);
+  cara_single.nr_pc_in_5us = (typeof(nr_pc_in_5us)) nr_pc_in_5us;
+  unsigned_division_magic_64(&cara_single.magic_divider, nr_pc_in_5us);
+
+  const uint32_t leap_sec_freq = get_performance_frequency() / nr_pc_in_5us;
+  // Do we want to deal with offsetting performance counter every leaf second?
+  const uint32_t pc_ofs_per_sec = get_performance_frequency() % nr_pc_in_5us;
+  if ( pc_ofs_per_sec ) {
+    fprintf( stdout, "Please tell the developer about the issue:  "
+        "pc_ofs_per_sec = %u;  leap_sec_freq = %u;\n", pc_ofs_per_sec, leap_sec_freq );
+    return err_msg_system_not_supported;
+  }
+  assume( !pc_ofs_per_sec );
+
+
+  atomic_init( &cara_single.cur_time_in_5us_general, 0 );
+
+  cara_single.periodic_jobs_periods_5us = cara_malloc( malloc_helper,
+      alignof(*cara_single.periodic_jobs_periods_5us),
+      sizeof(*cara_single.periodic_jobs_periods_5us)*max_nr_pjobs );
+  cara_single.periodic_jobs = cara_malloc( malloc_helper,
+      alignof(*cara_single.periodic_jobs),
+      sizeof(*cara_single.periodic_jobs)*max_nr_pjobs );
+
+  constexpr uint64_t nr_5us_in_1ms = 1000 / 5;
+  const uint64_t job_spawners_time_to_act[] = {
+    1 + nr_5us_in_1ms * 500 * 1,
+    1 + nr_5us_in_1ms * 500 * 2,
+#if !defined(ARE_WE_SHIPPING_IT)
+    1 + nr_5us_in_1ms * 500 * 3,
+#endif
+  };
+
+  unsigned int pjob_idx = 0;
+  cara_single.periodic_jobs[pjob_idx] = jf_idx_maint_job_list;
+  cara_single.periodic_jobs_periods_5us[pjob_idx] = 1000 * nr_5us_in_1ms;
+  pjob_idx++;
+  cara_single.periodic_jobs[pjob_idx] = jf_idx_maint_memo_maps;
+  cara_single.periodic_jobs_periods_5us[pjob_idx] = 1000 * nr_5us_in_1ms;
+#if !defined(ARE_WE_SHIPPING_IT)
+  pjob_idx++;
+  cara_single.periodic_jobs[pjob_idx] = jf_idx_police_patrol;
+  cara_single.periodic_jobs_periods_5us[pjob_idx] = 2000 * nr_5us_in_1ms;
+#endif
+
+  struct infos_bst * bst = infos_bst_create( malloc_helper, cara_malloc,
+      job_spawners_time_to_act,
+      sizeof(job_spawners_time_to_act)/sizeof(*job_spawners_time_to_act),
+      max_nr_pjobs,
+      sizeof(*job_spawners_time_to_act) );
+  cara_single.tree_of_times_to_act = bst;
+
+
+  void * string = ma_malloc(
+      ma_head,
+      _get_nr_units_to_cover(
+        //len_new_stack + sizeof(thread) * cara_single.proc_map->nr_processors,
+        sizeof(thread) * cara_single.proc_map->nr_processors,
+        CACHELINE_LEN ),
+      malloc_helper,
+      cara_malloc );
+
+  // Release the temporary malloc_helper as user #0
+  //ma_free(cara_single.mem_arena, 0, malloc_helper);
+
+  // In the mm_malloc call above we asked for space for the array of threads.
+  atomic_init( &cara_single.nr_workers_resigned, 0 );
+  threads = string;
+
+  signal(SIGHUP, handle_sigint);
+  signal(SIGINT, handle_sigint);
+  signal(SIGQUIT, handle_sigint);
+  signal(SIGTERM, handle_sigint);
+  signal(SIGSEGV, handle_sigsegv);
+
+  SPALL_END();  // after prepare_processor_map
+
+
+  //
+  // Load synchronously using an async api
+  //
+  // NOTE The proper way to synchronously using SDL AsyncIO is using SDL_LoadFileAsync or SDL_WaitAsyncIOResult instead of looping with SDL_GetAsyncIOResult (And when shutting down, call SDL_SignalAsyncIOQueue to unblock any sleeping threads despite there being no new tasks completed.)
+  //
+  // TODO do it asynchronously
+  //
+  SPALL_BEGIN( "Load stone.dds" );
+  cara_vk.stone_texture = nullptr;
+  cara_vk.asset_size = 0;
+  constexpr char fpath_stone[] = "/home/dewr/Products/carbonara/assets/textures/stone-01.dds";
+  constexpr char fpath_sand[] = "/home/dewr/Products/carbonara/assets/textures/sand-01.dds";
+  constexpr unsigned int dds_header_size =
+    4 + sizeof(TCTex_DDS_HEADER) + sizeof(TCTex_DDS_HEADER_DXT10);
+  constexpr unsigned int len_mipmapped_2048 = 16 + 16 + (4*4)*4/4 + (8*8)*4/4 + (16*16)*4/4 +
+    (32*32)*4/4 + (64*64)*4/4 + (128*128)*4/4 + (256*256)*4/4 + (512*512)*4/4 + (1024*1024)*4/4 + (2048*2048)*4/4;
+  constexpr uint32_t magic_dw = (('D' << 8*0) | ('D' << 8*1) | ('S' << 8*2) | (' ' << 8*3));
+
+  // How many queues should I maintain?
+  SDL_AsyncIOQueue * io_queue_loader = SDL_CreateAsyncIOQueue();
+
+  // This call is not asynchronous; it will open the file before returning, under the assumption
+  // that doing so is generally a fast operation. Future reads and writes to the opened file will
+  // be async, however.
+  SDL_AsyncIO * new_async_io = SDL_AsyncIOFromFile( fpath_stone, "r" );
+
+  SDL_IOStream * iostream = SDL_IOFromFile( fpath_stone, "r" );
+  if ( !iostream ) {
+    fprintf( stderr, "[Carbonara] SDL_IOFromFile failed! reason:'%s'\n", SDL_GetError() );
+    goto done_with_stone;
+  }
+  auto file_size = SDL_GetIOSize( iostream );
+  if ( file_size < 0 ) {
+    fprintf( stderr, "[Carbonara] SDL_GetIOSize failed! reason:'%s'\n", SDL_GetError() );
+    goto done_with_stone;
+  }
+  SDL_CloseIO( iostream );
+  if ( !iostream ) {
+    fprintf( stdout, "[Carbonara] SDL_CloseIO failed! reason: '%s'\n", SDL_GetError() );
+  }
+
+  assume( file_size == dds_header_size + len_mipmapped_2048 );
+  buf_asset_loader = cara_malloc(
+      malloc_helper, CACHELINE_LEN, len_mipmapped_2048 + dds_header_size );
+  if ( !SDL_ReadAsyncIO(
+        new_async_io,
+        buf_asset_loader,
+        0,
+        UINT64_C(0) + file_size,
+        io_queue_loader,
+        ui2ptr(33)) ) {
+    fprintf( stderr, "[Carbonara] SDL_ReadAsyncIO failed!\n" );
+    goto done_with_stone;
+  }
+  while ( !SDL_CloseAsyncIO(new_async_io, false, io_queue_loader, ui2ptr(555)) ) {
+    hold_up_thread( 1000 * 100 );
+  }
+
+  bool loading_is_done = false;
+  bool closing_is_done = false;
+do_it_synchronoously_for_now:
+  SDL_AsyncIOOutcome async_io_outcome;
+  while ( !SDL_GetAsyncIOResult( io_queue_loader, &async_io_outcome ) ) {
+    // One millisecond
+    hold_up_thread( 1000 * 1000 );
+  }
+
+  switch ( ptr2ui(async_io_outcome.userdata) ) {
+    case 33:
+      fprintf( stdout, "[Carbonara-Debug] requested:%lu, transferred:%lu, offset:%lu\n",
+          async_io_outcome.bytes_requested,
+          async_io_outcome.bytes_transferred,
+          async_io_outcome.offset );
+      if ( async_io_outcome.result != SDL_ASYNCIO_COMPLETE ) {
+        fprintf( stderr, "[Carbonara] AsyncIO task was not done! result=%s\n",
+            async_io_outcome.result == SDL_ASYNCIO_CANCELED ? "cancelled" : "failure" );
+        if ( async_io_outcome.result == SDL_ASYNCIO_FAILURE ) {
+          fprintf( stderr, "[Carbonara] The reason behind the failure:'%s'\n", SDL_GetError() );
+        }
+        goto done_with_stone;
+      }
+      loading_is_done = true;
+      if ( !closing_is_done ) {
+        goto do_it_synchronoously_for_now;
+      }
+      break;
+    case 555:
+      if ( async_io_outcome.result != SDL_ASYNCIO_COMPLETE ) {
+        fprintf( stdout, "[Carbonara-Debug] closed? result=%s\n",
+            async_io_outcome.result == SDL_ASYNCIO_CANCELED ? "cancelled" : "failure" );
+      }
+      closing_is_done = true;
+      if ( loading_is_done ) {
+        break;
+      }
+      [[fallthrough]];
+    default:
+      goto do_it_synchronoously_for_now;
+  }
+
+  uint32_t * p_dds_head = (void*)buf_asset_loader;
+  if ( *p_dds_head != magic_dw ) {
+    fprintf( stderr, "[Carbonara-Debug] DDS header magic value is wrong! "
+        "%#010x instead of %#010x\n", *p_dds_head, magic_dw );
+  } else {
+    cara_vk.stone_texture = buf_asset_loader;
+    cara_vk.asset_size = file_size;
+  }
+
+done_with_stone:
+  // Stone done; Now round 2: sand.
+  //
+
+  new_async_io = SDL_AsyncIOFromFile( fpath_sand, "r" );
+  iostream = SDL_IOFromFile( fpath_sand, "r" );
+  if ( !iostream ) {
+    fprintf( stderr, "[Carbonara] SDL_IOFromFile failed! reason:'%s'\n", SDL_GetError() );
+    goto done_with_sand;
+  }
+  file_size = SDL_GetIOSize( iostream );
+
+  buf_asset_loader2 = cara_malloc(
+      malloc_helper, CACHELINE_LEN, len_mipmapped_2048 + dds_header_size );
+  if ( !SDL_ReadAsyncIO(
+        new_async_io,
+        buf_asset_loader2,
+        0,
+        UINT64_C(0) + file_size,
+        io_queue_loader,
+        ui2ptr(33)) ) {
+    fprintf( stderr, "[Carbonara] SDL_ReadAsyncIO failed!\n" );
+    goto done_with_sand;
+  }
+  while ( !SDL_CloseAsyncIO(new_async_io, false, io_queue_loader, ui2ptr(555)) ) {
+    hold_up_thread( 1000 * 100 );
+  }
+
+  loading_is_done = false;
+  closing_is_done = false;
+do_it_synchronoously_for_now2:
+  while ( !SDL_GetAsyncIOResult( io_queue_loader, &async_io_outcome ) ) {
+    // One millisecond
+    hold_up_thread( 1000 * 1000 );
+  }
+
+  switch ( ptr2ui(async_io_outcome.userdata) ) {
+    case 33:
+      fprintf( stdout, "[Carbonara-Debug] requested:%lu, transferred:%lu, offset:%lu\n",
+          async_io_outcome.bytes_requested,
+          async_io_outcome.bytes_transferred,
+          async_io_outcome.offset );
+      if ( async_io_outcome.result != SDL_ASYNCIO_COMPLETE ) {
+        fprintf( stderr, "[Carbonara] AsyncIO task was not done! result=%s\n",
+            async_io_outcome.result == SDL_ASYNCIO_CANCELED ? "cancelled" : "failure" );
+        if ( async_io_outcome.result == SDL_ASYNCIO_FAILURE ) {
+          fprintf( stderr, "[Carbonara] The reason behind the failure:'%s'\n", SDL_GetError() );
+        }
+        goto done_with_sand;
+      }
+      loading_is_done = true;
+      if ( !closing_is_done ) {
+        goto do_it_synchronoously_for_now2;
+      }
+      break;
+    case 555:
+      if ( async_io_outcome.result != SDL_ASYNCIO_COMPLETE ) {
+        fprintf( stdout, "[Carbonara-Debug] closed? result=%s\n",
+            async_io_outcome.result == SDL_ASYNCIO_CANCELED ? "cancelled" : "failure" );
+      }
+      closing_is_done = true;
+      if ( loading_is_done ) {
+        break;
+      }
+      [[fallthrough]];
+    default:
+      goto do_it_synchronoously_for_now2;
+  }
+
+  uint32_t * p_dds_head2 = (void*)buf_asset_loader2;
+  if ( *p_dds_head2 != magic_dw ) {
+    fprintf( stderr, "[Carbonara-Debug] DDS header magic value is wrong! "
+        "%#010x instead of %#010x\n", *p_dds_head2, magic_dw );
+  } else {
+    cara_vk.sand_texture = buf_asset_loader2;
+    assume( cara_vk.asset_size == file_size );
+  }
+  // TODO Get the test code out of here.
+
+
+
+
+  /*
+  constexpr uint32_t magic_dw = (('D' << 8*0) | ('D' << 8*1) | ('S' << 8*2) | (' ' << 8*3));
+  DDS_header * p_dds_head = (void*)cara_vk.stone_texture;
+  if ( p_dds_head->dwMagic != magic_dw ) {
+    fprintf( stderr, "[Carbonara-Debug] DDS header magic value is wrong! %#010x instead of %#010x\n",
+        p_dds_head->dwMagic, magic_dw );
+  } else {
+    fprintf( stdout, "[Carbonara-Debug] dwSize = %u; dwFlags = %#010x; extent = %u*%u;\n",
+        p_dds_head->dwSize, p_dds_head->dwFlags, p_dds_head->dwWidth, p_dds_head->dwHeight );
+    if ( p_dds_head->dwFlags ) {
+      fprintf( stdout, "[Carbonara-Debug] dwFlags = 0" );
+      if ( p_dds_head->dwFlags & DDSD_DEPTH ) fprintf( stdout, " | DDSD_DEPTH" );
+      if ( p_dds_head->dwFlags & DDSD_LINEARSIZE ) fprintf( stdout, " | DDSD_LINEARSIZE" );
+      if ( p_dds_head->dwFlags & DDSD_MIPMAPCOUNT ) fprintf( stdout, " | DDSD_MIPMAPCOUNT" );
+      if ( p_dds_head->dwFlags & DDSD_PIXELFORMAT ) fprintf( stdout, " | DDSD_PIXELFORMAT" );
+      if ( p_dds_head->dwFlags & DDSD_PITCH ) fprintf( stdout, " | DDSD_PITCH" );
+      if ( p_dds_head->dwFlags & DDSD_WIDTH ) fprintf( stdout, " | DDSD_WIDTH" );
+      if ( p_dds_head->dwFlags & DDSD_HEIGHT ) fprintf( stdout, " | DDSD_HEIGHT" );
+      if ( p_dds_head->dwFlags & DDSD_CAPS ) fprintf( stdout, " | DDSD_CAPS" );
+      fprintf( stdout, "\n" );
+    }
+    if ( p_dds_head->dwFlags & DDSD_MIPMAPCOUNT ) {
+      fprintf( stdout, "[Carbonara-Debug] p_dds_head->dwMipMapCount = %u\n", p_dds_head->dwMipMapCount );
+    }
+  }
+  */
+
+done_with_sand:
+  SPALL_END();
+
+
+  for ( uint_fast8_t proc_idx = 0;
+      proc_idx < cara_single.proc_map->nr_processors;
+      proc_idx++ ) {
+    SPALL_BEGIN( "spawn_a_worker" );
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wint-to-pointer-cast"
+    err = create_thread(
+        .thread = &threads[proc_idx],
+        .func = launch_worker,
+        .arg = (void*)proc_idx,
+        .priority = 2,
+        );
+#pragma GCC diagnostic pop
+    SPALL_END();  // spawn a worker
+
+    if ( err ) {
+      switch ( err ) {
+        case err_msg_out_of_resource:
+          fprintf( stderr, "[Carbonara] Error in worker creation: %s\n", err_msg_text[err] );
+          return 4;
+        case err_msg_invalid_request:
+          fprintf( stderr, "[Carbonara] Error in worker creation: %s\n", err_msg_text[err] );
+          return 4;
+        case err_msg_permission_denied:
+          fprintf( stderr, "[Carbonara] Error in worker creation: %s\n", err_msg_text[err] );
+          return 2;
+        default:
+          fprintf( stderr, "[Carbonara] Error in worker creation: Unknown error code %u\n", err );
+          return 4;
+      }
+    }
+  }
+
+  //void * retval;
+  //for ( uint_fast8_t proc_idx = 0; proc_idx < cara_single.proc_map->nr_processors; proc_idx++ ) {
+  ////for ( uint_fast8_t proc_idx = 0; proc_idx < 1; proc_idx++ ) 
+  //  uint_fast8_t il_err = join_thread(threads[proc_idx], &retval);
+  //  if ( il_err ) {
+  //    switch ( il_err ) {
+  //      default:
+  //        fprintf( stderr, "[Carbonara] ERROR: There was an error occured while joining thread #%u = %u\n", proc_idx, il_err );
+  //    }
+  //  } else {
+#ifdef DEBUG_MODE
+  //    fprintf( stdout, "[Worker] retval from thread #%u = %ld\n", proc_idx, (long int)retval );
+#endif
+  //  }
+  //}
+
+
+  return 0;
+}
+
+
+//-------------------------------------------------------------------------------------------------
+void * launch_worker( void * arg )
+{
+  const uint_fast8_t proc_idx = ptr2ui(arg);
+  struct ms_worker_info * worker = &cara_single.proc_map->processors[proc_idx];
+
+  //struct cara_malloc_helper_dynamic_bound * malloc_helper_dynamic_bound;
+  static thread_local struct cara_worker_state worker_state;
+  struct cara_malloc_helper * malloc_helper;
+  malloc_helper = &worker_state.malloc_helper;
+  malloc_helper->worker_idx = worker->idx_self;
+  malloc_helper->node_recently_used = cara_single.mem_arena->head;
+  //malloc_helper->alignment = CACHELINE_LEN;
+  //worker_state->mhelper_grower = malloc_helper_grower;
+
+#ifdef ENABLE_PROFILING
+  //constexpr size_t spall_buf_sz = 1 * 1024 * 1024;
+  constexpr size_t spall_buf_sz = 512 * 1024;
+  // From advanced_threads_example_linux.c:
+  /*
+     Fun fact: You don't actually *need* a buffer, you can just pass NULL!
+     Passing a buffer clumps flushing overhead, so individual functions are faster and less noisy
+
+     If you notice big variance in events, you can try bumping the buffer size so you do fewer
+     flushes while your code runs, or you can shrink it if you need to save some memory
+     */
+  void * string = cara_malloc( malloc_helper, CACHELINE_LEN, spall_buf_sz );
+
+  static thread_local SpallBuffer spall_buffer;
+  spall_buffer = (SpallBuffer) {
+    .pid = 0,
+      .tid = proc_idx,
+      //.tid = pthread_self(),
+      .length = spall_buf_sz,
+      .data = string,
+      //.data = malloc(spall_buf_sz),
+  };
+
+  // From advanced_threads_example_linux.c:
+  /*
+     Here's another neat trick:
+     We're touching the pages ahead of time here, so we get a smoother trace.
+     By pre-faulting all the pages in our event buffer, we avoid waiting for pages to load
+     while user code runs. This can make a noticable difference for data consistency, especially
+     with bigger buffers.
+     */
+  memset(spall_buffer.data, 0, spall_buffer.length);
+
+  if ( !spall_buffer_init(&spall_ctx, &spall_buffer) ) {
+    fprintf( stderr, "[Worker] failed to init the spall buffer.\n" );
+  }
+
+  p_spall_buf = &spall_buffer;
+
+  SPALL_BEGIN( "worker_loop-init" );
+#endif  // ENABLE_PROFILING
+
+  // The F stands for Foreman
+  constexpr char thread_name_template[] = "Carb#00(F)";
+  constexpr char format_string[] = "Carb#%02u(F)";
+  char thread_name[sizeof(thread_name_template)];
+
+  char format_tester[sizeof(thread_name_template)];
+  sprintf( format_tester, format_string, 0u );
+  assume ( strcmp(format_tester, thread_name_template) == 0 );
+
+  size_t loc_left_paren = strchr(thread_name_template, '(') - thread_name_template;
+  sprintf( thread_name, format_string, proc_idx );
+  thread_name[loc_left_paren] = worker->deployment_flags & worker_deployment_flag_foreman ? '(' : 0;
+  if ( prctl(PR_SET_NAME, thread_name) < 0 ) {
+    fprintf( stderr, "[Worker] (%u) failed to set thread name.\n", proc_idx );
+  }
+
+#ifdef DEBUG_MODE
+    //worker->user_data = (void*) wtime_usec;
+    fprintf( stdout, "[Worker] (%u) My idx_self = proc_idx = %u\n", proc_idx, worker->idx_self );
+    fprintf( stdout, "[Worker] (%u)   thread name = %s \n", proc_idx, thread_name );
+    //fprintf( stdout, "[Worker] (%u)   cache_location = %u\n", proc_idx, worker->cache_location );
+  //fprintf( stdout, "[Worker] (%u)   cache_pattern = %#010x\n", proc_idx, worker->cache_pattern );
+    fprintf( stdout, "[Worker] (%u)   deployment_flags = %#04hhx\n",
+        proc_idx, worker->deployment_flags );
+    fprintf( stdout, "[Worker] (%u)   deployment_flags = %u\n", proc_idx, worker->idx_core );
+    //fprintf( stdout, "[Worker] (%u)   wtime_starter = %lu\n", proc_idx, wtime_usec );
+#endif
+  int err = hwloc_set_cpubind( cara_single.proc_map->topology, worker->cpuset,
+      HWLOC_CPUBIND_THREAD | HWLOC_CPUBIND_STRICT );
+  if ( err ) {
+    switch ( errno ) {
+      case ENOSYS:
+        // The action is not supported
+        fprintf( stdout, "[Worker] (%u)   bind_cpu: The action is not supported.\n", proc_idx );
+        break;
+      case EXDEV:
+        // The binding cannot be enforced
+        fprintf( stdout,
+            "[Worker] (%u)   bind_cpu: The binding cannot be enforced.\n", proc_idx );
+        break;
+      default:
+        fprintf( stdout, "[Worker] (%u)   bind_cpu: An unknown error occurred. (errno=%d)\n",
+            proc_idx, errno );
+        break;
+    }
+  }
+  assume( !err );
+
+  worker_state.current_batch = 0;
+  worker_state.worker_info = worker;
+
+  // The loop.
+  worker_loop( &worker_state );
+
+  return 0;
+}
+
+
+//-------------------------------------------------------------------------------------------------
+__attribute__((noreturn))
+static void worker_loop( struct cara_worker_state * worker_state )
+{
+  struct ms_worker_info * const worker =
+    &cara_single.proc_map->processors[worker_state->worker_info->idx_self];
+  struct cara_malloc_helper * const alloc_helper = &worker_state->malloc_helper;
+
+  // pc_std is not read by anyone—It will probably be removed by the optimizer.
+  // It can be used for leap-second adding process if needed.
+  [[maybe_unused]] uint64_t std_pc = 0;
+  uint64_t pc_accumultor = 0;
+  uint64_t prev_pc;  // An accumulator and the previous timestamp
+
+  if ( worker->deployment_flags & worker_deployment_flag_foreman ) {
+    // Prepare a stack of functions to call at the end
+    // FIXME Just 4 functions?
+    constexpr uint_fast8_t stack_len =
+      sizeof(struct func_call_stack_element) * 4 + sizeof(struct infos_stack);
+    struct infos_stack * const quit_stack = infos_stack_create(
+        cara_malloc( alloc_helper, alignof(max_align_t), stack_len ),
+        stack_len );
+    cara_single.foremans_quit_stack = quit_stack;
+
+    prev_pc = get_performance_counter();
+  }
+
+
+  SPALL_END();  // The init. part of worker_loop
+
+
+  uint64_t cur_time_in_5us_general = 0;
+  while(-7) {
+    const uint64_t starting_pc = get_performance_counter();
+
+    SPALL_BEGIN( "worker_loop" );
+
+    if ( worker->deployment_flags & worker_deployment_flag_foreman ) {
+      const uint64_t new_pc = get_performance_counter();
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wconditional-uninitialized"
+      std_pc += new_pc - prev_pc;
+      pc_accumultor += new_pc - prev_pc;
+      prev_pc = new_pc;
+      if ( pc_accumultor >= cara_single.nr_pc_in_5us ) {
+#pragma GCC diagnostic pop
+        const uint64_t nr_5us = div_via_mul_64(&cara_single.magic_divider, pc_accumultor);
+        pc_accumultor -= cara_single.nr_pc_in_5us * nr_5us;
+        cur_time_in_5us_general += nr_5us;
+
+        // XXX Do I really need to share this with other processing units?
+        atomic_store_explicit( &cara_single.cur_time_in_5us_general, cur_time_in_5us_general, memory_order_release );
+        //atomic_fetch_add_explicit( &cara_single.cur_time_in_5us_general, 1, memory_order_release );
+      }
+
+      // See if we should spawn a periodic job or two
+      const uint_fast8_t height = cara_single.tree_of_times_to_act->max_active_depth < 1 ?
+        1 : cara_single.tree_of_times_to_act->max_active_depth;
+      uint32_t cur_idx = infos_bst_locate_root( height );
+      uint_fast8_t cur_height = height;
+
+      uint64_t * restrict const keys =
+        __builtin_assume_aligned( cara_single.tree_of_times_to_act->keys, ALIGN_FOR_AVX );
+
+      while(-7) {
+        // It is due?
+        if ( keys[cur_idx] <= cur_time_in_5us_general ) {
+          // Iterate from cur_idx through the leftmost(0).
+          for ( typeof(cur_idx) node_idx = 0; node_idx <= cur_idx; node_idx++ ) {
+            if ( keys[node_idx] == 0 ) {
+              continue;
+            }
+
+            // The index into the array of job_func index
+            auto pjob_idx = infos_bst_fetch_sepd_auto(
+                cara_single.tree_of_times_to_act, node_idx );
+
+            // Write an updated due time.
+            keys[cur_idx] = 1 |
+              (cur_time_in_5us_general + cara_single.periodic_jobs_periods_5us[pjob_idx]);
+            // Spawn a job.
+            struct cara_job_batch_desc_64 * batch =
+              cara_get_unoccupied_job_batch_desc();
+            while ( !batch ) {
+              batch = cara_get_unoccupied_job_batch_desc();
+            }
+            for ( uint_fast8_t job_idx = 1; job_idx < CARBONARA_MAX_NR_JOBS_IN_A_JOB_DESC_64;
+                job_idx++ ) {
+              batch->job_func_idx[job_idx] = 0;
+              batch->job_flags[job_idx] = 0;
+            }
+            batch->job_func_idx[0] = cara_single.periodic_jobs[pjob_idx];
+
+            batch->job_flags[0] = 0;
+            // memset(batch->job_func_args, 0, sizeof(batch->job_func_args));
+            atomic_store_explicit(&batch->progress, 0, memory_order_release);
+            atomic_store_explicit(&batch->preferred_core, ~UINT64_C(0), memory_order_release);
+          }
+
+        }
+        //min_idx_untouched = cur_idx + 1;
+
+        if ( cur_height == 0 )
+          break;
+
+        cur_idx = infos_bst_tr_down_left(cur_idx, cur_height);
+        cur_height--;
+      }
+
+      infos_insert_sort_bst(cara_single.tree_of_times_to_act);
+
+    } else {
+      // This worker is not a foreman.
+
+      cur_time_in_5us_general = atomic_load_explicit(
+          &cara_single.cur_time_in_5us_general, memory_order_consume );
+    }
+
+
+    // Look for a job to get done.
+    worker_state->current_batch = cara_get_job(worker);
+
+    if ( worker_state->current_batch ) {
+      uint_fast8_t cur_job_func_arg = 0;
+      /*
+      struct cara_job_func_args_64 * job_func_args_group = nullptr;
+      if ( worker_state->current_batch->job_idx_func_arg_group[0] != UINT16_MAX ) {
+        job_func_args_group = infos_al_get_elem(cara_single.job_arg_pool,
+            worker_state->current_batch->job_idx_func_arg_group[0]);
+      }
+      */
+
+      // 
+      uint8_t * restrict const job_func_args = worker_state->current_batch->job_func_args;
+
+/*#ifdef DEBUG_MODE  //?!
+      fprintf( stdout, "[Worker] (%u) I got a job batch descriptor. %lu\n",
+          proc_idx,
+          (ptr2ui(worker_state->current_batch) - ptr2ui(cara_single.job_list->list->head->data))
+          >> mm_singleton.len_cacheline_exp );
+#endif*/
+      for ( uint_fast8_t job_idx = 0; job_idx < CARBONARA_MAX_NR_JOBS_IN_A_JOB_DESC_64;
+          job_idx++ ) {
+        if ( worker_state->current_batch->job_func_idx[job_idx] ) {
+#ifdef DEBUG_MODE  //?!
+          fprintf( stdout, "[Worker] (%u) I'm on it! job_func_idx=%u\n",
+              worker_state->worker_info->idx_self,
+              worker_state->current_batch->job_func_idx[job_idx] );
+#endif
+
+          uint_fast8_t len_first_arg;
+          uint_fast8_t total_len_args = 0;
+          switch ( job_fsig_db[worker_state->current_batch->job_func_idx[job_idx]] ) {
+            case job_fsig_i64:
+            case job_fsig_ui64:
+            case job_fsig_double:
+              len_first_arg = 8;
+              break;
+            case job_fsig_i32:
+            case job_fsig_ui32:
+            case job_fsig_float:
+              len_first_arg = 4;
+              break;
+            case job_fsig_i16:
+            case job_fsig_ui16:
+              len_first_arg = 2;
+              break;
+            case job_fsig_i8:
+            case job_fsig_ui8:
+              len_first_arg = 1;
+              break;
+            case job_fsig_ptr:
+              len_first_arg = sizeof(void*);
+              break;
+            case job_fsig_void:
+              len_first_arg = 0;
+              break;
+          }
+          if ( len_first_arg ) {
+            // The first argument of each function is the biggest.
+            cur_job_func_arg = _align_to_power_of_two(cur_job_func_arg, len_first_arg);
+            switch ( job_fsig_db[worker_state->current_batch->job_func_idx[job_idx]] ) {
+              case job_fsig_i64:
+              case job_fsig_ui64:
+              case job_fsig_double:
+                total_len_args = 8;
+                break;
+              case job_fsig_i32:
+              case job_fsig_ui32:
+              case job_fsig_float:
+                total_len_args = 4;
+                break;
+              case job_fsig_i16:
+              case job_fsig_ui16:
+                total_len_args = 2;
+                break;
+              case job_fsig_i8:
+              case job_fsig_ui8:
+                total_len_args = 1;
+                break;
+              case job_fsig_ptr:
+                total_len_args = sizeof(void*);
+                break;
+              case job_fsig_void:
+                total_len_args = 0;
+                break;
+            }
+            /*
+            if ( cur_job_func_arg + total_len_args > sizeof(job_func_args_group->data) ) {
+              atomic_store_explicit(&job_func_args_group->occupied, 0, memory_order_release);
+              atomic_fetch_sub_explicit(&cara_single.nr_job_arg_groups_taken, 1,
+                  memory_order_relaxed);
+
+              job_func_args_group = infos_al_get_elem(cara_single.job_arg_pool,
+                  worker_state->current_batch->idx_job_func_arg_group[1]);
+              cur_job_func_arg = 0;
+            }
+            */
+            // XXX Just keep it slim, no second function argument group!
+          }
+
+          switch ( job_fsig_db[worker_state->current_batch->job_func_idx[job_idx]] ) {
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wcast-function-type-strict"
+            case job_fsig_void:
+              ( (void (*)(struct cara_worker_state *))
+                known_jobs[worker_state->current_batch->job_func_idx[job_idx]] )
+                ( worker_state );
+              break;
+            case job_fsig_ui8:
+              ( (void (*)(struct cara_worker_state *, uint8_t))
+                known_jobs[worker_state->current_batch->job_func_idx[job_idx]] )
+                ( worker_state, job_func_args[cur_job_func_arg] );
+              break;
+            default:
+#if defined(ARE_WE_SHIPPING_IT)
+              unreachable();
+#else
+              fprintf( stderr, "an unknown job functions signature (%u)\n",
+                  worker_state->current_batch->job_func_idx[job_idx] );
+              break;
+#endif
+#pragma GCC diagnostic pop
+          }
+          cur_job_func_arg += total_len_args;
+#ifdef DEBUG_MODE  //?!
+          fprintf( stdout, "[Worker] (%u) done. job_func_idx=%u\n",
+              worker_state->worker_info->idx_self,
+              worker_state->current_batch->job_func_idx[job_idx] );
+#endif
+
+          //typeof(worker_state->current_batch->progress) cur_progress = worker_state->current_batch->progress +
+          //  UINT8_MAX/CARBONARA_MAX_NR_JOBS_IN_A_JOB_DESC_64;
+          //if ( cur_progress <= 1 ) {
+          //  cur_progress = UINT8_MAX;
+          //}
+          //atomic_store_explicit(&worker_state->current_batch->progress, cur_progress, memory_order_release);
+
+        }
+      }
+
+      // Mark empty and unoccupied in the job batch descriptor
+      atomic_store_explicit( &worker_state->current_batch->progress,
+          UINT8_MAX, memory_order_release );
+      atomic_fetch_sub_explicit( &cara_single.nr_job_batch_descriptors_taken,
+          1, memory_order_release );
+
+      /*
+      if ( job_func_args_group ) {
+        atomic_store_explicit(&job_func_args_group->occupied, 0, memory_order_release);
+        atomic_fetch_sub_explicit(&cara_single.nr_job_arg_groups_taken, 1,
+            memory_order_release);
+      }
+      */
+    } else {
+
+      SPALL_BEGIN( "hold_up_thread" );
+
+      if ( worker->deployment_flags & worker_deployment_flag_yielder ) {
+        // Take a break for 1280 usec.
+        //hold_up_thread( 1000*1280 );
+        delay_precise( starting_pc + cara_single.nr_pc_in_5us * 256 );
+        // TODO Use MONITORX/UMONITOR instead when the instruction is supported
+        // C0.2 improves performance of the other SMT thread(s) on the same core.
+        //  MWAITX's C1 state might offer a similar benefit too.
+      } else {
+        // Take a break for about 640 usec.
+        //hold_up_thread( 1000*640 );
+        delay_precise( starting_pc + cara_single.nr_pc_in_5us * 128 );
+        // TODO Use MONITORX/UMONITOR instead when the instruction is supported
+        // C0.2 improves performance of the other SMT thread(s) on the same core.
+        //  MWAITX's C1 state might offer a similar benefit too.
+      }
+
+      SPALL_END();  // hold_up_thread
+    }
+
+    SPALL_END();  // worker_loop
+  }
+
+}
+
+
+//-------------------------------------------------------------------------------------------------
+__attribute__((noreturn))
+void jf_start_kill_chain( struct cara_worker_state * ws )
+{
+  // Undo the job-take immediately.
+  atomic_fetch_sub_explicit(&cara_single.nr_job_batch_descriptors_taken, 1,
+      memory_order_release);
+  atomic_store_explicit(&ws->current_batch->progress, 0, memory_order_release);
+
+#ifdef DEBUG_MODE
+  fprintf( stdout, "[Worker] (%u) Following a kill-chain...\n", ws->worker_info->idx_self );
+#endif
+
+  // Every worker quits quickly except the foreman.
+  if ( !(ws->worker_info->deployment_flags & worker_deployment_flag_foreman) ) {
+
+#ifdef ENABLE_PROFILING
+    // Remember to quit or flush your buffers before you exit!
+    // If you don't, you might not get the last few events waiting to be written
+    spall_buffer_quit(&spall_ctx, p_spall_buf);
+
+    // Freeing our buffer's memory now that spall_buffer_quit has flushed it for us.
+    ma_free( cara_single.mem_arena, ws->worker_info->idx_self, p_spall_buf->data );
+#endif
+
+    atomic_fetch_add_explicit( &cara_single.nr_workers_resigned,
+        1, memory_order_release );
+
+#ifdef DEBUG_MODE
+    fprintf( stdout, "[Worker] (%u) resigned.\n", ws->worker_info->idx_self );
+#endif
+
+    pthread_exit(0);
+  }
+//-------------------------------------------------------------------------------------------------
+  // Only the foreman worker survives past this line.
+
+  SPALL_BEGIN("foreman's_last_job");
+
+  SPALL_BEGIN("wait_for_fellow_workers");
+  // Foreman waits for other workers to exit first.
+  while ( atomic_load_explicit(&cara_single.nr_workers_resigned, memory_order_acquire) <
+      cara_single.proc_map->nr_processors - 1 ) {
+    // Take a break for about 320 usec.
+    const uint64_t starting_pc = get_performance_counter();
+    delay_precise( starting_pc + cara_single.nr_pc_in_5us * 64 );
+  }
+  SPALL_END();  // wait_for_fellow_workers
+
+  SPALL_BEGIN("reap_what_we_have_sown");
+  struct func_call_stack_element * p_func_call_stack_element;
+  while (( p_func_call_stack_element = infos_stack_pop(
+          cara_single.foremans_quit_stack,
+          sizeof(struct func_call_stack_element)
+          ) )) {
+    if ( p_func_call_stack_element->arg ) {
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wcast-function-type-strict"
+      ( (void(*)(void*)) p_func_call_stack_element->func ) ( p_func_call_stack_element->arg );
+#pragma GCC diagnostic pop
+    } else {
+      //p_func_call_stack_element->func();
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wincompatible-function-pointer-types-strict"
+#pragma GCC diagnostic ignored "-Wincompatible-function-pointer-types"
+      void (*void_func) () = p_func_call_stack_element->func;
+#pragma GCC diagnostic pop
+      void_func();
+    }
+  }
+
+  SPALL_END();  // reap_what_we_have_sown
+  SPALL_END();  // foreman's_last_job
+
+#ifdef ENABLE_PROFILING
+  // Remember to quit or flush your buffers before you exit!
+  // If you don't, you might not get the last few events waiting to be written
+  spall_buffer_quit(&spall_ctx, p_spall_buf);
+
+  // Freeing our buffer's memory now that spall_buffer_quit has flushed it for us.
+  ma_free( cara_single.mem_arena, ws->worker_info->idx_self, p_spall_buf->data );
+#endif
+
+  // Assign a number bigger than 128 to sign_to_end
+  atomic_fetch_or_explicit( &cara_single.sign_to_end, ~UINT64_C(0), memory_order_release );
+
+  pthread_exit(0);
+}
+
+
+//-------------------------------------------------------------------------------------------------
+static enum err_msg verbosee_integrity_check_bc7_2048( const char * data )
+{
+  TCTex_Texture tc_texture;
+  if ( !tctex_load_mem(&tc_texture, data, cara_vk.asset_size) ) {
+    fprintf( stderr, "[Carbonara-Debug] tctex_load_mem failed on the asset! (%s)\n",
+        tc_texture.errmsg );
+    return err_msg_corrupted_data_detected;
+  } else {
+    const TCTex_DDS_HEADER* header = (void*)data+4;
+    fprintf( stdout, "[Carbonara-Debug] ""dimension=%u size=%u*%u nmiplevels=%u "
+        "offset0=%u header.dwPitchOrLinearSize=%u\n",
+        tc_texture.dimension,
+        tc_texture.size.x,
+        tc_texture.size.y,
+        tc_texture.nmiplevels,
+        tc_texture.offset0,
+        header->dwPitchOrLinearSize
+        );
+    if ( tc_texture.iformat != TCTEX_IFORMAT_COMPRESSED_BC7_UNORM ) {
+      fprintf( stderr, "[Carbonara-Debug] The format was not BC7_UNORM! (%u)\n",
+          tc_texture.iformat );
+      return err_msg_ext_not_supported;
+    }
+  }
+  constexpr unsigned int max_nr_miplevels = 24;  // 1 - 2048
+  TCTex_MipMapInfo arr_mmi[max_nr_miplevels];
+  uint32_t nr_textures = tctex_get_mipmaps( &tc_texture, arr_mmi, max_nr_miplevels, 0 );
+  fprintf( stdout, "[Carbonara-Debug] nr_textures = %u\n", nr_textures );
+
+  return 0;
+}
+
+//-------------------------------------------------------------------------------------------------
+__attribute__ ((target ("lzcnt")))
+void jf_kickstart( struct cara_worker_state * ws )
+{
+  struct func_call_stack_element func_call_stack_element;
+
+  atomic_init( &cara_single.is_frame_id_even, 0 );
+  SPALL_BEGIN("init_sdl");
+  if ( init_sdl() ) {
+    fprintf( stderr, "[Carbonara] Could not initialize SDL.\n" );
+    goto stop_everything_after_failure;
+  }
+  SPALL_END();
+
+
+  SPALL_BEGIN("init_vulkan");
+  // TODO Set a prefered set of vendor_id_pref + device_id_pref if there is a saved preference data
+  if ( init_vulkan(0, 0, cara_single.mem_arena, ws) ) {
+    fprintf( stderr, "[Carbonara] Could not initialize Vulkan.\n" );
+    goto stop_everything_after_failure;
+  }
+  const int ret = SDL_ShowWindow( cara_vk.window );
+  if ( !ret ) {
+    fprintf( stderr, "[Carbonara] Could not unhide the window. (%s)\n", SDL_GetError() );
+  }
+  SPALL_END();
+
+
+
+  // TODO move the code below away!
+  fprintf( stdout, "[Carbonara-Debug] tctex_load_mem for stone...\n" );
+  if ( verbosee_integrity_check_bc7_2048(cara_vk.stone_texture) ) {
+    fprintf( stderr, "[Carbonara-Debug] integrity check failed for stone.\n" );
+    goto stop_everything_after_failure;
+  }
+  fprintf( stdout, "[Carbonara-Debug] tctex_load_mem for sand...\n" );
+  if ( verbosee_integrity_check_bc7_2048(cara_vk.sand_texture) ) {
+    fprintf( stderr, "[Carbonara-Debug] integrity check failed for sand.\n" );
+    goto stop_everything_after_failure;
+  }
+
+  SPALL_BEGIN("check_out_vulkan");
+  if ( ma_create_staging_buf(&cara_vk.vmm, cara_vk.log_dev, 0) ) {
+    fprintf( stderr, "[Carbonara-Debug] ma_create_vk_trans_bufs failed..\n" );
+    goto stop_everything_after_failure;
+  }
+
+  enum err_msg err = ma_prepare_upload_mgr( &cara_vk.vmm, &ws->malloc_helper, cara_malloc );
+  if ( err ) {
+    fprintf( stderr, "[Carbonara-Debug] ma_prepare_upload_mgr failed. (%u)\n", err );
+    goto stop_everything_after_failure;
+  }
+  constexpr unsigned int dds_header_size =
+    4 + sizeof(TCTex_DDS_HEADER) + sizeof(TCTex_DDS_HEADER_DXT10);
+  constexpr unsigned int nr_miplevels = 12;
+  constexpr unsigned int len_mipmapped_2048 = 16 + 16 + (4*4)*4/4 + (8*8)*4/4 + (16*16)*4/4 +
+    (32*32)*4/4 + (64*64)*4/4 + (128*128)*4/4 + (256*256)*4/4 + (512*512)*4/4 + (1024*1024)*4/4 + (2048*2048)*4/4;
+  unsigned int nr_bytes_to_copy =
+    _align_to_power_of_two( len_mipmapped_2048, cara_vk.vmm.buf_granularity );
+  const struct range_u32 * rent_for_stone = infos_pm_rent(
+      &cara_vk.vmm.uploads, &ws->malloc_helper, cara_malloc, nr_bytes_to_copy, true );
+  const struct range_u32 * rent_for_sand = infos_pm_rent(
+      &cara_vk.vmm.uploads, &ws->malloc_helper, cara_malloc, nr_bytes_to_copy, true );
+  if ( !rent_for_stone || !rent_for_sand ) {
+    fprintf( stderr, "[Carbonara-Debug] infos_pm_rent failed.. (errno=%d)\n", errno );
+    //infos_pm_destroy( &cara_vk.vmm.uploads, &ws->worker_info->idx_self, cara_free );
+    goto stop_everything_after_failure;
+  }
+
+  SPALL_BEGIN("memcpy 2 textures");
+  // VK_MEMORY_PROPERTY_HOST_COHERENT_BIT bit specifies that the host cache management commands
+  // vkFlushMappedMemoryRanges and vkInvalidateMappedMemoryRanges are not needed to manage
+  // availability and visibility on the host.
+  memcpy( cara_vk.vmm.p_staging_buf + rent_for_stone->start,
+      cara_vk.stone_texture + dds_header_size, nr_bytes_to_copy );
+  memcpy( cara_vk.vmm.p_staging_buf + rent_for_sand->start,
+      cara_vk.sand_texture + dds_header_size, nr_bytes_to_copy );
+  SPALL_END();
+
+  VkExtent3D extent = { 2048, 2048, 1 };
+  VkImageCreateInfo img_create_info;
+  img_create_info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+  img_create_info.pNext = nullptr;
+  img_create_info.flags = 0;
+  img_create_info.imageType = VK_IMAGE_TYPE_2D;
+  img_create_info.format = VK_FORMAT_BC7_UNORM_BLOCK;
+  img_create_info.extent = extent;
+  img_create_info.mipLevels = nr_miplevels;
+  img_create_info.arrayLayers = 8;
+  img_create_info.samples = VK_SAMPLE_COUNT_1_BIT;
+  img_create_info.tiling = VK_IMAGE_TILING_OPTIMAL;
+  img_create_info.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT |
+    VK_IMAGE_USAGE_SAMPLED_BIT |
+    0;
+  img_create_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+  img_create_info.queueFamilyIndexCount = 0;
+  img_create_info.pQueueFamilyIndices = nullptr;
+  img_create_info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+  VkResult result = vkCreateImage( cara_vk.log_dev,
+      &img_create_info, &cara_vk.vk_alloc_callbacks, &cara_vk.vki_8_2048_tex );
+  if ( result != VK_SUCCESS ) {
+    fprintf( stderr, "[Carbonara-Debug] vkCreateImage an 8-pack failed.. (result=%s)\n",
+        string_VkResult(result) );
+    //infos_pm_destroy( &cara_vk.vmm.uploads, &ws->worker_info->idx_self, cara_free );
+    goto stop_everything_after_failure;
+  }
+
+  // Obtain the requirements
+  VkMemoryRequirements req;
+  vkGetImageMemoryRequirements( cara_vk.log_dev, cara_vk.vki_8_2048_tex, &req );
+
+  // Choose the best memory type
+  VkMemoryPropertyFlags preferred_props, required_props, tolerable_props;
+  preferred_props = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+  required_props = 0;
+  tolerable_props = 0;
+  const uint32_t type_idx = ma_pick_best_mtype(
+      &cara_vk.vmm, &req, required_props, preferred_props, tolerable_props );
+  // Save the best type for later?
+  cara_vk.vmm.arr_best_mtype_idx[vk_buf_type_image_arr_8_2048] = type_idx;
+
+  // Allocate memory
+  VkMemoryAllocateInfo buf_malloc_info;
+  buf_malloc_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+  buf_malloc_info.pNext = nullptr;
+  buf_malloc_info.allocationSize = req.size;
+  buf_malloc_info.memoryTypeIndex = type_idx;
+
+  VkDeviceMemory * malloc = infos_multi_al_get_elem( &cara_vk.vmm.mallocs, type_idx, 0 );
+  result = vkAllocateMemory( cara_vk.log_dev,
+      &buf_malloc_info, &cara_vk.vk_alloc_callbacks, malloc );
+  if( result != VK_SUCCESS ) {
+    vkDestroyImage( cara_vk.log_dev, cara_vk.vki_8_2048_tex, &cara_vk.vk_alloc_callbacks );
+    cara_vk.vki_8_2048_tex = 0;
+    //infos_pm_destroy( &cara_vk.vmm.uploads, &ws->worker_info->idx_self, cara_free );
+    goto stop_everything_after_failure;
+  }
+  cara_vk.vmm.arr_usages[type_idx] += req.size;
+
+  // Bind the image to the first allocation of type_idx type
+  result = vkBindImageMemory( cara_vk.log_dev, cara_vk.vki_8_2048_tex, *malloc, 0 );
+  if( result != VK_SUCCESS ) {
+    vkFreeMemory( cara_vk.log_dev, *malloc, &cara_vk.vk_alloc_callbacks );
+    *malloc = 0;
+    cara_vk.vmm.arr_usages[type_idx] -= req.size;
+
+    vkDestroyImage( cara_vk.log_dev, cara_vk.vki_8_2048_tex, &cara_vk.vk_alloc_callbacks );
+    cara_vk.vki_8_2048_tex = 0;
+    goto stop_everything_after_failure;
+  }
+
+  VkCommandBufferBeginInfo cmd_buf_begin_info;
+  cmd_buf_begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+  cmd_buf_begin_info.pNext = nullptr;
+  cmd_buf_begin_info.flags =
+    VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT |  // Each recording of the command buffer will
+                                                   // only be submitted once, and the command
+                                                   // buffer will be reset and recorded again
+                                                   // between each submission.
+    0;
+  cmd_buf_begin_info.pInheritanceInfo = nullptr;
+             // a pointer to a VkCommandBufferInheritanceInfo structure, used if `commandBuffer`
+             // is a secondary command buffer. If this is a primary command buffer, then this
+             // value is ignored.
+
+
+  // Begin recording on the primary buffer
+  VkCommandBuffer trans_buf =
+    cara_vk.trans_bufs.primary_cmd_buf;
+#ifdef DEBUG_MODE
+  fprintf( stderr, "[Vulkan-Debug] TP cmd_buf=%#018lx\n", ptr2ui(trans_buf) );
+#endif
+  // TODO synchronization needed
+  result = vkBeginCommandBuffer( trans_buf, &cmd_buf_begin_info );
+  if( result != VK_SUCCESS ) {
+    vkFreeMemory( cara_vk.log_dev, *malloc, &cara_vk.vk_alloc_callbacks );
+    *malloc = 0;
+    cara_vk.vmm.arr_usages[type_idx] -= req.size;
+
+    vkDestroyImage( cara_vk.log_dev, cara_vk.vki_8_2048_tex, &cara_vk.vk_alloc_callbacks );
+    cara_vk.vki_8_2048_tex = 0;
+    fprintf( stderr, "[Carbonara] Could not begin command(transfer) buffer recording operation. "
+        "'%s'\n", string_VkResult(result) );
+    goto stop_everything_after_failure;
+  }
+
+  VkImageSubresourceRange img_subres_range;
+  img_subres_range.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+  img_subres_range.baseMipLevel = 0;    // 2048(0)
+  img_subres_range.levelCount = nr_miplevels;
+  img_subres_range.baseArrayLayer = 0;  // Stone-
+  img_subres_range.layerCount = 2;      // Stone and sand
+
+  VkImageMemoryBarrier2KHR img_bar;
+  img_bar.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2_KHR;
+  img_bar.pNext = nullptr;
+  img_bar.srcStageMask = VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT_KHR;
+  img_bar.srcAccessMask = VK_ACCESS_2_NONE_KHR;
+  img_bar.dstStageMask = VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT_KHR;
+  img_bar.dstAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT_KHR;
+  img_bar.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+  img_bar.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+  img_bar.srcQueueFamilyIndex = cara_vk.trans_q_fam_idx;
+  img_bar.dstQueueFamilyIndex = cara_vk.trans_q_fam_idx;
+  img_bar.image = cara_vk.vki_8_2048_tex;
+  img_bar.subresourceRange = img_subres_range;
+
+  VkBufferMemoryBarrier2KHR buf_bar[2];
+  const struct range_u32 * arr_p_rents[2] = { rent_for_stone, rent_for_sand };
+  for ( unsigned int layer_idx = 0; layer_idx < 2; layer_idx++ ) {
+    buf_bar[layer_idx].sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2_KHR;
+    buf_bar[layer_idx].pNext = nullptr;
+    buf_bar[layer_idx].srcStageMask = VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT_KHR;
+    buf_bar[layer_idx].srcAccessMask = VK_ACCESS_2_NONE_KHR;
+    buf_bar[layer_idx].dstStageMask = VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT_KHR;
+    buf_bar[layer_idx].dstAccessMask = VK_ACCESS_2_TRANSFER_READ_BIT_KHR;
+    buf_bar[layer_idx].srcQueueFamilyIndex = cara_vk.trans_q_fam_idx;
+    buf_bar[layer_idx].dstQueueFamilyIndex = cara_vk.trans_q_fam_idx;
+    buf_bar[layer_idx].buffer = cara_vk.vmm.staging_buf;
+    buf_bar[layer_idx].offset = arr_p_rents[layer_idx]->start;
+    buf_bar[layer_idx].size = nr_bytes_to_copy;
+  }
+
+  VkDependencyInfoKHR dependency_info;
+  dependency_info.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO_KHR;
+  dependency_info.pNext = nullptr;
+  dependency_info.dependencyFlags = 0;
+  dependency_info.memoryBarrierCount = 0;
+  dependency_info.pMemoryBarriers = nullptr;
+  dependency_info.bufferMemoryBarrierCount = 2;
+  dependency_info.pBufferMemoryBarriers = buf_bar;
+  dependency_info.imageMemoryBarrierCount = 1;
+  dependency_info.pImageMemoryBarriers = &img_bar;
+
+  vkCmdPipelineBarrier2KHR( trans_buf, &dependency_info );
+
+  VkBufferImageCopy regions[nr_miplevels * 2];
+  for ( unsigned int mip_lv = 0, width = 2048, offset = 0;
+      mip_lv < nr_miplevels; mip_lv++, width/=2 ) {
+    regions[mip_lv].bufferOffset = rent_for_stone->start + offset;
+    regions[mip_lv].bufferRowLength = 0;
+    regions[mip_lv].bufferImageHeight = 0;
+    regions[mip_lv].imageSubresource = (VkImageSubresourceLayers) {
+      VK_IMAGE_ASPECT_COLOR_BIT, mip_lv, 0, 1};
+    regions[mip_lv].imageOffset = (VkOffset3D) {0, 0, 0};
+    regions[mip_lv].imageExtent = (VkExtent3D) {width, width, 1};
+    regions[mip_lv+nr_miplevels].bufferOffset = rent_for_sand->start + offset;
+    regions[mip_lv+nr_miplevels].bufferRowLength = 0;
+    regions[mip_lv+nr_miplevels].bufferImageHeight = 0;
+    regions[mip_lv+nr_miplevels].imageSubresource = (VkImageSubresourceLayers) {
+      VK_IMAGE_ASPECT_COLOR_BIT, mip_lv, 1, 1};
+    regions[mip_lv+nr_miplevels].imageOffset = (VkOffset3D) {0, 0, 0};
+    regions[mip_lv+nr_miplevels].imageExtent = (VkExtent3D) {width, width, 1};
+    switch ( width ) {
+      case 4:
+        [[fallthrough]];  // 4*4 = 16 which happens to be the texel block size of BC7
+      case 1:
+        [[fallthrough]];
+      case 2:
+        offset += 16;     // The minimum size of the map is 16 bytes probably because of the
+        break;            //  texel block size of BC7
+      default:
+        offset += ( width * width ) * 4 / 4;  // 1 byte stores the information of 1 pixel in BC7
+    }
+  }
+
+  vkCmdCopyBufferToImage(
+      trans_buf,
+      cara_vk.vmm.staging_buf,
+      cara_vk.vki_8_2048_tex,
+      VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+      nr_miplevels * 2,
+      regions
+      );
+
+  // No need to prepare a VkMemoryBarrier2KHR object?
+  //VkMemoryBarrier2KHR mem_bar;
+  //mem_bar.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2_KHR;
+  //mem_bar.pNext = nullptr;
+  //mem_bar.srcStageMask = VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT_KHR;
+  //mem_bar.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT_KHR |
+  //  VK_ACCESS_2_TRANSFER_READ_BIT_KHR |
+  //  0;
+  //mem_bar.dstStageMask = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT_KHR;
+  //mem_bar.dstAccessMask = VK_ACCESS_2_SHADER_SAMPLED_READ_BIT |
+  //  0;
+
+  //img_bar.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2_KHR;
+  //img_bar.pNext = nullptr;
+  img_bar.srcStageMask = VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT_KHR;
+  img_bar.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT_KHR;
+  img_bar.dstStageMask = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT_KHR;
+  img_bar.dstAccessMask = VK_ACCESS_2_SHADER_SAMPLED_READ_BIT_KHR;
+  img_bar.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+  img_bar.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+  img_bar.srcQueueFamilyIndex = cara_vk.trans_q_fam_idx;
+  img_bar.dstQueueFamilyIndex = cara_vk.graphics_q_fam_idx;
+  img_bar.image = cara_vk.vki_8_2048_tex;
+  img_bar.subresourceRange = img_subres_range;
+
+  dependency_info.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO_KHR;
+  dependency_info.pNext = nullptr;
+  dependency_info.dependencyFlags = 0;
+  dependency_info.memoryBarrierCount = 0;
+  dependency_info.pMemoryBarriers = nullptr;
+  dependency_info.bufferMemoryBarrierCount = 0;
+  dependency_info.pBufferMemoryBarriers = nullptr;
+  dependency_info.imageMemoryBarrierCount = 1;
+  dependency_info.pImageMemoryBarriers = &img_bar;
+
+  vkCmdPipelineBarrier2KHR( trans_buf, &dependency_info );
+
+  VkSemaphoreSubmitInfoKHR semaphore_submit_info;
+  semaphore_submit_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO_KHR;
+  semaphore_submit_info.pNext = nullptr;
+  semaphore_submit_info.semaphore = cara_vk.main_semaphore_before_A;
+  semaphore_submit_info.value = csb_data_transfer_done;
+  semaphore_submit_info.stageMask = VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT_KHR;
+  semaphore_submit_info.deviceIndex = 0;
+
+  VkCommandBufferSubmitInfoKHR cmd_buf_submit_info;
+  cmd_buf_submit_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO_KHR;
+  cmd_buf_submit_info.pNext = nullptr;
+  cmd_buf_submit_info.commandBuffer = trans_buf;
+  cmd_buf_submit_info.deviceMask = 0;
+
+  VkSubmitInfo2 submit_info;
+  submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2_KHR;
+  submit_info.pNext = nullptr;
+  submit_info.flags = 0;
+  submit_info.waitSemaphoreInfoCount = 0;
+  submit_info.pWaitSemaphoreInfos = nullptr;
+  submit_info.commandBufferInfoCount = 1;
+  submit_info.pCommandBufferInfos = &cmd_buf_submit_info;
+  submit_info.signalSemaphoreInfoCount = 1;
+  submit_info.pSignalSemaphoreInfos = &semaphore_submit_info;
+
+  // End recording
+  result = vkEndCommandBuffer( trans_buf ); 
+  if( result != VK_SUCCESS ) { 
+    vkFreeMemory( cara_vk.log_dev, *malloc, &cara_vk.vk_alloc_callbacks );
+    *malloc = 0;
+    cara_vk.vmm.arr_usages[type_idx] -= req.size;
+
+    vkDestroyImage( cara_vk.log_dev, cara_vk.vki_8_2048_tex, &cara_vk.vk_alloc_callbacks );
+    cara_vk.vki_8_2048_tex = 0;
+    fprintf( stderr, "[Carbonara] Error occurred during command buffer recording. '%s'\n",
+        string_VkResult(result) );
+    goto stop_everything_after_failure;
+  }
+
+  result = vkQueueSubmit2KHR( cara_vk.transfer_q, 1, &submit_info, VK_NULL_HANDLE );
+  if ( result != VK_SUCCESS ) {
+    vkFreeMemory( cara_vk.log_dev, *malloc, &cara_vk.vk_alloc_callbacks );
+    *malloc = 0;
+    cara_vk.vmm.arr_usages[type_idx] -= req.size;
+
+    vkDestroyImage( cara_vk.log_dev, cara_vk.vki_8_2048_tex, &cara_vk.vk_alloc_callbacks );
+    cara_vk.vki_8_2048_tex = 0;
+    fprintf( stderr, "[Carbonara-Debug] vkQueueSubmit2 failed.. (err_msg=%u)\n", err );
+    //infos_pm_destroy( &cara_vk.vmm.uploads, &ws->worker_info->idx_self, cara_free );
+    goto stop_everything_after_failure;
+  }
+
+
+  err = infos_pm_return( &cara_vk.vmm.uploads,
+      &ws->malloc_helper, cara_malloc, rent_for_stone->start );
+  if ( err ) {
+    vkFreeMemory( cara_vk.log_dev, *malloc, &cara_vk.vk_alloc_callbacks );
+    *malloc = 0;
+    cara_vk.vmm.arr_usages[type_idx] -= req.size;
+
+    vkDestroyImage( cara_vk.log_dev, cara_vk.vki_8_2048_tex, &cara_vk.vk_alloc_callbacks );
+    cara_vk.vki_8_2048_tex = 0;
+    fprintf( stderr, "[Carbonara-Debug] infos_pm_return for stone failed.. (err_msg=%u)\n", err );
+    //infos_pm_destroy( &cara_vk.vmm.uploads, &ws->worker_info->idx_self, cara_free );
+    goto stop_everything_after_failure;
+  }
+  err = infos_pm_return( &cara_vk.vmm.uploads,
+      &ws->malloc_helper, cara_malloc, rent_for_sand->start );
+  if ( err ) {
+    vkFreeMemory( cara_vk.log_dev, *malloc, &cara_vk.vk_alloc_callbacks );
+    *malloc = 0;
+    cara_vk.vmm.arr_usages[type_idx] -= req.size;
+
+    vkDestroyImage( cara_vk.log_dev, cara_vk.vki_8_2048_tex, &cara_vk.vk_alloc_callbacks );
+    cara_vk.vki_8_2048_tex = 0;
+    fprintf( stderr, "[Carbonara-Debug] infos_pm_return for sand failed.. (err_msg=%u)\n", err );
+    //infos_pm_destroy( &cara_vk.vmm.uploads, &ws->worker_info->idx_self, cara_free );
+    goto stop_everything_after_failure;
+  }
+
+
+  // Explicitly reset the command buffers instead of implicitly resetting by beginning to record
+  constexpr bool release_resources = false;  // XXX what is this?
+  // For transfer commands
+
+  uint64_t wait_val = csb_data_transfer_done;
+  VkSemaphoreWaitInfo wait_info;
+  wait_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO;
+  wait_info.pNext = nullptr;
+  wait_info.flags = 0;
+  wait_info.semaphoreCount = 1;
+  wait_info.pSemaphores = &cara_vk.main_semaphore_before_A;
+  wait_info.pValues = &wait_val;
+  vkWaitSemaphores( cara_vk.log_dev, &wait_info, 1000*1000*UINT64_C(20) );
+
+  // TODO Host access to `commandPool` must be externally synchronized
+  result = vkResetCommandPool(
+      cara_vk.log_dev,
+      cara_vk.trans_bufs.arr_cmd_pools[
+        cara_single.proc_map->nr_processors ],
+      release_resources ? VK_COMMAND_POOL_RESET_RELEASE_RESOURCES_BIT : 0 );
+  if( result != VK_SUCCESS ) { 
+    fprintf( stderr, "[Carbonara] Error occurred during command buffer reset. '%s'\n",
+        string_VkResult(result) );
+    goto stop_everything_after_failure;
+  }
+  SPALL_END();
+  //TODO move the code above out of this function definition!
+
+
+
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wcast-function-type-strict"
+  func_call_stack_element.func = (void(*)(void*))destroy_vulkan_objects;
+#pragma GCC diagnostic pop
+  func_call_stack_element.arg = ws->worker_info;
+  infos_stack_push( cara_single.foremans_quit_stack,
+      1, (const void*) &func_call_stack_element,
+      31 - _lzcnt_u32(sizeof(struct func_call_stack_element)) );
+
+  //for ( uint_fast8_t worker_idx = 0;
+  //    worker_idx < cara_single.proc_map->nr_processors; worker_idx++ ) {
+  //  uint_fast16_t idx_job_func_arg_group = cara_get_unoccupied_job_func_args();
+  //  while ( idx_job_func_arg_group == UINT16_MAX ) {
+  //    idx_job_func_arg_group = cara_get_unoccupied_job_func_args();
+  //  }
+  //  struct cara_job_func_args_64 * arg_group =
+  //    infos_al_get_elem(cara_single.job_arg_pool, idx_job_func_arg_group);
+  //  arg_group->data[0] = cara_single.proc_map->nr_processors;
+
+  //  struct cara_job_batch_desc_64 * batch = cara_get_unoccupied_job_batch_desc();
+  //  while ( !batch ) {
+  //    batch = cara_get_unoccupied_job_batch_desc();
+  //  }
+  //  for ( uint_fast8_t job_idx = 1; job_idx < CARBONARA_MAX_NR_JOBS_IN_A_JOB_DESC_64;
+  //      job_idx++ ) {
+  //    batch->job_func_idx[job_idx] = 0;
+  //    batch->job_flags[job_idx] = 0;
+  //  }
+  //  batch->job_func_idx[0] = jf_idx_prepare_vulkan;
+  //  batch->job_flags[0] = 0;
+  //  batch->cache_location[0] = 0;
+  //  batch->cache_pattern[0] = 0;
+  //  batch->idx_job_func_arg_group[0] = idx_job_func_arg_group;
+  //  atomic_store_explicit(&batch->progress, 0, memory_order_release);
+  //  atomic_store_explicit(&batch->preferred_core, UINT8_MAX, memory_order_release);
+  //}
+
+  //VkSurfaceKHR presentation_surface;
+  //if ( !SDL_Vulkan_CreateSurface(vulkan_n_sdl.sdl_window, vk_instance, &presentation_surface) ) {
+  //  fprintf( stderr, "[Carbonara] SDL_Vulkan_CreateSurface failed to create a vulkan surface.\n" );
+  //  fprintf( stderr, "[Carbonara] SDL_Error: %s\n", SDL_GetError() );
+  //  goto lead_quit;
+  //}
+
+  struct cara_job_batch_desc_64 * batch = cara_get_unoccupied_job_batch_desc();
+  while ( !batch ) {
+    batch = cara_get_unoccupied_job_batch_desc();
+  }
+  for ( uint_fast8_t job_idx = 1;
+      job_idx < CARBONARA_MAX_NR_JOBS_IN_A_JOB_DESC_64;
+      job_idx++ ) {
+    batch->job_func_idx[job_idx] = 0;
+    batch->job_flags[job_idx] = 0;
+  }
+  batch->job_func_idx[0] = jf_idx_start_rainbow_scene;
+  batch->job_flags[0] = 0;
+  /*
+  batch->cache_location[0] = 0;
+  batch->cache_pattern[0] = 0;
+  batch->idx_job_func_arg_group[0] = UINT16_MAX;
+  atomic_store_explicit(&batch->progress, 0, memory_order_release);
+  atomic_store_explicit(&batch->preferred_core, UINT8_MAX, memory_order_release);
+  */
+
+
+  // Assign a number bigger than 128 to sign_to_start
+  atomic_store_explicit( &cara_single.sign_to_start, ~UINT64_C(0), memory_order_release );
+
+
+  return;
+
+stop_everything_after_failure:;
+  batch = 0;
+  while ( !batch ) {
+    batch = cara_get_unoccupied_job_batch_desc();
+  }
+  for ( uint_fast8_t job_idx = 1; job_idx < CARBONARA_MAX_NR_JOBS_IN_A_JOB_DESC_64;
+      job_idx++ ) {
+    batch->job_func_idx[job_idx] = 0;
+    batch->job_flags[job_idx] = 0;
+  }
+  batch->job_func_idx[0] = jf_idx_start_kill_chain;
+  batch->job_flags[0] = 0;
+  /*
+  batch->cache_location[0] = 0;
+  batch->cache_pattern[0] = 0;
+  batch->idx_job_func_arg_group[0] = UINT16_MAX;
+  */
+  atomic_store_explicit(&batch->progress, 0, memory_order_release);
+  atomic_store_explicit(&batch->preferred_core, UINT8_MAX, memory_order_release);
+
+  struct func_call_stack_element * p_func_call_stack_element;
+  while (( p_func_call_stack_element = infos_stack_pop(
+          cara_single.foremans_quit_stack,
+          sizeof(struct func_call_stack_element)
+          ) )) {
+    if ( p_func_call_stack_element->arg ) {
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wcast-function-type-strict"
+      ( (void(*)(void*))p_func_call_stack_element->func ) ( p_func_call_stack_element->arg );
+#pragma GCC diagnostic pop
+    } else {
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wincompatible-function-pointer-types-strict"
+#pragma GCC diagnostic ignored "-Wincompatible-function-pointer-types"
+      void (*void_func) () = p_func_call_stack_element->func;
+#pragma GCC diagnostic pop
+      void_func();
+    }
+  }
+  return;
+}
+
+
+//-------------------------------------------------------------------------------------------------
+static void handle_sigsegv( int sig )
+{
+  // TODO Produce some dump in /dev/shm/carbonara.dump
+
+  signal(sig, SIG_DFL);
+  kill(getpid(), sig);
+}
+
+//-------------------------------------------------------------------------------------------------
+static void handle_sigint( int sig )
+{
+//#ifdef DEBUG_MODE
+  fprintf( stdout, "[Debug] Caught a signal (%d).\n\n", sig );
+//#endif
+  switch ( sig ) {
+    case SIGHUP:
+    case SIGINT:
+    case SIGQUIT:
+    case SIGTERM:
+      break;
+    default:
+      fprintf( stderr, "\n  Caught an *unusual* signal! (%d).\n\n", sig );
+      break;
+  }
+  struct cara_job_batch_desc_64 * batch = cara_get_unoccupied_job_batch_desc();
+  while ( !batch ) {
+    batch = cara_get_unoccupied_job_batch_desc();
+  }
+  for ( uint_fast8_t job_idx = 1; job_idx < CARBONARA_MAX_NR_JOBS_IN_A_JOB_DESC_64;
+      job_idx++ ) {
+    batch->job_func_idx[job_idx] = 0;
+    batch->job_flags[job_idx] = 0;
+  }
+  batch->job_func_idx[0] = jf_idx_start_kill_chain;
+  batch->job_flags[0] = 0;
+  /*
+  batch->cache_location[0] = 0;
+  batch->cache_pattern[0] = 0;
+  batch->idx_job_func_arg_group[0] = UINT16_MAX;
+  */
+  atomic_store_explicit(&batch->progress, 0, memory_order_release);
+  atomic_store_explicit(&batch->preferred_core, UINT8_MAX, memory_order_release);
+
+  return;
+}
+
+

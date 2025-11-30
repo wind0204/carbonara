@@ -4,6 +4,7 @@ extern/SDL
 extern/hwloc
 extern/simde
 extern/snappy-c
+assets/
 
 *.com
 *.class
@@ -22,6 +23,7 @@ cscope.in.out
 cscope.po.out
 cscope.out
 .cscope.out
+.vimspector.*
 
 # OS generated files
 .DS_Store

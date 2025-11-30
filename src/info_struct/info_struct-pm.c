@@ -1,0 +1,391 @@
+#include <stdint.h>
+#include <errno.h>
+
+#include "err_msg.h"
+#include "info_struct.h"
+
+
+//-------------------------------------------------------------------------------------------------
+enum err_msg infos_pm_init_prealloc(
+    struct infos_page_mgr * restrict p_pm,
+    uint32_t nr_pages,
+    void * restrict userdata,
+    void * (*custom_malloc)(void * userdata, size_t alignment, size_t size)
+    )
+{
+  assume( nr_pages >= 2 );
+
+  p_pm->nr_unused_pages = nr_pages;
+  p_pm->idx_last_rental_info = 0;
+  p_pm->idx_last_vacancy = 0;
+
+  constexpr size_t min_size_range_db = CACHELINE_LEN * 8;
+  constexpr size_t rental_info_node_size = min_size_range_db * 2;
+  constexpr size_t available_ranges_node_size = min_size_range_db;
+  assume( (rental_info_node_size + available_ranges_node_size) % CACHELINE_LEN == 0 );
+
+  void * (*local_malloc)(void * userdata, size_t alignment, size_t size);
+  local_malloc = custom_malloc ? custom_malloc : default_malloc;
+  void * alloc = local_malloc( userdata, ALIGN_FOR_AVX,
+      rental_info_node_size + available_ranges_node_size );
+  if ( !alloc ) {
+    return err_msg_out_of_memory;
+  }
+
+  // To just copy and paste I created one shared variable here.
+  struct infos_arr_list * restrict al;
+
+  al = &p_pm->al_rental_info;
+  auto node_size = rental_info_node_size;
+  // Copy
+  al->log2_node_size = get_log2( node_size );
+  al->log2_elem_size = 31 - _lzcnt_u32( sizeof(struct range_u32) );
+  al->log2_nr_elems = al->log2_node_size - al->log2_elem_size;
+  al->list.head.data = alloc;
+  infos_take_care_of_linked_list_after_putting_head( &al->list );
+
+  alloc = alloc + rental_info_node_size;
+  al = &p_pm->al_vacancies;
+  node_size = available_ranges_node_size;
+  // Paste
+  al->log2_node_size = get_log2( node_size );
+  al->log2_elem_size = 31 - _lzcnt_u32( sizeof(struct range_u32) );
+  al->log2_nr_elems = al->log2_node_size - al->log2_elem_size;
+  al->list.head.data = alloc;
+  infos_take_care_of_linked_list_after_putting_head( &al->list );
+
+  struct range_u32 * first_rental_info;
+  first_rental_info = infos_al_get_elem(&p_pm->al_rental_info, 0);
+  first_rental_info->start = -7;
+  first_rental_info->stop = 7;
+  assume( first_rental_info->start > first_rental_info->stop );
+
+  struct range_u32 * first_available_range;
+  first_available_range = infos_al_get_elem(&p_pm->al_vacancies, 0);
+  first_available_range->start = 0;
+  first_available_range->stop = nr_pages - 1;
+
+  return 0;
+}
+
+
+//-------------------------------------------------------------------------------------------------
+void infos_pm_destroy( struct infos_page_mgr * manager,
+    void * restrict userdata,
+    void (*custom_free)(void * restrict userdata, void * restrict ptr)
+    )
+{
+  infos_al_destroy_except_preallocated_struct(&manager->al_rental_info, userdata, custom_free);
+  infos_al_destroy_except_preallocated_struct(&manager->al_vacancies, userdata, custom_free);
+}
+
+
+//-------------------------------------------------------------------------------------------------
+struct range_u32 * infos_pm_rent( struct infos_page_mgr * restrict pm,
+    void * restrict userdata,
+    void * (*custom_malloc)(void * userdata, size_t alignment, size_t size),
+    uint32_t nr_seq_pages_needed,
+    bool take_from_left
+    )
+{
+  uint64_t nr_elems = UINT64_C(1) << pm->al_vacancies.log2_nr_elems;
+  uint64_t base_vidx = 0;
+  struct infos_singly_linked_list_node * restrict v_node = &pm->al_vacancies.list.head;
+  do {  // while ( v_node );
+    for ( uint_fast32_t vacancy_idx = 0; vacancy_idx < nr_elems; vacancy_idx++ ) {
+      if ( base_vidx + vacancy_idx > pm->idx_last_vacancy ) {
+        // Couldn't find a vacancy
+        errno = ENOBUFS;
+        return nullptr;
+      }
+
+      struct range_u32 * restrict vacancy = v_node->data + vacancy_idx * sizeof(*vacancy);
+      // Is it an invalid one?
+      if ( vacancy->start > vacancy->stop ) {
+        continue;
+      }
+
+      if ( _length_of_range(vacancy) >= nr_seq_pages_needed ) {
+        // Register the rental_info
+        nr_elems = UINT64_C(1) << pm->al_rental_info.log2_nr_elems;
+        struct infos_singly_linked_list_node * restrict r_node;
+        r_node = &pm->al_rental_info.list.head;
+        uint64_t base_ridx = 0;
+        do {  // while ( r_node );
+          for ( uint_fast32_t rent_idx = 0; rent_idx < nr_elems; rent_idx++ ) {
+            struct range_u32 * restrict rental;
+            rental = r_node->data + rent_idx * sizeof(*rental);
+            if ( base_ridx + rent_idx > pm->idx_last_rental_info ) {
+              pm->idx_last_rental_info = base_ridx + rent_idx;
+              goto take_and_return;
+            }
+            if ( rental->stop < rental->start ) {
+              // Take the empty element; and return;
+take_and_return:
+              if ( take_from_left ) {
+                rental->stop = vacancy->start + nr_seq_pages_needed - 1;
+                rental->start = vacancy->start;
+              } else {
+                rental->start = vacancy->stop - nr_seq_pages_needed + 1;
+                rental->stop = vacancy->stop;
+              }
+              // XXX Compiler should optimize this line and just use nr_seq_pages_needed
+              pm->nr_unused_pages -= _length_of_range(rental);
+
+              // Reduce the size of vacancy
+              if ( take_from_left )
+                vacancy->start = vacancy->start + nr_seq_pages_needed;
+              else
+                vacancy->stop = vacancy->stop - nr_seq_pages_needed;
+
+              if ( _length_of_range(vacancy) == 0 ) {
+                vacancy->start = -7;
+                vacancy->stop = 7;
+                if ( base_vidx + vacancy_idx == pm->idx_last_vacancy ) {
+                  if ( pm->idx_last_vacancy > 0 ) {
+                    pm->idx_last_vacancy--;
+                  }
+                }
+              }
+
+              return rental;
+            }
+          }
+
+          r_node = r_node->next;
+          base_ridx += UINT64_C(1) << pm->al_rental_info.log2_nr_elems;
+        } while ( r_node );
+
+        // Grow the infos_arr_list and register one
+        uint_fast8_t err = infos_al_grow( &pm->al_rental_info, userdata, custom_malloc, 1, 0 );
+        if ( err ) {
+          switch ( err ) {
+            case err_msg_out_of_memory:
+              errno = ENOMEM;
+              break;
+            default:
+          }
+          return nullptr;
+        }
+        r_node = infos_ll_get_last_node(&pm->al_rental_info.list.head);
+        pm->idx_last_rental_info = base_ridx;
+        struct range_u32 * restrict rental = r_node->data;
+        if ( take_from_left ) {
+          rental->stop = vacancy->start + nr_seq_pages_needed - 1;
+          rental->start = vacancy->start;
+        } else {
+          rental->start = vacancy->stop - nr_seq_pages_needed + 1;
+          rental->stop = vacancy->stop;
+        }
+        // XXX Compiler should optimize this line and just use nr_seq_pages_needed
+        pm->nr_unused_pages -= _length_of_range(rental);
+
+        // Reduce the size of vacancy
+        if ( take_from_left )
+          vacancy->start = vacancy->start + nr_seq_pages_needed;
+        else
+          vacancy->stop = vacancy->stop - nr_seq_pages_needed;
+
+        if ( _length_of_range(vacancy) == 0 ) {
+          vacancy->start = -7;
+          vacancy->stop = 7;
+          if ( base_vidx + vacancy_idx == pm->idx_last_vacancy ) {
+            if ( pm->idx_last_vacancy > 0 ) {
+              pm->idx_last_vacancy--;
+            }
+          }
+        }
+
+        return rental;
+      }
+    }
+
+    v_node = v_node->next;
+    base_vidx += UINT64_C(1) << pm->al_vacancies.log2_nr_elems;
+  } while (v_node);
+
+  // Couldn't find a vacancy.
+  errno = ENOBUFS;
+  return nullptr;
+}
+
+
+//-------------------------------------------------------------------------------------------------
+enum err_msg infos_pm_return( struct infos_page_mgr * restrict pm,
+    void * restrict userdata,
+    void * (*custom_malloc)(void * userdata, size_t alignment, size_t size),
+    uint32_t head_idx
+    )
+{
+  struct infos_singly_linked_list_node * restrict r_node = &pm->al_rental_info.list.head;
+  uint64_t nr_elems = UINT64_C(1) << pm->al_rental_info.log2_nr_elems;
+  uint64_t base_ridx = 0;
+  do {  // while ( r_node );
+    for ( uint_fast32_t rent_idx = 0; rent_idx < nr_elems; rent_idx++ ) {
+      struct range_u32 * restrict rental_info;
+      rental_info = r_node->data + rent_idx * sizeof(*rental_info);
+      if ( base_ridx + rent_idx > pm->idx_last_rental_info ) {
+        return err_msg_no_such_entry;
+      }
+
+      // Skip if it's empty.
+      if ( rental_info->start > rental_info->stop ) {
+        continue;
+      }
+
+      // We found a match?
+      if ( rental_info->start == head_idx ) {
+        // Make a vacancy and merge if possible
+        nr_elems = UINT64_C(1) << pm->al_vacancies.log2_nr_elems;
+        struct infos_singly_linked_list_node * restrict v_node;
+        v_node = &pm->al_vacancies.list.head;
+        struct range_u32 * restrict vacancy_to_merge_with = nullptr;
+        uint64_t base_vidx = 0;
+        do {
+          for ( uint_fast32_t vacancy_idx = 0; vacancy_idx < nr_elems; vacancy_idx++ ) {
+            if ( base_vidx + vacancy_idx > pm->idx_last_vacancy ) {
+              goto no_existing_range_to_merge;
+            }
+
+            struct range_u32 * restrict vacancy = v_node->data + vacancy_idx * sizeof(*vacancy);
+
+            // Skip if it's empty.
+            if ( vacancy->start > vacancy->stop ) {
+              continue;
+            }
+
+            // Some messy code from a long time ago
+            if ( !vacancy_to_merge_with ) {
+              if ( vacancy->stop == head_idx - 1 ) {
+                _merge_range_into_lower(vacancy, rental_info);
+                vacancy_to_merge_with = vacancy;
+              } else if ( vacancy->start == rental_info->stop + 1 ) {
+                _merge_range_into_higher(rental_info, vacancy);
+                vacancy_to_merge_with = vacancy;
+              }
+            } else {
+              if ( vacancy->stop == vacancy_to_merge_with->start - 1 ) {
+                _merge_range_into_lower(vacancy, vacancy_to_merge_with);
+                vacancy_to_merge_with = 0;
+              } else if ( vacancy->start == vacancy_to_merge_with->stop + 1 ) {
+                _merge_range_into_higher(vacancy_to_merge_with, vacancy);
+                vacancy_to_merge_with = 0;
+              }
+
+              if ( vacancy_to_merge_with == 0 ) {
+mark_empty_and_return:
+                pm->nr_unused_pages -= _length_of_range(rental_info);
+
+                // Mark the element empty.
+                rental_info->start = -7;
+                rental_info->stop = 7;
+                if ( base_ridx + rent_idx == pm->idx_last_rental_info &&
+                    pm->idx_last_rental_info > 0 ) {
+                  pm->idx_last_rental_info--;
+                }
+                return 0;
+              }
+            }
+
+            if ( base_vidx + vacancy_idx == pm->idx_last_vacancy ) {
+              goto mark_empty_and_return;
+            }
+          }
+          v_node = v_node->next;
+          base_vidx += UINT64_C(1) << pm->al_vacancies.log2_nr_elems;
+        } while ( v_node );
+
+no_existing_range_to_merge:
+        // Couldn't merge into any existing vacancy
+
+        // Register a new one
+        nr_elems = UINT64_C(1) << pm->al_vacancies.log2_nr_elems;
+        v_node = &pm->al_vacancies.list.head;
+        struct range_u32 * restrict vacancy;
+        base_vidx = 0;
+        do {
+          for ( uint_fast32_t vacancy_idx = 0; vacancy_idx < nr_elems; vacancy_idx++ ) {
+            if ( base_vidx + vacancy_idx == pm->idx_last_vacancy ) {
+              if ( vacancy_idx + 1 == nr_elems ) {
+                break;
+              } else {
+                vacancy_idx++;
+                vacancy = v_node->data + vacancy_idx * sizeof(*vacancy);
+                goto populate_new_vacancy;
+              }
+            }
+
+            vacancy = v_node->data + vacancy_idx * sizeof(*vacancy);
+            if ( vacancy->stop < vacancy->start ) {
+              vacancy->start = rental_info->start;
+              vacancy->stop = rental_info->stop;
+              pm->nr_unused_pages -= _length_of_range(rental_info);
+
+              // Mark the element empty.
+              rental_info->start = -7;
+              rental_info->stop = 7;
+              if ( base_ridx + rent_idx == pm->idx_last_rental_info &&
+                  pm->idx_last_rental_info > 0 ) {
+                pm->idx_last_rental_info--;
+              }
+              return 0;
+            }
+          }
+
+          v_node = v_node->next;
+          base_vidx += UINT64_C(1) << pm->al_vacancies.log2_nr_elems;
+          if ( v_node && base_vidx >= pm->idx_last_vacancy ) {
+            vacancy = v_node->data;
+            if ( base_vidx == pm->idx_last_vacancy ) {
+              vacancy++;
+            }
+populate_new_vacancy:
+            vacancy->start = rental_info->start;
+            vacancy->stop = rental_info->stop;
+            pm->idx_last_vacancy++;
+            pm->nr_unused_pages -= _length_of_range(rental_info);
+
+            // Mark the element empty.
+            rental_info->start = -7;
+            rental_info->stop = 7;
+            if ( base_ridx + rent_idx == pm->idx_last_rental_info &&
+                pm->idx_last_rental_info > 0 ) {
+              pm->idx_last_rental_info--;
+            }
+            return 0;
+          }
+        } while ( v_node );
+
+        // Grow the linked array
+        uint_fast8_t err = infos_al_grow( &pm->al_vacancies, userdata, custom_malloc, 1, 0 );
+        if ( err ) {
+          return err_msg_out_of_memory;
+        }
+        pm->nr_unused_pages -= UINT64_C(1) <<  pm->al_vacancies.log2_node_size;
+        v_node = infos_ll_get_last_node(&pm->al_vacancies.list.head);
+        pm->idx_last_vacancy++;
+        vacancy = v_node->data;
+        vacancy->start = rental_info->start;
+        vacancy->stop = rental_info->stop;
+
+        pm->nr_unused_pages -= _length_of_range(rental_info);
+
+        // Mark the element empty.
+        rental_info->start = -7;
+        rental_info->stop = 7;
+        if ( base_ridx + rent_idx == pm->idx_last_rental_info &&
+            pm->idx_last_rental_info > 0 ) {
+          pm->idx_last_rental_info--;
+        }
+        return 0;
+      }
+
+      // Did not find a match, check the next array
+    }
+    r_node = r_node->next;
+    base_ridx += UINT64_C(1) << pm->al_rental_info.log2_nr_elems;
+
+  } while ( r_node );
+
+  return err_msg_no_such_entry;
+}
