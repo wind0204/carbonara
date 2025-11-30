@@ -1,0 +1,52 @@
+build-*/
+build/
+extern/SDL
+extern/hwloc
+extern/simde
+extern/snappy-c
+
+*.com
+*.class
+*.dll
+*.exe
+*.[ao]
+*.so
+*.out
+
+# for the developer's tools
+compile_commands.json
+.clangd/
+.cache/
+valgrind.supp
+cscope.in.out
+cscope.po.out
+cscope.out
+.cscope.out
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# for Vim
+*~
+*.sw[nop]
+*.orig
+
+# for Visual Studio Code
+.vscode
+
+# For profilers
+*.spall
+
+# For sdlwiki
+Undocumented.md
+
+# etc.
+.cache
+todos.txt
+vk_layer_settings.txt
