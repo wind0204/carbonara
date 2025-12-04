@@ -26,7 +26,7 @@ enum cara_signs_born : uint64_t {
   csb_origin = 0,
   csb_data_transfer_done,
   csb_acquire_swapchain_img_done,
-  csb_test_1,
+  csb_rast_done,
   csb_present_swapchain_img,
 };
 
@@ -45,7 +45,7 @@ union vk_page {  // TODO Do we really need a union here?
 /**
  * \brief VkCommandPool, VkCommandBuffer, VkFramebuffer, VkImageView, VkImage
  */
-struct vk_framebuf {
+struct vk_frame_info {
   VkCommandPool * arr_cmd_pools;  ///< The number of the entries in the array is equal to
                                       ///<  1+[the number of workers]
                                       ///< Command pools cannot be accessed at the same time from
@@ -58,9 +58,7 @@ struct vk_framebuf {
   static_assert( alignof(void*) >= alignof(VkCommandBuffer), "Sort the struct members!" );
   VkCommandBuffer primary_cmd_buf; ///< A primary cmd buffer coming from the last entry
                                           ///< in arr_cmd_pools
-  static_assert( alignof(VkCommandBuffer) >= alignof(VkFramebuffer), "Sort the struct members!" );
-  VkFramebuffer framebuffer;
-  static_assert( alignof(VkFramebuffer) >= alignof(VkImageView), "Sort the struct members!" );
+  static_assert( alignof(VkCommandBuffer) >= alignof(VkImageView), "Sort the struct members!" );
   VkImageView iv_z_buf;
   static_assert( alignof(VkImageView) >= alignof(VkImage), "Sort the struct members!" );
   VkImage z_buf;
@@ -94,7 +92,7 @@ struct cara_vk_single {
   char * stone_texture;
   char * sand_texture;
   SDL_Window * window;
-  VkImage * arr_swapchain_images;
+  VkImage * arr_swapchain_imgs;
   static_assert( alignof(void*) >= alignof(struct ma_vk_mem_mgr),
       "Sort the struct members!" );
   struct ma_vk_mem_mgr vmm;
@@ -107,8 +105,22 @@ struct cara_vk_single {
   // operations. We can bind images to pipelines via descriptor sets and use them as textures
   // (similarly to OpenGL). We can render into images, in which case we use images as color or depth
   // attachments (render targets).
+
   VkImage vki_8_2048_tex;  // 8-layer image of 2048*2048
-  VkImageView vkiv_8_2048_tex;
+  VkImage vki_main_render_tgt;  // TODO
+  VkImage vki_depth;  // TODO
+  VkImageView iv_8_2048_tex;
+  VkImageView iv_main_render_tgt;  // TODO
+  VkImageView iv_depth;  // TODO
+  VkImageView iv_swapchain_img;  // TODO
+  VkSampler sampler_8_2048_tex;
+  VkDescriptorSetLayout dsl_first;
+  VkDescriptorPool dp_first;
+  VkDescriptorSet ds_first;
+  VkPipelineLayout pipeline_layout;
+  VkRenderPass render_pass;
+  VkFramebuffer framebuffer;
+
   VkSurfaceKHR presentation_surface;
   VkSemaphore main_semaphore_before_A;  // a timeline swapchain
   VkSemaphore main_semaphore_after_A;   // a timeline swapchain
@@ -120,10 +132,10 @@ struct cara_vk_single {
                        ///< pointing to.
   VkQueue compute_q;   ///< WARNING It can point to the same queue transfer_q or graphics_q is
                        ///< pointing to.
-  static_assert( alignof(VkQueue) >= alignof(struct vk_framebuf),
+  static_assert( alignof(VkQueue) >= alignof(struct vk_frame_info),
       "Sort the struct members!" );
-  struct vk_framebuf arr_framebufs[cara_nr_cmd_centers];
-  static_assert( alignof(struct vk_framebuf) >= alignof(struct vk_transfer_buf),
+  struct vk_frame_info arr_frame_infos[cara_nr_cmd_centers];
+  static_assert( alignof(struct vk_frame_info) >= alignof(struct vk_transfer_buf),
       "Sort the struct members!" );
   struct vk_transfer_buf trans_bufs;
   static_assert( alignof(struct vk_transfer_buf) >= alignof(VkDevice),
@@ -135,13 +147,15 @@ struct cara_vk_single {
   static_assert( alignof(shared_lib) >= alignof(VkAllocationCallbacks),
       "Sort the struct members!" );
   VkAllocationCallbacks vk_alloc_callbacks;  // XXX Keep it here instead of in cara_engine?
-  static_assert( alignof(VkAllocationCallbacks) >= alignof(VkExtent2D),
-      "Sort the struct members!" );
-  VkExtent2D size_of_vk_images;  // #VkExtent2D is 32-bit aligned
+  static_assert( alignof(VkAllocationCallbacks) >= alignof(VkFormat), "Sort the struct members!" );
+  VkFormat color_att_format;  // 32-bit aligned
+  static_assert( alignof(VkFormat) >= alignof(VkExtent2D), "Sort the struct members!" );
+  VkExtent2D dims_swapchain_imgs;  // VkExtent2D is 32-bit aligned
   static_assert( alignof(VkExtent2D) >= alignof(uint32_t), "Sort the struct members!" );
   uint32_t graphics_q_fam_idx;  // I guess I need this for memory barriers
   uint32_t trans_q_fam_idx;
   uint32_t compute_q_fam_idx;
+  float max_anisotropy;
   atomic_uint_least8_t tmp_var_ready;
   uint8_t nr_vk_img;
   uint8_t texture_format_chosen; // either texture_format_astc or texture_format_s3tc
@@ -151,10 +165,11 @@ struct cara_vk_single {
 extern struct cara_vk_single cara_vk;
 
 
-constexpr size_t cara_max_nr_subpasses = 2;
-enum subpass : unsigned char {
-  subpass_vertex = 1,
-  subpass_fragment,
+enum cara_subpass : unsigned char {
+  cs_depth_prepass = 0,
+  cs_main_render_pass,
+  cs_copy_to_swapchain_img,
+  cara_max_nr_subpasses
 };
 
 
@@ -163,7 +178,7 @@ __attribute__((always_inline))
 static inline VkCommandBuffer * cara_get_arr_cmd_buf_for_graphics(
     uint_fast8_t nr_workers, uint_fast8_t fb_idx )
 {
-  const VkCommandPool * first_pool = cara_vk.arr_framebufs[0].arr_cmd_pools;
+  const VkCommandPool * first_pool = cara_vk.arr_frame_infos[0].arr_cmd_pools;
 
   VkCommandBuffer * ret;
   ret = (void*)( first_pool + ( 1 + nr_workers ) * cara_nr_cmd_centers );

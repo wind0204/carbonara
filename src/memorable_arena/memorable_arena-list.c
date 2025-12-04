@@ -1,4 +1,4 @@
-#include "info_struct.h"
+#include <malloc.h>
 #include <stdatomic.h>
 #include <sys/mman.h>
 #include <errno.h>
@@ -50,6 +50,11 @@ enum err_msg ma_init_arena(
 
   p_arena->head = 0;
   p_arena->tail = 0;
+
+  mallopt( M_MMAP_THRESHOLD, 1024 * 1024 * 32 );
+#if !defined( ARE_WE_SHIPPING_IT )
+  mallopt( M_CHECK_ACTION, 0b11 );
+#endif
 
   uint_fast16_t nr_added_pools = ma_add_sub_arena( proc_info, p_arena, sub_arena_len, 1 );
   if ( !nr_added_pools ) {

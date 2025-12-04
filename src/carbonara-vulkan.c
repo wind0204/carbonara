@@ -61,6 +61,8 @@ static const char * const names_device_extensions_required[] = {
                                             //  logical device
 
   //VK_KHR_MAINTENANCE1_EXTENSION_NAME,  // For various stuff https://docs.vulkan.org/refpages/latest/refpages/source/VK_KHR_maintenance1.html
+  VK_KHR_MAINTENANCE_8_EXTENSION_NAME,  // To make src/dst sync scopes to work when doing queue
+                                        //  family ownership transfers.
 };
 
 static constexpr unsigned int test_width = 1600;
@@ -422,15 +424,27 @@ uint8_t init_vulkan(
     memset( &arr_device_props[idx_phys_dev], 0, _sizeof_arr_elem(arr_device_props) );
     arr_device_props[idx_phys_dev].sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
 
-    VkPhysicalDeviceTimelineSemaphoreFeatures timeline_semaphore_features;
-    timeline_semaphore_features.sType =
-      VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TIMELINE_SEMAPHORE_FEATURES;
-    timeline_semaphore_features.pNext = nullptr;
+    VkPhysicalDeviceVulkan12Features vk12_features = {0};
+    vk12_features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
+    vk12_features.pNext = nullptr;
+    VkPhysicalDeviceVulkan13Features vk13_features = {0};
+    vk13_features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;
+    vk13_features.pNext = &vk12_features;
+
+    // pNext chain includes a VkPhysicalDeviceVulkan12Features structure, then it must not include a
+    //  VkPhysicalDeviceTimelineSemaphoreFeatures structure. The features in
+    //  VkPhysicalDeviceTimelineSemaphoreFeatures were promoted in Vulkan 1.2 and is also found in
+    //  VkPhysicalDeviceVulkan12Features.  To prevent one feature setting something to VK_TRUE and
+    //  the other to VK_FALSE, only one struct containing the feature is allowed.
+    //VkPhysicalDeviceTimelineSemaphoreFeatures timeline_semaphore_features;
+    //timeline_semaphore_features.sType =
+    //  VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TIMELINE_SEMAPHORE_FEATURES;
+    //timeline_semaphore_features.pNext = &vk13_features;
 
     VkPhysicalDeviceFeatures2 device_features;
     memset(&device_features, 0, sizeof(device_features));
     device_features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
-    device_features.pNext = &timeline_semaphore_features;
+    device_features.pNext = &vk13_features;
     // The VkPhysicalDeviceFeatures structure lists additional features that may be supported by
     // the given hardware, but are not required by the core Vulkan specification. Features include
     // items such as geometry and tessellation shaders, depth clamp and bias, multiple viewports,
@@ -455,11 +469,61 @@ uint8_t init_vulkan(
     // query for the available features and provide the acquired data during logical device
     // creation.
     vkGetPhysicalDeviceFeatures2( arr_phys_devices[idx_phys_dev], &device_features );
-    if ( !timeline_semaphore_features.timelineSemaphore ) {
+    if ( !device_features.features.samplerAnisotropy ) {
+#ifdef DEBUG_MODE
+      fprintf( stdout, "[Vulkan] %s doesn't support %s.\n",
+          arr_device_props[idx_phys_dev].properties.deviceName,
+          "samplerAnisotropy"
+          );
+#endif
+      arr_phys_devices[idx_phys_dev] = 0;
+      continue;
+    }
+    if ( !vk12_features.timelineSemaphore ) {
 #ifdef DEBUG_MODE
       fprintf( stdout, "[Vulkan] %s doesn't support %s.\n",
           arr_device_props[idx_phys_dev].properties.deviceName,
           "timelineSemaphore"
+          );
+#endif
+      arr_phys_devices[idx_phys_dev] = 0;
+      continue;
+    }
+    if ( !vk12_features.drawIndirectCount ) {
+#ifdef DEBUG_MODE
+      fprintf( stdout, "[Vulkan] %s doesn't support %s.\n",
+          arr_device_props[idx_phys_dev].properties.deviceName,
+          "drawIndirectCount"
+          );
+#endif
+      arr_phys_devices[idx_phys_dev] = 0;
+      continue;
+    }
+    if ( !vk12_features.imagelessFramebuffer ) {
+#ifdef DEBUG_MODE
+      fprintf( stdout, "[Vulkan] %s doesn't support %s.\n",
+          arr_device_props[idx_phys_dev].properties.deviceName,
+          "imagelessFramebuffer"
+          );
+#endif
+      arr_phys_devices[idx_phys_dev] = 0;
+      continue;
+    }
+    if ( !vk12_features.separateDepthStencilLayouts ) {
+#ifdef DEBUG_MODE
+      fprintf( stdout, "[Vulkan] %s doesn't support %s.\n",
+          arr_device_props[idx_phys_dev].properties.deviceName,
+          "separateDepthStencilLayouts"
+          );
+#endif
+      arr_phys_devices[idx_phys_dev] = 0;
+      continue;
+    }
+    if ( !vk13_features.synchronization2 ) {
+#ifdef DEBUG_MODE
+      fprintf( stdout, "[Vulkan] %s doesn't support %s.\n",
+          arr_device_props[idx_phys_dev].properties.deviceName,
+          "synchronization2"
           );
 #endif
       arr_phys_devices[idx_phys_dev] = 0;
@@ -1003,24 +1067,36 @@ error_after_window_early:
   VkPhysicalDeviceFeatures2 device_features = {0};
   device_features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
 
+  VkPhysicalDeviceVulkan12Features vk12_features = {0};
+  vk12_features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
+  vk12_features.pNext = nullptr;
+  vk12_features.timelineSemaphore = VK_TRUE;
+  vk12_features.drawIndirectCount = VK_TRUE;
+  vk12_features.imagelessFramebuffer = VK_TRUE;
+  vk12_features.separateDepthStencilLayouts = VK_TRUE;
   VkPhysicalDeviceVulkan13Features vk13_features = {0};
   vk13_features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;
-  vk13_features.pNext = nullptr;
+  vk13_features.pNext = &vk12_features;
   vk13_features.synchronization2 = VK_TRUE;
   vk13_features.robustImageAccess = VK_FALSE;   // I make it clear that I do not use it.
                                                 // I redundantly zero it once again.
 
-  VkPhysicalDeviceTimelineSemaphoreFeatures timeline_semaphore_features = {0};
-  timeline_semaphore_features.sType =
-    VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TIMELINE_SEMAPHORE_FEATURES;
-  timeline_semaphore_features.pNext = &vk13_features;
-  timeline_semaphore_features.timelineSemaphore = VK_TRUE;
+  // pNext chain includes a VkPhysicalDeviceVulkan12Features structure, then it must not include a
+  //  VkPhysicalDeviceTimelineSemaphoreFeatures structure. The features in
+  //  VkPhysicalDeviceTimelineSemaphoreFeatures were promoted in Vulkan 1.2 and is also found in
+  //  VkPhysicalDeviceVulkan12Features.  To prevent one feature setting something to VK_TRUE and the
+  //  other to VK_FALSE, only one struct containing the feature is allowed.
+  //VkPhysicalDeviceTimelineSemaphoreFeatures timeline_semaphore_features = {0};
+  //timeline_semaphore_features.sType =
+  //  VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TIMELINE_SEMAPHORE_FEATURES;
+  //timeline_semaphore_features.pNext = &vk13_features;
+  //timeline_semaphore_features.timelineSemaphore = VK_TRUE;
 
-  device_features.pNext = &timeline_semaphore_features;
-  device_features.features.multiDrawIndirect = VK_TRUE;
-  //device_features.features.geometryShader = VK_TRUE;
+  device_features.pNext = &vk13_features;
+  //device_features.features.multiDrawIndirect = VK_TRUE;
   device_features.features.robustBufferAccess = VK_FALSE;  // I make it clear that I do not use it.
                                                            // I redundantly zero it once again.
+  device_features.features.samplerAnisotropy = VK_TRUE;
 
   const VkDeviceCreateInfo device_create_info = {
     VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,   // VkStructureType                  sType
@@ -1247,10 +1323,10 @@ error_after_window_early:
 
 
   constexpr VkFormat desired_img_formats_for_present[] = {
-    VK_FORMAT_B8G8R8_SRGB,
-    VK_FORMAT_R8G8B8_SRGB,
-    VK_FORMAT_B8G8R8A8_SRGB,
     VK_FORMAT_R8G8B8A8_SRGB,
+    VK_FORMAT_B8G8R8A8_SRGB,
+    VK_FORMAT_R8G8B8_SRGB,
+    VK_FORMAT_B8G8R8_SRGB,
   };
   constexpr VkColorSpaceKHR desired_color_spaces[] = {
     VK_COLOR_SPACE_SRGB_NONLINEAR_KHR,
@@ -1347,6 +1423,7 @@ error_after_window_early:
     fprintf( stderr, "[Vulkan] Could not create a swapchain.\n" );
     goto error_after_logical_device;
   }
+  cara_vk.color_att_format = present_img_format;
 
 
   result = vkGetSwapchainImagesKHR( new_log_dev, swapchain, &nr_vk_imgs, nullptr );
@@ -1376,7 +1453,7 @@ error_after_window_early:
   //
 
   // Prepare graphics command buffers
-  cara_vk.arr_framebufs[0].arr_cmd_pools =
+  cara_vk.arr_frame_infos[0].arr_cmd_pools =
     cara_malloc( &worker_state->malloc_helper,
       alignof(VkCommandPool),
       cara_nr_cmd_centers * (
@@ -1384,7 +1461,7 @@ error_after_window_early:
         sizeof(VkCommandBuffer) *
         (cara_max_nr_subpasses * cara_single.proc_map->nr_processors) )
       );
-  memset( cara_vk.arr_framebufs[0].arr_cmd_pools,
+  memset( cara_vk.arr_frame_infos[0].arr_cmd_pools,
       0,
       cara_nr_cmd_centers * (
         sizeof(VkCommandPool) * (1 + cara_single.proc_map->nr_processors) +
@@ -1393,8 +1470,8 @@ error_after_window_early:
       );
   for ( unsigned int cmd_center_idx = 1;
       cmd_center_idx < cara_nr_cmd_centers; cmd_center_idx++ ) {
-    cara_vk.arr_framebufs[cmd_center_idx].arr_cmd_pools =
-      cara_vk.arr_framebufs[cmd_center_idx-1].arr_cmd_pools +
+    cara_vk.arr_frame_infos[cmd_center_idx].arr_cmd_pools =
+      cara_vk.arr_frame_infos[cmd_center_idx-1].arr_cmd_pools +
       1 + cara_single.proc_map->nr_processors;
   }
   static_assert( alignof(VkCommandPool) >= alignof(VkCommandBuffer),
@@ -1442,7 +1519,7 @@ error_after_window_early:
           new_log_dev,
           &cmd_pool_create_info,
           &cara_vk.vk_alloc_callbacks,
-          &cara_vk.arr_framebufs[fb_idx].arr_cmd_pools[worker_idx]
+          &cara_vk.arr_frame_infos[fb_idx].arr_cmd_pools[worker_idx]
           );
       if ( result != VK_SUCCESS ) {
         fprintf( stderr, "[Vulkan] Could not prepare a Vulkan command pool for graphics commands. "
@@ -1451,7 +1528,7 @@ error_after_window_early:
       }
 
       cmd_buf_alloc_info.commandPool =
-        cara_vk.arr_framebufs[fb_idx].arr_cmd_pools[worker_idx];
+        cara_vk.arr_frame_infos[fb_idx].arr_cmd_pools[worker_idx];
       result = vkAllocateCommandBuffers(
           new_log_dev,
           &cmd_buf_alloc_info,
@@ -1483,7 +1560,7 @@ error_after_window_early:
         new_log_dev,
         &cmd_pool_create_info,
         &cara_vk.vk_alloc_callbacks,
-        &cara_vk.arr_framebufs[fb_idx].arr_cmd_pools[cara_single.proc_map->nr_processors]
+        &cara_vk.arr_frame_infos[fb_idx].arr_cmd_pools[cara_single.proc_map->nr_processors]
         );
     if ( result != VK_SUCCESS ) {
       fprintf( stderr, "[Vulkan] Could not prepare a Vulkan command pool. (%s)\n",
@@ -1494,12 +1571,12 @@ error_after_window_early:
     cmd_buf_alloc_info.commandBufferCount = 1;
     cmd_buf_alloc_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
     cmd_buf_alloc_info.commandPool =
-      cara_vk.arr_framebufs[fb_idx].arr_cmd_pools[cara_single.proc_map->nr_processors];
+      cara_vk.arr_frame_infos[fb_idx].arr_cmd_pools[cara_single.proc_map->nr_processors];
 
     result = vkAllocateCommandBuffers(
         new_log_dev,
         &cmd_buf_alloc_info,
-        &cara_vk.arr_framebufs[fb_idx].primary_cmd_buf
+        &cara_vk.arr_frame_infos[fb_idx].primary_cmd_buf
         );
     cmd_buf_alloc_info.commandBufferCount = cara_max_nr_subpasses;
     cmd_buf_alloc_info.level = VK_COMMAND_BUFFER_LEVEL_SECONDARY;
@@ -1512,7 +1589,7 @@ error_after_window_early:
 #ifdef DEBUG_MODE
     fprintf( stderr, "[Vulkan-Debug] GP fb_idx=%u new_cmd_buf=%#018lx\n",
         fb_idx,
-        ptr2ui(cara_vk.arr_framebufs[fb_idx].primary_cmd_buf) ); 
+        ptr2ui(cara_vk.arr_frame_infos[fb_idx].primary_cmd_buf) ); 
 #endif
 
   }
@@ -1675,13 +1752,15 @@ error_after_window_early:
   vkGetPhysicalDeviceMemoryProperties2(
       arr_phys_devices[idx_phys_deviced_picked], &memory_properties );
   if ( ma_init_vk_mem_mgr(&cara_vk.vmm, &memory_properties,
-        arr_device_props[idx_phys_deviced_picked].properties.limits.bufferImageGranularity,
+        &arr_device_props[idx_phys_deviced_picked].properties.limits,
         &worker_state->malloc_helper, cara_malloc) != err_msg_no_error ) {
     cara_vk.vmm.arr_sizes = nullptr;
     goto error_after_swapchain_images;
   }
-  assume( _is_power_of_two(
-        arr_device_props[idx_phys_deviced_picked].properties.limits.bufferImageGranularity) );
+
+  cara_vk.max_anisotropy = min(
+      arr_device_props[idx_phys_deviced_picked].properties.limits.maxSamplerAnisotropy, 8.0f );
+
 
 
   //
@@ -1704,7 +1783,7 @@ error_after_window_early:
     VK_FORMAT_ASTC_10x5_UNORM_BLOCK,
     VK_FORMAT_ASTC_10x10_UNORM_BLOCK,
   };
-  uint8_t all_formats_are_supported = 1;
+  bool all_formats_are_supported = true;
 #ifdef DEBUG_MODE
   fprintf( stdout,
       "[Vulkan] Checking supported texture decoders for ASTC format on the device...\n" );
@@ -1721,16 +1800,17 @@ error_after_window_early:
         );
     if ( !(format_props.formatProperties.optimalTilingFeatures &
           VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT) ) {
-      all_formats_are_supported = 0;
+      all_formats_are_supported = false;
     }
 #ifdef TEXTURE_BILINEAR_FILTERING
     if ( !(format_props.formatProperties.optimalTilingFeatures &
           VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT)
         ) {
-      all_formats_are_supported = 0;
+      all_formats_are_supported = false;
     }
 #endif
   }
+  all_formats_are_supported = false;
 
   if ( all_formats_are_supported ) {
     cara_vk.texture_format_chosen = texture_format_astc;
@@ -1740,17 +1820,17 @@ error_after_window_early:
         "[Vulkan] Checking supported texture decoders for S3TC(BCn) format on the device...\n" );
 #endif
     constexpr uint_fast8_t s3tc_formats_used[] = {
-      VK_FORMAT_BC1_RGB_UNORM_BLOCK,
-      VK_FORMAT_BC1_RGBA_UNORM_BLOCK,
-      VK_FORMAT_BC2_SRGB_BLOCK,
-      VK_FORMAT_BC2_UNORM_BLOCK,
-      VK_FORMAT_BC3_SRGB_BLOCK,
-      VK_FORMAT_BC3_UNORM_BLOCK,
-      VK_FORMAT_BC4_UNORM_BLOCK,
-      VK_FORMAT_BC5_UNORM_BLOCK,
-      VK_FORMAT_BC6H_UFLOAT_BLOCK,
-      VK_FORMAT_BC7_SRGB_BLOCK,
-      VK_FORMAT_BC7_UNORM_BLOCK,  // TODO This is the one that matters.
+      //VK_FORMAT_BC1_RGB_UNORM_BLOCK,
+      //VK_FORMAT_BC1_RGBA_UNORM_BLOCK,
+      //VK_FORMAT_BC2_SRGB_BLOCK,
+      //VK_FORMAT_BC2_UNORM_BLOCK,
+      //VK_FORMAT_BC3_SRGB_BLOCK,
+      //VK_FORMAT_BC3_UNORM_BLOCK,
+      //VK_FORMAT_BC4_UNORM_BLOCK,
+      //VK_FORMAT_BC5_UNORM_BLOCK,
+      //VK_FORMAT_BC6H_UFLOAT_BLOCK,
+      //VK_FORMAT_BC7_SRGB_BLOCK,
+      VK_FORMAT_BC7_UNORM_BLOCK,
     };
     all_formats_are_supported = 1;
     for ( uint_fast8_t idx_format = 0;
@@ -1829,14 +1909,14 @@ error_after_logical_device:
           idx_framebuffer < cara_nr_cmd_centers; idx_framebuffer++ ) {
         for ( uint_fast8_t worker_idx = 0;
             worker_idx <= cara_single.proc_map->nr_processors; worker_idx++ ) {
-          if ( cara_vk.arr_framebufs[idx_framebuffer].arr_cmd_pools[worker_idx] ) {
+          if ( cara_vk.arr_frame_infos[idx_framebuffer].arr_cmd_pools[worker_idx] ) {
             vkDestroyCommandPool(
                 new_log_dev,
-                cara_vk.arr_framebufs[idx_framebuffer].arr_cmd_pools[worker_idx],
+                cara_vk.arr_frame_infos[idx_framebuffer].arr_cmd_pools[worker_idx],
                 &cara_vk.vk_alloc_callbacks
                 );
 
-            cara_vk.arr_framebufs[idx_framebuffer].arr_cmd_pools[worker_idx] = 0;
+            cara_vk.arr_frame_infos[idx_framebuffer].arr_cmd_pools[worker_idx] = 0;
           }
         }
       }
@@ -1876,8 +1956,8 @@ error_after_presentation_surface:
   cara_vk.window = window;
   cara_vk.nr_vk_img = nr_vk_imgs;
   cara_vk.swapchain = swapchain;
-  cara_vk.arr_swapchain_images = arr_swapchain_images;
-  cara_vk.size_of_vk_images = image_size;
+  cara_vk.arr_swapchain_imgs = arr_swapchain_images;
+  cara_vk.dims_swapchain_imgs = image_size;
 
   ma_free(cara_single.mem_arena, worker_state->worker_info->idx_self, arr_q_create_info);
   ma_free(cara_single.mem_arena, worker_state->worker_info->idx_self, arr_qfam_props);
@@ -1908,6 +1988,52 @@ void destroy_vulkan_objects( struct ms_worker_info * worker_info )
       return;
     case VK_SUCCESS:
       break;
+  }
+
+  if ( cara_vk.framebuffer ) {
+    vkDestroyFramebuffer( cara_vk.log_dev, cara_vk.framebuffer, &cara_vk.vk_alloc_callbacks );
+    cara_vk.framebuffer = VK_NULL_HANDLE;
+  }
+
+  if ( cara_vk.render_pass ) {
+    vkDestroyRenderPass( cara_vk.log_dev, cara_vk.render_pass, &cara_vk.vk_alloc_callbacks );
+    cara_vk.render_pass = VK_NULL_HANDLE;
+  }
+
+  if ( cara_vk.pipeline_layout ) {
+    vkDestroyPipelineLayout( cara_vk.log_dev, cara_vk.pipeline_layout,
+        &cara_vk.vk_alloc_callbacks );
+    cara_vk.pipeline_layout = VK_NULL_HANDLE;
+  }
+
+  if ( cara_vk.ds_first ) {
+    vkResetDescriptorPool( cara_vk.log_dev, cara_vk.dp_first, 0 );
+    cara_vk.ds_first = VK_NULL_HANDLE;
+  }
+
+  if ( cara_vk.dp_first ) {
+    vkDestroyDescriptorPool( cara_vk.log_dev, cara_vk.dp_first, &cara_vk.vk_alloc_callbacks );
+    cara_vk.dp_first = VK_NULL_HANDLE;
+  }
+
+  if ( cara_vk.dsl_first ) {
+    vkDestroyDescriptorSetLayout( cara_vk.log_dev, cara_vk.dsl_first, &cara_vk.vk_alloc_callbacks );
+    cara_vk.dsl_first = VK_NULL_HANDLE;
+  }
+
+  if ( cara_vk.sampler_8_2048_tex ) {
+    vkDestroySampler( cara_vk.log_dev, cara_vk.sampler_8_2048_tex, &cara_vk.vk_alloc_callbacks );
+    cara_vk.sampler_8_2048_tex = VK_NULL_HANDLE;
+  }
+
+  if ( cara_vk.iv_8_2048_tex ) {
+    vkDestroyImageView( cara_vk.log_dev, cara_vk.iv_8_2048_tex, &cara_vk.vk_alloc_callbacks );
+    cara_vk.iv_8_2048_tex = VK_NULL_HANDLE;
+  }
+
+  if ( cara_vk.sampler_8_2048_tex ) {
+    vkDestroyImage( cara_vk.log_dev, cara_vk.vki_8_2048_tex, &cara_vk.vk_alloc_callbacks );
+    cara_vk.vki_8_2048_tex = VK_NULL_HANDLE;
   }
 
   if ( cara_vk.vmm.arr_idx_next_unoccupied_elem ) {
@@ -1949,16 +2075,16 @@ void destroy_vulkan_objects( struct ms_worker_info * worker_info )
         &cara_vk.vk_alloc_callbacks );
     cara_vk.swapchain = VK_NULL_HANDLE;
 
-    ma_free( cara_single.mem_arena, worker_info->idx_self, cara_vk.arr_swapchain_images );
-    cara_vk.arr_swapchain_images = nullptr;
+    ma_free( cara_single.mem_arena, worker_info->idx_self, cara_vk.arr_swapchain_imgs );
+    cara_vk.arr_swapchain_imgs = nullptr;
   }
 
   if ( cara_vk.trans_bufs.arr_cmd_pools ) {
     for ( uint_fast8_t idx_command_pool = 0;
         idx_command_pool <= cara_single.proc_map->nr_processors; idx_command_pool++ ) {
       if ( cara_vk.trans_bufs.arr_cmd_pools[idx_command_pool] ) {
-        fprintf( stdout, "trans_bufs.arr_cmd_pools[%u] = %#018lx\n", idx_command_pool,
-            ptr2ui(cara_vk.trans_bufs.arr_cmd_pools[idx_command_pool]) );
+        //fprintf( stdout, "trans_bufs.arr_cmd_pools[%u] = %#018lx\n", idx_command_pool,
+        //    ptr2ui(cara_vk.trans_bufs.arr_cmd_pools[idx_command_pool]) );
         // FIXME Host access to `commandPool` must be externally synchronized
         vkDestroyCommandPool(cara_vk.log_dev,
             cara_vk.trans_bufs.arr_cmd_pools[idx_command_pool],
@@ -1969,24 +2095,24 @@ void destroy_vulkan_objects( struct ms_worker_info * worker_info )
     cara_vk.trans_bufs.arr_cmd_pools = nullptr;
   }
 
-  if ( cara_vk.arr_framebufs[0].arr_cmd_pools ) {
+  if ( cara_vk.arr_frame_infos[0].arr_cmd_pools ) {
     for ( uint_fast8_t idx_framebuffer = 0;
         idx_framebuffer < cara_nr_cmd_centers; idx_framebuffer++ ) {
       for ( uint_fast8_t idx_command_pool = 0;
           idx_command_pool <= cara_single.proc_map->nr_processors; idx_command_pool++ ) {
-        if ( cara_vk.arr_framebufs[idx_framebuffer].arr_cmd_pools[idx_command_pool] ) {
-          fprintf( stdout, "framebufs[%u].arr_cmd_pools[%u] = %#018lx\n",
-              idx_framebuffer,
-              idx_command_pool,
-              ptr2ui(cara_vk.arr_framebufs[idx_framebuffer].arr_cmd_pools[idx_command_pool]) );
+        if ( cara_vk.arr_frame_infos[idx_framebuffer].arr_cmd_pools[idx_command_pool] ) {
+          //fprintf( stdout, "framebufs[%u].arr_cmd_pools[%u] = %#018lx\n",
+          //    idx_framebuffer,
+          //    idx_command_pool,
+          //    ptr2ui(cara_vk.arr_framebufs[idx_framebuffer].arr_cmd_pools[idx_command_pool]) );
           vkDestroyCommandPool( cara_vk.log_dev,
-              cara_vk.arr_framebufs[idx_framebuffer].arr_cmd_pools[idx_command_pool],
+              cara_vk.arr_frame_infos[idx_framebuffer].arr_cmd_pools[idx_command_pool],
               &cara_vk.vk_alloc_callbacks );
         }
       }
     }
-    ma_free( cara_single.mem_arena, worker_info->idx_self, cara_vk.arr_framebufs[0].arr_cmd_pools );
-    cara_vk.arr_framebufs[0].arr_cmd_pools = nullptr;
+    ma_free( cara_single.mem_arena, worker_info->idx_self, cara_vk.arr_frame_infos[0].arr_cmd_pools );
+    cara_vk.arr_frame_infos[0].arr_cmd_pools = nullptr;
   }
 
   if ( cara_vk.presentation_surface ) {

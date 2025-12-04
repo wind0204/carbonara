@@ -304,6 +304,7 @@ struct ma_vk_mem_mgr {
   uint32_t heap_cnt;
   uint32_t type_cnt;
   uint32_t len_staging_buf;
+  uint16_t len_non_coherent_atom;
   uint8_t arr_best_mtype_idx[vk_buf_type_cnt];
 };
 
@@ -314,7 +315,7 @@ struct ma_vk_mem_mgr {
 enum err_msg ma_init_vk_mem_mgr(
     struct ma_vk_mem_mgr * vmm,
     VkPhysicalDeviceMemoryProperties2 * ptr_mem_properties,
-    VkDeviceSize bufferImageGranularity,
+    VkPhysicalDeviceLimits * limits,
     void * restrict userdata,
     void * (*custom_malloc)(void * userdata, size_t alignment, size_t size)
     );

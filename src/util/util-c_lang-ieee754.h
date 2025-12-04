@@ -16,10 +16,10 @@
   #error Define TARGET_ENDIANNESS! 1: Little Endian, 2: Big Endian, 3: PDP Endian
 #endif
 
-#if TARGET_ENDIANNESS==1
+#if TARGET_ENDIANNESS == 1
   typedef union ieee754_binary32_le union_ieee754_binary32;
   typedef union ieee754_binary64_le union_ieee754_binary64;
-#elif TARGET_ENDIANNESS==2
+#elif TARGET_ENDIANNESS == 2
   typedef union ieee754_binary32_be union_ieee754_binary32;
   typedef union ieee754_binary64_be union_ieee754_binary64;
 #else

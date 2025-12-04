@@ -16,7 +16,8 @@ enum worker_deployment_flags : unsigned char {
   worker_deployment_flag_close2nic = 0x02,  ///< It's closer to the NIC
   worker_deployment_flag_missing_a_sibling = 0x04,  ///< The application is not utilizing the other
                                                     ///< logical processor from the same core.
-  worker_deployment_flag_foreman = 0x08, ///< A representative who interacts with OS and APIs more often than other workers
+  worker_deployment_flag_foreman = 0x08,  ///< A representative who interacts with certain program
+                                          ///<  paths and APIs.
 };
 
 struct ms_worker_info {
@@ -98,7 +99,7 @@ uint_fast8_t init_appdev_support_processor_map(void);
 //-------------------------------------------------------------------------------------------------
 /**
  * \brief Obtain a struct processor_map in which the information of a decent number of
- * worker threads is stored, with one thread elected as a foreman.
+ * worker threads is stored, among which one thread elected as a foreman.
  * \return The pointer to the singleton of struct processor_map, or 0 when there was an error
  *
  * errno err_msg_unknown means there was a weird error or a failure in a library call

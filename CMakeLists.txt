@@ -209,7 +209,7 @@ endif()
 #if( NOT pciaccess_FOUND AND NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/Findpciaccess.cmake" )
 #  execute_process( COMMAND cp "$ENV{VULKAN_SDK}/../source/Vulkan-Loader/cmake/FindPCIAccess.cmake" "${CMAKE_CURRENT_SOURCE_DIR}/cmake/find-modules/Findpciaccess.cmake" )
 #endif()
-#find_package( "pciaccess" REQUIRED )
+find_package( "pciaccess" REQUIRED )  # for hwloc
 
 
 if( NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/extern/hwloc/Makefile" )
@@ -688,7 +688,7 @@ target_link_libraries( carbonara PRIVATE Util-c_lang )
 
 #target_link_libraries( carbonara PRIVATE ${SDL2_LIBRARIES} )
 target_link_libraries( carbonara PUBLIC SDL3::SDL3-static )  # NOTE Link to SDL3::SDL3 regardless of if it's static or dynamic, it should map it to the right one for you
-#target_link_libraries( carbonara PRIVATE pciaccess )
+target_link_libraries( carbonara PRIVATE pciaccess )  # for hwloc
 
 target_link_libraries( tester PRIVATE App-dev_support )
 target_link_libraries( tester PRIVATE Sorter )

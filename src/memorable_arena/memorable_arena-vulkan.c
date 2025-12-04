@@ -12,7 +12,7 @@
 enum err_msg ma_init_vk_mem_mgr(
     struct ma_vk_mem_mgr * vmm,
     VkPhysicalDeviceMemoryProperties2 * ptr_mem_properties,
-    VkDeviceSize bufferImageGranularity,
+    VkPhysicalDeviceLimits * limits,
     void * restrict userdata,
     void * (*custom_malloc)(void * userdata, size_t alignment, size_t size)
     )
@@ -20,7 +20,10 @@ enum err_msg ma_init_vk_mem_mgr(
   // Save two numbers.
   vmm->heap_cnt = ptr_mem_properties->memoryProperties.memoryHeapCount;
   vmm->type_cnt = ptr_mem_properties->memoryProperties.memoryTypeCount;
-  vmm->buf_granularity = bufferImageGranularity;
+  vmm->len_non_coherent_atom = limits->nonCoherentAtomSize;
+  vmm->buf_granularity = limits->bufferImageGranularity;
+  assume( _is_power_of_two( limits->bufferImageGranularity) );
+  assume( _is_power_of_two( limits->nonCoherentAtomSize) );
 
   // Get memory allocation for the arrays
   void * (*local_malloc)(void * userdata, size_t alignment, size_t size);
@@ -103,6 +106,8 @@ void ma_destroy_vk_mem_mgr(
   local_free = custom_free ? custom_free : default_free;
   local_free( userdata, vmm->arr_usages );
 
+  // TODO vkFreeMemory per malloc in vmm->mallocs
+
   if ( vmm->p_staging_buf ) {
     vkUnmapMemory( logical_dev, vmm->staging_buf_malloc );
     vkFreeMemory( logical_dev, vmm->staging_buf_malloc, &cara_vk.vk_alloc_callbacks ); 
@@ -182,7 +187,9 @@ enum err_msg ma_create_staging_buf(
     VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
     VK_MEMORY_PROPERTY_HOST_COHERENT_BIT |
     0;
-  tolerable_props = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+  tolerable_props =
+    VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT |
+    0;
   const uint32_t type_idx = ma_pick_best_mtype(
       vmm, &req, required_props, preferred_props, tolerable_props );
   vmm->arr_best_mtype_idx[vk_buf_type_transfer] = type_idx;
@@ -225,6 +232,9 @@ enum err_msg ma_create_staging_buf(
     vmm->p_staging_buf = nullptr;
     return err_msg_unknown;
   }
+
+  // Have the OS actually prepare pages for the mapped memory range
+  memset( vmm->p_staging_buf, 0, buf_len );
 
   vmm->len_staging_buf = buf_len;
 

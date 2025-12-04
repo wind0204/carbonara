@@ -109,10 +109,10 @@ DEVICE_LEVEL_VULKAN_FUNCTION( vkCreateImage )
 DEVICE_LEVEL_VULKAN_FUNCTION( vkGetImageMemoryRequirements )
 DEVICE_LEVEL_VULKAN_FUNCTION( vkBindImageMemory )  //\
     // Host access to image must be externally synchronized
-//DEVICE_LEVEL_VULKAN_FUNCTION( vkCreateImageView )
+DEVICE_LEVEL_VULKAN_FUNCTION( vkCreateImageView )
 DEVICE_LEVEL_VULKAN_FUNCTION( vkMapMemory )  //\
     // Host access to `memory` must be externally synchronized
-//DEVICE_LEVEL_VULKAN_FUNCTION( vkFlushMappedMemoryRanges )
+DEVICE_LEVEL_VULKAN_FUNCTION( vkFlushMappedMemoryRanges )
 DEVICE_LEVEL_VULKAN_FUNCTION( vkUnmapMemory )  //\
     // Host access to `memory` must be externally synchronized
 //DEVICE_LEVEL_VULKAN_FUNCTION( vkCmdCopyBuffer )  //\
@@ -135,9 +135,10 @@ DEVICE_LEVEL_VULKAN_FUNCTION( vkEndCommandBuffer )  //\
 //DEVICE_LEVEL_VULKAN_FUNCTION( vkQueueSubmit )  //\
     // Host access to `queue` must be externally synchronized
     // Host access to `fence` must be externally synchronized
-//DEVICE_LEVEL_VULKAN_FUNCTION( vkDestroyImageView )
+DEVICE_LEVEL_VULKAN_FUNCTION( vkDestroyImageView )  //\
+    // Host access to `imageView` must be externally synchronized
 DEVICE_LEVEL_VULKAN_FUNCTION( vkDestroyImage )  //\
-    // Host access to image must be externally synchronized
+    // Host access to `image` must be externally synchronized
 DEVICE_LEVEL_VULKAN_FUNCTION( vkDestroyBuffer )  //\
     // Host access to `buffer` must be externally synchronized
 DEVICE_LEVEL_VULKAN_FUNCTION( vkFreeMemory )  //\
@@ -157,24 +158,43 @@ DEVICE_LEVEL_VULKAN_FUNCTION( vkResetCommandPool )  //\
 //DEVICE_LEVEL_VULKAN_FUNCTION( vkCreateBufferView )
 //DEVICE_LEVEL_VULKAN_FUNCTION( vkDestroyBufferView )
 //DEVICE_LEVEL_VULKAN_FUNCTION( vkQueueWaitIdle )
-//DEVICE_LEVEL_VULKAN_FUNCTION( vkCreateSampler )
-//DEVICE_LEVEL_VULKAN_FUNCTION( vkCreateDescriptorSetLayout )
-//DEVICE_LEVEL_VULKAN_FUNCTION( vkCreateDescriptorPool )
-//DEVICE_LEVEL_VULKAN_FUNCTION( vkAllocateDescriptorSets )
-//DEVICE_LEVEL_VULKAN_FUNCTION( vkUpdateDescriptorSets )
-//DEVICE_LEVEL_VULKAN_FUNCTION( vkCmdBindDescriptorSets )
+DEVICE_LEVEL_VULKAN_FUNCTION( vkCreateSampler )
+DEVICE_LEVEL_VULKAN_FUNCTION( vkCreateDescriptorSetLayout )
+DEVICE_LEVEL_VULKAN_FUNCTION( vkCreateDescriptorPool )
+DEVICE_LEVEL_VULKAN_FUNCTION( vkAllocateDescriptorSets )
+DEVICE_LEVEL_VULKAN_FUNCTION( vkUpdateDescriptorSets )  //\
+    // Host access to `pDescriptorWrites[i].dstSet` and `pDescriptorCopies[i].dstSet` must be
+    //  externally synchronized unless explicitly denoted otherwise for specific flags.
+DEVICE_LEVEL_VULKAN_FUNCTION( vkCmdBindDescriptorSets )  //\
+    // Host access to `commandBuffer` must be externally synchronized
+    // Host access to the VkCommandPool that `commandBuffer` was allocated from must be externally
+    //  synchronized
 //DEVICE_LEVEL_VULKAN_FUNCTION( vkFreeDescriptorSets )
-//DEVICE_LEVEL_VULKAN_FUNCTION( vkResetDescriptorPool )
-//DEVICE_LEVEL_VULKAN_FUNCTION( vkDestroyDescriptorPool )
-//DEVICE_LEVEL_VULKAN_FUNCTION( vkDestroyDescriptorSetLayout )
-//DEVICE_LEVEL_VULKAN_FUNCTION( vkDestroySampler )
-//DEVICE_LEVEL_VULKAN_FUNCTION( vkCreateRenderPass )
-//DEVICE_LEVEL_VULKAN_FUNCTION( vkCreateFramebuffer )
-//DEVICE_LEVEL_VULKAN_FUNCTION( vkDestroyFramebuffer )
-//DEVICE_LEVEL_VULKAN_FUNCTION( vkDestroyRenderPass )
-//DEVICE_LEVEL_VULKAN_FUNCTION( vkCmdBeginRenderPass )
-//DEVICE_LEVEL_VULKAN_FUNCTION( vkCmdNextSubpass )
-//DEVICE_LEVEL_VULKAN_FUNCTION( vkCmdEndRenderPass )
+DEVICE_LEVEL_VULKAN_FUNCTION( vkResetDescriptorPool )
+DEVICE_LEVEL_VULKAN_FUNCTION( vkDestroyDescriptorPool )  //\
+    // Host access to `descriptorPool` must be externally synchronized
+DEVICE_LEVEL_VULKAN_FUNCTION( vkDestroyDescriptorSetLayout )  //\
+    // Host access to `descriptorSetLayout` must be externally synchronized
+DEVICE_LEVEL_VULKAN_FUNCTION( vkDestroySampler )  //\
+    // Host access to `sampler` must be externally synchronized
+DEVICE_LEVEL_VULKAN_FUNCTION( vkCreateRenderPass2 )
+DEVICE_LEVEL_VULKAN_FUNCTION( vkCreateFramebuffer )
+DEVICE_LEVEL_VULKAN_FUNCTION( vkDestroyFramebuffer )  //\
+    // Host access to `framebuffer` must be externally synchronized
+DEVICE_LEVEL_VULKAN_FUNCTION( vkDestroyRenderPass )  //\
+    // Host access to `renderPass` must be externally synchronized
+DEVICE_LEVEL_VULKAN_FUNCTION( vkCmdBeginRenderPass )  //\
+    // Host access to `commandBuffer` must be externally synchronized
+    // Host access to the VkCommandPool that `commandBuffer` was allocated from must be externally
+    //  synchronized
+DEVICE_LEVEL_VULKAN_FUNCTION( vkCmdNextSubpass )  //\
+    // Host access to `commandBuffer` must be externally synchronized
+    // Host access to the VkCommandPool that `commandBuffer` was allocated from must be externally
+    //  synchronized
+DEVICE_LEVEL_VULKAN_FUNCTION( vkCmdEndRenderPass )  //\
+    // Host access to `commandBuffer` must be externally synchronized
+    // Host access to the VkCommandPool that `commandBuffer` was allocated from must be externally
+    //  synchronized
 //DEVICE_LEVEL_VULKAN_FUNCTION( vkCreatePipelineCache )
 //DEVICE_LEVEL_VULKAN_FUNCTION( vkGetPipelineCacheData )
 //DEVICE_LEVEL_VULKAN_FUNCTION( vkMergePipelineCaches )
@@ -186,8 +206,9 @@ DEVICE_LEVEL_VULKAN_FUNCTION( vkResetCommandPool )  //\
 //DEVICE_LEVEL_VULKAN_FUNCTION( vkDestroyQueryPool )
 //DEVICE_LEVEL_VULKAN_FUNCTION( vkCreateShaderModule )
 //DEVICE_LEVEL_VULKAN_FUNCTION( vkDestroyShaderModule )
-//DEVICE_LEVEL_VULKAN_FUNCTION( vkCreatePipelineLayout )
-//DEVICE_LEVEL_VULKAN_FUNCTION( vkDestroyPipelineLayout )
+DEVICE_LEVEL_VULKAN_FUNCTION( vkCreatePipelineLayout )
+DEVICE_LEVEL_VULKAN_FUNCTION( vkDestroyPipelineLayout )  //\
+    // Host access to `pipelineLayout` must be externally synchronized
 //DEVICE_LEVEL_VULKAN_FUNCTION( vkCmdBindPipeline )
 //DEVICE_LEVEL_VULKAN_FUNCTION( vkCmdSetViewport )
 //DEVICE_LEVEL_VULKAN_FUNCTION( vkCmdSetScissor )

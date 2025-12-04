@@ -1,3 +1,4 @@
+#include "util-c_lang-ieee754.h"
 #if defined(__linux)
 #include <bits/posix_opt.h>
 #include <linux/perf_event.h>  // Definition of PERF_* constants
@@ -472,7 +473,13 @@ void delay_precise( uint64_t target_pc )
 {
   uint64_t cur_pc = get_performance_counter();
   const register uint64_t starting_tsc = _rdtsc();
-  const register uint64_t len_in_tsc = (uint64_t)((double)(target_pc - cur_pc) * nr_tsc_in_pc);
+#if !defined( ARE_WE_SHIPPING_IT )
+  if ( target_pc < cur_pc ) {
+    fprintf( stdout, "target_pc(%lu) < cur_pc(%lu)\n", target_pc, cur_pc );
+  }
+#endif
+  double diff = target_pc < cur_pc ? .0 : (double)(target_pc - cur_pc);
+  const register uint64_t len_in_tsc = (uint64_t)(diff * nr_tsc_in_pc);
 
   // The number of nanoseconds in 160us
   constexpr uint64_t short_nap_len = 1000 * 160;
