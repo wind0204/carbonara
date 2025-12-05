@@ -58,7 +58,7 @@ static const char * const names_instance_extensions_required[] = {
 static const char * const names_device_extensions_required[] = {
   VK_KHR_SWAPCHAIN_EXTENSION_NAME,  // To draw image on screen
 
-  //VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME,  // https://github.com/KhronosGroup/Vulkan-Guide/blob/main/chapters/extensions/VK_KHR_synchronization2.adoc
+  VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME,  // https://github.com/KhronosGroup/Vulkan-Guide/blob/main/chapters/extensions/VK_KHR_synchronization2.adoc
                                             // Btw, this is not enough, You need to explicitly chain
                                             //  VkPhysicalDeviceVulkan13Features when creating a
                                             //  logical device
@@ -72,9 +72,8 @@ static constexpr unsigned int test_width = 1600;
 static constexpr unsigned int test_height = 900;
 
 static constexpr unsigned int vulkan_version_major = 1;
-static constexpr unsigned int vulkan_version_minor = 3;
+static constexpr unsigned int vulkan_version_minor = 2;
 // NOTE 1.2 for vkCmdDrawIndexedIndirectCount
-// TODO Probablly bump it up to 1.3 for VK_KHR_synchronization2 ( https://github.com/KhronosGroup/Vulkan-Guide/blob/main/chapters/extensions/VK_KHR_synchronization2.adoc especially for the improvement in image layout transition in vkCmdSetEvent2KHR and vkCmdWaitEvents2 )
 
 struct cara_vk_single cara_vk;
 
@@ -533,17 +532,16 @@ uint8_t init_vulkan(
       arr_phys_devices[idx_phys_dev] = 0;
       continue;
     }
-//    if ( !vk13_features.synchronization2 ) {
-//#ifdef DEBUG_MODE
-//      fprintf( stdout, "[Vulkan] %s doesn't support %s.\n",
-//          arr_device_props[idx_phys_dev].properties.deviceName,
-//          "synchronization2"
-//          );
-//#endif
-//      arr_phys_devices[idx_phys_dev] = 0;
-//      continue;
-//    }
-//Just using 1.3 now
+    if ( !vk13_features.synchronization2 ) {
+#ifdef DEBUG_MODE
+      fprintf( stdout, "[Vulkan] %s doesn't support %s.\n",
+          arr_device_props[idx_phys_dev].properties.deviceName,
+          "synchronization2"
+          );
+#endif
+      arr_phys_devices[idx_phys_dev] = 0;
+      continue;
+    }
 
 //    if ( !device_features.features.sampleRateShading ) {
 //#ifdef DEBUG_MODE

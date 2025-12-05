@@ -416,7 +416,7 @@ fprintf( stderr, "[DEBUG] cmd_buf=%lu; cara_vk.arr_framebuffers[%u].primary_comm
   // TODO synchronization needed
   result = vkQueueSubmit2KHR( cara_vk.graphics_q, 1, &submit_info, VK_NULL_HANDLE );
   if ( result != VK_SUCCESS ) {
-    fprintf( stderr, "[Carbonara-Debug] vkQueueSubmit2 failed.. (result=%s)\n",
+    fprintf( stderr, "[Carbonara-Debug] vkQueueSubmit2KHR failed.. (result=%s)\n",
         string_VkResult(result) );
     //infos_pm_destroy( &cara_vk.vmm.uploads, &ws->worker_info->idx_self, cara_free );
     return SDL_APP_FAILURE;
@@ -2034,7 +2034,7 @@ void jf_kickstart( struct cara_worker_state * ws )
   dependency_info.pImageMemoryBarriers = &img_bar;
 
   SPALL_BEGIN("barrier_0");
-  vkCmdPipelineBarrier2( trans_buf, &dependency_info );
+  vkCmdPipelineBarrier2KHR( trans_buf, &dependency_info );
   SPALL_END();
 
   VkBufferImageCopy arr_regions[nr_miplevels * 2];
@@ -2120,7 +2120,7 @@ void jf_kickstart( struct cara_worker_state * ws )
   dependency_info.pImageMemoryBarriers = &img_bar;
 
   SPALL_BEGIN("barrier_1");
-  vkCmdPipelineBarrier2( trans_buf, &dependency_info );
+  vkCmdPipelineBarrier2KHR( trans_buf, &dependency_info );
   SPALL_END();
 
 
@@ -2164,9 +2164,9 @@ void jf_kickstart( struct cara_worker_state * ws )
 
   // Submit
   SPALL_BEGIN("submit_trans");
-  result = vkQueueSubmit2( cara_vk.transfer_q, 1, &submit_info, VK_NULL_HANDLE );
+  result = vkQueueSubmit2KHR( cara_vk.transfer_q, 1, &submit_info, VK_NULL_HANDLE );
   if ( result != VK_SUCCESS ) {
-    fprintf( stderr, "[Carbonara-Debug] vkQueueSubmit2 failed.. (result=%s)\n",
+    fprintf( stderr, "[Carbonara-Debug] vkQueueSubmit2KHR failed.. (result=%s)\n",
         string_VkResult(result) );
     goto stop_everything_after_failure;
   }
@@ -2194,7 +2194,7 @@ void jf_kickstart( struct cara_worker_state * ws )
   img_bar.srcStageMask = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT_KHR;
   img_bar.dstStageMask = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT_KHR;
   SPALL_BEGIN("barrier_2");
-  vkCmdPipelineBarrier2( cmd_buf, &dependency_info );
+  vkCmdPipelineBarrier2KHR( cmd_buf, &dependency_info );
   SPALL_END();
 
 
@@ -2865,9 +2865,9 @@ void jf_kickstart( struct cara_worker_state * ws )
 
   // Submit
   SPALL_BEGIN("submit_cmd_buf");
-  result = vkQueueSubmit2( cara_vk.graphics_q, 1, &submit_info, VK_NULL_HANDLE );
+  result = vkQueueSubmit2KHR( cara_vk.graphics_q, 1, &submit_info, VK_NULL_HANDLE );
   if ( result != VK_SUCCESS ) {
-    fprintf( stderr, "[Carbonara-Debug] vkQueueSubmit2 failed.. (result=%s)\n",
+    fprintf( stderr, "[Carbonara-Debug] vkQueueSubmit2KHR failed.. (result=%s)\n",
         string_VkResult(result) );
     goto stop_everything_after_failure;
   }
