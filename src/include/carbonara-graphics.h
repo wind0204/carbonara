@@ -148,7 +148,7 @@ struct cara_vk_single {
   //static_assert( alignof(shared_lib) >= alignof(VkAllocationCallbacks),
   static_assert( alignof(VkInstance) >= alignof(VkAllocationCallbacks),
       "Sort the struct members!" );
-  //VkAllocationCallbacks vk_alloc_callbacks;  // XXX Keep it here instead of in cara_engine?
+  VkAllocationCallbacks vk_alloc_callbacks;  // XXX Keep it here instead of in cara_engine?
   static_assert( alignof(VkAllocationCallbacks) >= alignof(VkFormat), "Sort the struct members!" );
   VkFormat color_att_fmt;  // 32-bit aligned
   VkFormat zbuf_fmt;  // 32-bit aligned
