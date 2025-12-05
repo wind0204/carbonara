@@ -1,6 +1,8 @@
 #include <stdint.h>
 #include <stdatomic.h>
 #include <sys/cdefs.h>
+#define VOLK_IMPLEMENTATION
+#include <volk/volk.h>
 #include <vulkan/vk_enum_string_helper.h>
 #include <SDL3/SDL_video.h>
 #include <SDL3/SDL_vulkan.h>
@@ -25,7 +27,7 @@
 #include "carbonara-graphics.h"
 #include "carbonara-texture.h"
 #include "util-c_lang-basic.h"
-#include "vulkan_functions.h"
+//#include "vulkan_functions.h"
 #include "memorable_arena.h"
 #include "err_msg.h"
 
@@ -36,6 +38,7 @@
 
 //-------------------------------------------------------------------------------------------------
 #if !defined( ARE_WE_SHIPPING_IT )
+  [[maybe_unused]]
   static const char * enabled_layer_names[] = {
     "VK_LAYER_KHRONOS_validation",
     //"VK_LAYER_LUNARG_crash_diagnostic",  // This makes vkCreateDevice complain about requesting a
@@ -55,7 +58,7 @@ static const char * const names_instance_extensions_required[] = {
 static const char * const names_device_extensions_required[] = {
   VK_KHR_SWAPCHAIN_EXTENSION_NAME,  // To draw image on screen
 
-  VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME,  // https://github.com/KhronosGroup/Vulkan-Guide/blob/main/chapters/extensions/VK_KHR_synchronization2.adoc
+  //VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME,  // https://github.com/KhronosGroup/Vulkan-Guide/blob/main/chapters/extensions/VK_KHR_synchronization2.adoc
                                             // Btw, this is not enough, You need to explicitly chain
                                             //  VkPhysicalDeviceVulkan13Features when creating a
                                             //  logical device
@@ -69,7 +72,7 @@ static constexpr unsigned int test_width = 1600;
 static constexpr unsigned int test_height = 900;
 
 static constexpr unsigned int vulkan_version_major = 1;
-static constexpr unsigned int vulkan_version_minor = 2;
+static constexpr unsigned int vulkan_version_minor = 3;
 // NOTE 1.2 for vkCmdDrawIndexedIndirectCount
 // TODO Probablly bump it up to 1.3 for VK_KHR_synchronization2 ( https://github.com/KhronosGroup/Vulkan-Guide/blob/main/chapters/extensions/VK_KHR_synchronization2.adoc especially for the improvement in image layout transition in vkCmdSetEvent2KHR and vkCmdWaitEvents2 )
 
@@ -91,38 +94,42 @@ uint8_t init_vulkan(
     )
 {
 
-  const char * name_shared_library;
-#if defined(__linux)
-  name_shared_library = "libvulkan.so.1";
-#elif defined(_WIN32)
-  name_shared_library = "vulkan-1.dll";
-#endif
-
-  const shared_lib vulkan_library = load_shared_lib(name_shared_library);
-  if ( !vulkan_library ) {
-    fprintf( stderr, "[Vulkan] ERROR: Failed to load '%s'\n", name_shared_library );
+//  const char * name_shared_library;
+//#if defined(__linux)
+//  name_shared_library = "libvulkan.so.1";
+//#elif defined(_WIN32)
+//  name_shared_library = "vulkan-1.dll";
+//#endif
+  VkResult result = volkInitialize();
+  if ( result != VK_SUCCESS ) {
+    fprintf( stderr, "[Vulkan] ERROR: Failed to load volk/vulkan\n" );
     return 1;
   }
 
-  // Load the functions exported from vulkan loader library
-  if ( vf_load_func_exported_from_vulkan_loader_library(vulkan_library) ) {
-    unload_shared_lib(vulkan_library);
-    return 1;
-  }
+  //const shared_lib vulkan_library = load_shared_lib(name_shared_library);
+  //if ( !vulkan_library ) {
+  //  fprintf( stderr, "[Vulkan] ERROR: Failed to load '%s'\n", name_shared_library );
+  //  return 1;
+  //}
+
+  //// Load the functions exported from vulkan loader library
+  //if ( vf_load_func_exported_from_vulkan_loader_library(vulkan_library) ) {
+  //  unload_shared_lib(vulkan_library);
+  //  return 1;
+  //}
 
 
-  //
-  // Load global-level functions
-  //
-  if ( vf_load_global_level_functions() ) {
-    unload_shared_lib(vulkan_library);
-    return 1;
-  }
+  ////
+  //// Load global-level functions
+  ////
+  //if ( vf_load_global_level_functions() ) {
+  //  unload_shared_lib(vulkan_library);
+  //  return 1;
+  //}
 
 
   // Enumerate the instance extensions supported by vulkan implementation
   uint32_t nr_supported_extensions;
-  VkResult result;
 
   result = vkEnumerateInstanceExtensionProperties( nullptr, &nr_supported_extensions, nullptr );
 #ifdef DEBUG_MODE
@@ -132,7 +139,7 @@ uint8_t init_vulkan(
   if ( result != VK_SUCCESS ) {
     fprintf( stderr, "[Vulkan] Could not get the number of instance extensions. (%d)\n",
         result );
-    unload_shared_lib( vulkan_library );
+    //unload_shared_lib( vulkan_library );
     return 1;
   }
 
@@ -148,7 +155,7 @@ uint8_t init_vulkan(
         string_VkResult(result) );
     ma_free( cara_single.mem_arena,
         worker_state->worker_info->idx_self, arr_extension_props );
-    unload_shared_lib( vulkan_library );
+    //unload_shared_lib( vulkan_library );
     return 1;
   }
 
@@ -194,7 +201,7 @@ uint8_t init_vulkan(
           names_basic_instance_extensions[idx_required_extension] );
       ma_free( cara_single.mem_arena,
           worker_state->worker_info->idx_self, arr_extension_props );
-      unload_shared_lib( vulkan_library );
+      //unload_shared_lib( vulkan_library );
       return 1;
     }
   }
@@ -218,7 +225,7 @@ uint8_t init_vulkan(
           names_instance_extensions_required[idx_required_extension] );
       ma_free( cara_single.mem_arena,
           worker_state->worker_info->idx_self, arr_extension_props );
-      unload_shared_lib( vulkan_library );
+      //unload_shared_lib( vulkan_library );
       return 1;
     }
   }
@@ -239,12 +246,12 @@ uint8_t init_vulkan(
   cara_vk.sand_texture = the_texture2;
   cara_vk.asset_size = the_size;
 
-  cara_vk.vk_alloc_callbacks.pfnAllocation = cara_malloc_vk;
-  cara_vk.vk_alloc_callbacks.pfnFree = cara_free_vk;
-  cara_vk.vk_alloc_callbacks.pfnInternalAllocation = nullptr;
-  cara_vk.vk_alloc_callbacks.pfnInternalFree = nullptr;
-  cara_vk.vk_alloc_callbacks.pfnReallocation = cara_realloc_vk;
-  cara_vk.vk_alloc_callbacks.pUserData = (void*) &worker_state->malloc_helper;
+  //cara_vk.vk_alloc_callbacks.pfnAllocation = cara_malloc_vk;
+  //cara_vk.vk_alloc_callbacks.pfnFree = cara_free_vk;
+  //cara_vk.vk_alloc_callbacks.pfnInternalAllocation = nullptr;
+  //cara_vk.vk_alloc_callbacks.pfnInternalFree = nullptr;
+  //cara_vk.vk_alloc_callbacks.pfnReallocation = cara_realloc_vk;
+  //cara_vk.vk_alloc_callbacks.pUserData = (void*) &worker_state->malloc_helper;
 
 
   //
@@ -274,8 +281,10 @@ uint8_t init_vulkan(
     0,                                        // uint32_t                   enabledLayerCount
     nullptr,                                  // const char * const *       ppEnabledLayerNames
 #else
-    _arr_elem_cnt(enabled_layer_names),       // uint32_t                   enabledLayerCount
-    enabled_layer_names,                      // const char * const *       ppEnabledLayerNames
+    0,                                        // uint32_t                   enabledLayerCount
+    nullptr,                                  // const char * const *       ppEnabledLayerNames
+    //_arr_elem_cnt(enabled_layer_names),       // uint32_t                   enabledLayerCount
+    //enabled_layer_names,                      // const char * const *       ppEnabledLayerNames
 #endif
     nr_required_extensions,                   // uint32_t                   enabledExtensionCount
     names_basic_instance_extensions     // const char * const *       ppEnabledExtensionNames
@@ -285,27 +294,28 @@ uint8_t init_vulkan(
   VkInstance vk_instance;
   result = vkCreateInstance(
       &vk_instance_create_info,
-      &cara_vk.vk_alloc_callbacks,
+      nullptr,
       &vk_instance
       );
   if ( (result != VK_SUCCESS) ||
       (vk_instance == VK_NULL_HANDLE) ) {
     fprintf( stderr, "[Vulkan] Could not create Vulkan instance. (%s)\n", string_VkResult(result) );
-    unload_shared_lib(vulkan_library);
+    //unload_shared_lib(vulkan_library);
     return 1;
   }
 
 
 
-  //
-  // Load instance-level functions
-  //
-  if ( vf_load_instance_level_functions(vk_instance,
-        names_basic_instance_extensions, nr_required_extensions) ) {
-    vkDestroyInstance(vk_instance, &cara_vk.vk_alloc_callbacks);
-    unload_shared_lib(vulkan_library);
-    return 1;
-  }
+  ////
+  //// Load instance-level functions
+  ////
+  //if ( vf_load_instance_level_functions(vk_instance,
+  //      names_basic_instance_extensions, nr_required_extensions) ) {
+  //  vkDestroyInstance(vk_instance, &cara_vk.vk_alloc_callbacks);
+  //  //unload_shared_lib(vulkan_library);
+  //  return 1;
+  //}
+  volkLoadInstanceOnly(vk_instance);
 
   // Enumerate physical devices
   uint32_t nr_phys_devices = 0;
@@ -314,8 +324,9 @@ uint8_t init_vulkan(
       (nr_phys_devices == 0) ) {
     fprintf( stderr, "[Vulkan] Could not get the number of available physical devices. (%s)\n",
        string_VkResult(result) );
-    vkDestroyInstance(vk_instance, &cara_vk.vk_alloc_callbacks);
-    unload_shared_lib(vulkan_library);
+    //vkDestroyInstance(vk_instance, &cara_vk.vk_alloc_callbacks);
+    vkDestroyInstance(vk_instance, nullptr);
+    //unload_shared_lib(vulkan_library);
     return 1;
   }
 
@@ -327,8 +338,9 @@ uint8_t init_vulkan(
   if ( result != VK_SUCCESS ) {
     fprintf( stderr, "[Vulkan] Could not enumerate physical devices. (%s)\n",
         string_VkResult(result) );
-    vkDestroyInstance( vk_instance, &cara_vk.vk_alloc_callbacks );
-    unload_shared_lib( vulkan_library );
+    //vkDestroyInstance( vk_instance, &cara_vk.vk_alloc_callbacks );
+    vkDestroyInstance(vk_instance, nullptr);
+    //unload_shared_lib( vulkan_library );
     return 1;
   }
 
@@ -351,8 +363,9 @@ uint8_t init_vulkan(
           string_VkResult(result) );
       ma_free( cara_single.mem_arena,
           worker_state->worker_info->idx_self, arr_phys_devices);
-      vkDestroyInstance(vk_instance, &cara_vk.vk_alloc_callbacks);
-      unload_shared_lib(vulkan_library);
+      //vkDestroyInstance(vk_instance, &cara_vk.vk_alloc_callbacks);
+      vkDestroyInstance(vk_instance, nullptr);
+      //unload_shared_lib(vulkan_library);
       return 1;
     }
 #ifdef DEBUG_MODE
@@ -373,8 +386,9 @@ uint8_t init_vulkan(
           worker_state->worker_info->idx_self, arr_extension_props );
       ma_free( cara_single.mem_arena,
           worker_state->worker_info->idx_self, arr_phys_devices);
-      vkDestroyInstance( vk_instance, &cara_vk.vk_alloc_callbacks );
-      unload_shared_lib( vulkan_library );
+      //vkDestroyInstance( vk_instance, &cara_vk.vk_alloc_callbacks );
+      vkDestroyInstance(vk_instance, nullptr);
+      //unload_shared_lib( vulkan_library );
       return 1;
     }
  
@@ -519,16 +533,18 @@ uint8_t init_vulkan(
       arr_phys_devices[idx_phys_dev] = 0;
       continue;
     }
-    if ( !vk13_features.synchronization2 ) {
-#ifdef DEBUG_MODE
-      fprintf( stdout, "[Vulkan] %s doesn't support %s.\n",
-          arr_device_props[idx_phys_dev].properties.deviceName,
-          "synchronization2"
-          );
-#endif
-      arr_phys_devices[idx_phys_dev] = 0;
-      continue;
-    }
+//    if ( !vk13_features.synchronization2 ) {
+//#ifdef DEBUG_MODE
+//      fprintf( stdout, "[Vulkan] %s doesn't support %s.\n",
+//          arr_device_props[idx_phys_dev].properties.deviceName,
+//          "synchronization2"
+//          );
+//#endif
+//      arr_phys_devices[idx_phys_dev] = 0;
+//      continue;
+//    }
+//Just using 1.3 now
+
 //    if ( !device_features.features.sampleRateShading ) {
 //#ifdef DEBUG_MODE
 //      fprintf( stdout, "[Vulkan] %s doesn't support %s.\n",
@@ -655,16 +671,17 @@ uint8_t init_vulkan(
   VkSurfaceKHR presentation_surface;
   if ( !SDL_Vulkan_CreateSurface( window,
         vk_instance,
-        &cara_vk.vk_alloc_callbacks,
+        nullptr,
         &presentation_surface) ) {
     fprintf( stderr, "[Vulkan] Failed to create a vulkan surface.\n" );
     SDL_DestroyWindow( window );
 error_after_window_early:
-    vkDestroyInstance(vk_instance, &cara_vk.vk_alloc_callbacks);
+    //vkDestroyInstance(vk_instance, &cara_vk.vk_alloc_callbacks);
+    vkDestroyInstance(vk_instance, nullptr);
     ma_free( cara_single.mem_arena, worker_state->worker_info->idx_self, arr_device_props );
     ma_free( cara_single.mem_arena,
         worker_state->worker_info->idx_self, arr_phys_devices );
-    unload_shared_lib( vulkan_library );
+    //unload_shared_lib( vulkan_library );
     return 1;
   }
 
@@ -1113,25 +1130,29 @@ error_after_window_early:
   VkDevice new_log_dev;
 
   result = vkCreateDevice( arr_phys_devices[idx_phys_deviced_picked],
-      &device_create_info, &cara_vk.vk_alloc_callbacks, &new_log_dev );
+      &device_create_info, nullptr, &new_log_dev );
+      //&device_create_info, &cara_vk.vk_alloc_callbacks, &new_log_dev );
   if ( result != VK_SUCCESS || new_log_dev == VK_NULL_HANDLE ) {
     fprintf( stderr, "[Vulkan] Could not create a logical device. (%s)\n",
         string_VkResult(result) );
     goto error_after_arr_q_create_info;
   }
 
+  // For applications that use just one VkDevice object, load device-related Vulkan entrypoints
+  //  directly from the driver with this function:
+  volkLoadDevice( new_log_dev );
 
-  //
-  // Load device-level functions
-  //
 
-  uint32_t nr_vk_imgs = 0;  // Assign 0 to the variable before a possible jmp
-  if ( vf_load_device_level_functions(new_log_dev,
-        names_device_extensions_required,
-        _arr_elem_cnt(names_device_extensions_required)) ) {
-    fprintf( stderr, "[Vulkan] Could not load device-level functions.\n" );
-    goto error_after_logical_device;
-  }
+  uint32_t nr_swapchain_imgs = 0;  // Assign 0 to the variable before a possible jmp
+  ////
+  //// Load device-level functions
+  ////
+  //if ( vf_load_device_level_functions(new_log_dev,
+  //      names_device_extensions_required,
+  //      _arr_elem_cnt(names_device_extensions_required)) ) {
+  //  fprintf( stderr, "[Vulkan] Could not load device-level functions.\n" );
+  //  goto error_after_logical_device;
+  //}
 
 
   //
@@ -1239,7 +1260,7 @@ error_after_window_early:
 
   // NOTE Do we need another image?
   // Determine the number and size of swapchain images
-  nr_vk_imgs = 2;
+  nr_swapchain_imgs = 2;
   VkSurfaceCapabilitiesKHR surface_capabilities;
   result = vkGetPhysicalDeviceSurfaceCapabilitiesKHR(
       arr_phys_devices[idx_phys_deviced_picked],
@@ -1247,10 +1268,10 @@ error_after_window_early:
       &surface_capabilities );
 
   if ( surface_capabilities.maxImageCount > 0 &&
-      nr_vk_imgs > surface_capabilities.maxImageCount ) {
-    nr_vk_imgs = surface_capabilities.maxImageCount;
-  } else if ( nr_vk_imgs < surface_capabilities.minImageCount ) {
-    nr_vk_imgs = surface_capabilities.minImageCount;
+      nr_swapchain_imgs > surface_capabilities.maxImageCount ) {
+    nr_swapchain_imgs = surface_capabilities.maxImageCount;
+  } else if ( nr_swapchain_imgs < surface_capabilities.minImageCount ) {
+    nr_swapchain_imgs = surface_capabilities.minImageCount;
   }
 
   VkExtent2D image_size = {
@@ -1394,7 +1415,7 @@ error_after_window_early:
   swapchain_create_info.pNext = nullptr;
   swapchain_create_info.flags = 0;
   swapchain_create_info.surface = presentation_surface;
-  swapchain_create_info.minImageCount = nr_vk_imgs;
+  swapchain_create_info.minImageCount = nr_swapchain_imgs;
   swapchain_create_info.imageFormat = present_img_format;
   swapchain_create_info.imageColorSpace = color_space;
   swapchain_create_info.imageExtent = image_size;
@@ -1417,30 +1438,31 @@ error_after_window_early:
   result = vkCreateSwapchainKHR(
       new_log_dev,
       &swapchain_create_info,
-      &cara_vk.vk_alloc_callbacks,
+      nullptr,
+      //&cara_vk.vk_alloc_callbacks,
       &swapchain );
   if ( result != VK_SUCCESS || swapchain == VK_NULL_HANDLE ) {
     fprintf( stderr, "[Vulkan] Could not create a swapchain.\n" );
     goto error_after_logical_device;
   }
-  cara_vk.color_att_format = present_img_format;
+  cara_vk.color_att_fmt = present_img_format;
 
 
-  result = vkGetSwapchainImagesKHR( new_log_dev, swapchain, &nr_vk_imgs, nullptr );
-  if ( result != VK_SUCCESS || nr_vk_imgs == 0 ) {
+  result = vkGetSwapchainImagesKHR( new_log_dev, swapchain, &nr_swapchain_imgs, nullptr );
+  if ( result != VK_SUCCESS || nr_swapchain_imgs == 0 ) {
     fprintf( stderr, "[Vulkan] Could not get the number of swapchain images.\n" );
     goto error_after_logical_device;
   }
 #ifdef DEBUG_MODE
   fprintf( stdout,
       "[Vulkan] The number of vulkan images in the swapchain is %u.\n",
-      nr_vk_imgs );
+      nr_swapchain_imgs );
 #endif
 
   VkImage * arr_swapchain_images;
-  _carbonara_malloc_array( &worker_state->malloc_helper, &arr_swapchain_images, nr_vk_imgs );
+  _carbonara_malloc_array( &worker_state->malloc_helper, &arr_swapchain_images, nr_swapchain_imgs );
 
-  result = vkGetSwapchainImagesKHR( new_log_dev, swapchain, &nr_vk_imgs, arr_swapchain_images );
+  result = vkGetSwapchainImagesKHR( new_log_dev, swapchain, &nr_swapchain_imgs, arr_swapchain_images );
   if ( result != VK_SUCCESS && result != VK_INCOMPLETE ) {
     fprintf( stderr, "[Vulkan] Could not enumerate swapchain images.\n" );
     goto error_after_swapchain_images;
@@ -1456,20 +1478,20 @@ error_after_window_early:
   cara_vk.arr_frame_infos[0].arr_cmd_pools =
     cara_malloc( &worker_state->malloc_helper,
       alignof(VkCommandPool),
-      cara_nr_cmd_centers * (
+      cara_max_nr_fif * (
         sizeof(VkCommandPool) * (1 + cara_single.proc_map->nr_processors) +
         sizeof(VkCommandBuffer) *
         (cara_max_nr_subpasses * cara_single.proc_map->nr_processors) )
       );
   memset( cara_vk.arr_frame_infos[0].arr_cmd_pools,
       0,
-      cara_nr_cmd_centers * (
+      cara_max_nr_fif * (
         sizeof(VkCommandPool) * (1 + cara_single.proc_map->nr_processors) +
         sizeof(VkCommandBuffer) *
         (cara_max_nr_subpasses * cara_single.proc_map->nr_processors) )
       );
   for ( unsigned int cmd_center_idx = 1;
-      cmd_center_idx < cara_nr_cmd_centers; cmd_center_idx++ ) {
+      cmd_center_idx < cara_max_nr_fif; cmd_center_idx++ ) {
     cara_vk.arr_frame_infos[cmd_center_idx].arr_cmd_pools =
       cara_vk.arr_frame_infos[cmd_center_idx-1].arr_cmd_pools +
       1 + cara_single.proc_map->nr_processors;
@@ -1510,7 +1532,7 @@ error_after_window_early:
                                                         // - Secondary command buffers can only be
                                                         // executed from primary command buffers,
                                                         // and we are not allowed to submit them.
-  for ( uint_fast8_t fb_idx = 0; fb_idx < cara_nr_cmd_centers; fb_idx++ ) {
+  for ( uint_fast8_t fb_idx = 0; fb_idx < cara_max_nr_fif; fb_idx++ ) {
 
     for ( uint_fast8_t worker_idx = 0;
         worker_idx < cara_single.proc_map->nr_processors; worker_idx++ ) {
@@ -1518,7 +1540,8 @@ error_after_window_early:
       result = vkCreateCommandPool(
           new_log_dev,
           &cmd_pool_create_info,
-          &cara_vk.vk_alloc_callbacks,
+          nullptr,
+          //&cara_vk.vk_alloc_callbacks,
           &cara_vk.arr_frame_infos[fb_idx].arr_cmd_pools[worker_idx]
           );
       if ( result != VK_SUCCESS ) {
@@ -1559,7 +1582,8 @@ error_after_window_early:
     result = vkCreateCommandPool(
         new_log_dev,
         &cmd_pool_create_info,
-        &cara_vk.vk_alloc_callbacks,
+        nullptr,
+        //&cara_vk.vk_alloc_callbacks,
         &cara_vk.arr_frame_infos[fb_idx].arr_cmd_pools[cara_single.proc_map->nr_processors]
         );
     if ( result != VK_SUCCESS ) {
@@ -1617,7 +1641,8 @@ error_after_window_early:
     result = vkCreateCommandPool(
         new_log_dev,
         &cmd_pool_create_info,
-        &cara_vk.vk_alloc_callbacks,
+        nullptr,
+        //&cara_vk.vk_alloc_callbacks,
         &cara_vk.trans_bufs.arr_cmd_pools[worker_idx]
         );
     if ( result != VK_SUCCESS ) {
@@ -1651,7 +1676,8 @@ error_after_window_early:
   result = vkCreateCommandPool(
       new_log_dev,
       &cmd_pool_create_info,
-      &cara_vk.vk_alloc_callbacks,
+      nullptr,
+      //&cara_vk.vk_alloc_callbacks,
       &cara_vk.trans_bufs.arr_cmd_pools[cara_single.proc_map->nr_processors]
       );
   if ( result != VK_SUCCESS ) {
@@ -1696,55 +1722,75 @@ error_after_window_early:
   semaphore_create_info.flags = 0;
 
   VkSemaphore semaphore;
-  result = vkCreateSemaphore( new_log_dev,
-      &semaphore_create_info,
-      &cara_vk.vk_alloc_callbacks,
-      &semaphore
-      );
-  if ( result != VK_SUCCESS || !semaphore ) {
-    fprintf( stderr, "[Vulkan] Failed to create a semaphore. (%s)\n", string_VkResult(result) );
-    fprintf( stderr, "[Vulkan] (main_semaphore_before_A)\n" );
-    goto error_after_swapchain_images;
+  for ( unsigned int fif_idx = 0; fif_idx < cara_max_nr_fif; fif_idx++ ) {
+    result = vkCreateSemaphore( new_log_dev,
+        &semaphore_create_info,
+        nullptr,
+        //&cara_vk.vk_alloc_callbacks,
+        &semaphore
+        );
+    if ( result != VK_SUCCESS || !semaphore ) {
+      fprintf( stderr, "[Vulkan] Failed to create a semaphore. (%s)\n", string_VkResult(result) );
+      fprintf( stderr, "[Vulkan] (main_semaphore_before_A)\n" );
+      goto error_after_swapchain_images;
+    }
+    cara_vk.arr_semaphore_before_A[fif_idx] = semaphore;
   }
-  cara_vk.main_semaphore_before_A = semaphore;
 
-  result = vkCreateSemaphore( new_log_dev,
-      &semaphore_create_info,
-      &cara_vk.vk_alloc_callbacks,
-      &semaphore
-      );
-  if ( result != VK_SUCCESS || !semaphore ) {
-    fprintf( stderr, "[Vulkan] Failed to create a semaphore. (%s)\n", string_VkResult(result) );
-    fprintf( stderr, "[Vulkan] (main_semaphore_after_A)\n" );
-    goto error_after_swapchain_images;
+  for ( unsigned int fif_idx = 0; fif_idx < cara_max_nr_fif; fif_idx++ ) {
+    result = vkCreateSemaphore( new_log_dev,
+        &semaphore_create_info,
+        nullptr,
+        //&cara_vk.vk_alloc_callbacks,
+        &semaphore
+        );
+    if ( result != VK_SUCCESS || !semaphore ) {
+      fprintf( stderr, "[Vulkan] Failed to create a semaphore. (%s)\n", string_VkResult(result) );
+      fprintf( stderr, "[Vulkan] (main_semaphore_after_A)\n" );
+      goto error_after_swapchain_images;
+    }
+    cara_vk.arr_semaphore_after_A[fif_idx] = semaphore;
   }
-  cara_vk.main_semaphore_after_A = semaphore;
 
+  // Start making binary semaphores
   semaphore_create_info.pNext = nullptr;
-  // The initial value will be 0 (unsignaled)
-  result = vkCreateSemaphore( new_log_dev,
-      &semaphore_create_info,
-      &cara_vk.vk_alloc_callbacks,
-      &semaphore
-      );
-  if ( result != VK_SUCCESS || !semaphore ) {
-    fprintf( stderr, "[Vulkan] Failed to create a semaphore. (%s)\n", string_VkResult(result) );
-    fprintf( stderr, "[Vulkan] (wsi_semaphore_present)\n" );
+  cara_vk.arr_wsi_present_semaphores = cara_malloc( &worker_state->malloc_helper,
+        alignof(VkSemaphore), sizeof(VkSemaphore) * nr_swapchain_imgs );
+  if ( !cara_vk.arr_wsi_present_semaphores ) {
+    fprintf( stderr, "[Vulkan] %s\n", err_msg_text[err_msg_out_of_memory] );
     goto error_after_swapchain_images;
   }
-  cara_vk.wsi_semaphore_present = semaphore;
+  memset( cara_vk.trans_bufs.arr_cmd_pools, 0, sizeof(VkSemaphore) * nr_swapchain_imgs );
+  for ( unsigned int swapchain_img_idx = 0;
+      swapchain_img_idx < nr_swapchain_imgs; swapchain_img_idx++ ) {
+    result = vkCreateSemaphore( new_log_dev,
+        &semaphore_create_info,
+        nullptr,
+        //&cara_vk.vk_alloc_callbacks,
+        &semaphore
+        );
+    if ( result != VK_SUCCESS || !semaphore ) {
+      fprintf( stderr, "[Vulkan] Failed to create a semaphore. (%s)\n", string_VkResult(result) );
+      fprintf( stderr, "[Vulkan] (wsi_semaphore_present)\n" );
+      goto error_after_swapchain_images;
+    }
+    cara_vk.arr_acquire_semaphores[swapchain_img_idx] = semaphore;
+  }
 
-  result = vkCreateSemaphore( new_log_dev,
-      &semaphore_create_info,
-      &cara_vk.vk_alloc_callbacks,
-      &semaphore
-      );
-  if ( result != VK_SUCCESS || !semaphore ) {
-    fprintf( stderr, "[Vulkan] Failed to create a semaphore. (%s)\n", string_VkResult(result) );
-    fprintf( stderr, "[Vulkan] (wsi_semaphore_acquire)\n" );
-    goto error_after_swapchain_images;
+  for ( unsigned int fif_idx = 0; fif_idx < cara_max_nr_fif; fif_idx++ ) {
+    result = vkCreateSemaphore( new_log_dev,
+        &semaphore_create_info,
+        nullptr,
+        //&cara_vk.vk_alloc_callbacks,
+        &semaphore
+        );
+    if ( result != VK_SUCCESS || !semaphore ) {
+      fprintf( stderr, "[Vulkan] Failed to create a semaphore. (%s)\n", string_VkResult(result) );
+      fprintf( stderr, "[Vulkan] (wsi_semaphore_acquire)\n" );
+      goto error_after_swapchain_images;
+    }
+    cara_vk.arr_acquire_semaphores[fif_idx] = semaphore;
   }
-  cara_vk.wsi_semaphore_acquire = semaphore;
 
   VkPhysicalDeviceMemoryProperties2 memory_properties;
   memory_properties.pNext = nullptr;
@@ -1788,14 +1834,13 @@ error_after_window_early:
   fprintf( stdout,
       "[Vulkan] Checking supported texture decoders for ASTC format on the device...\n" );
 #endif
-  for ( uint_fast8_t idx_format = 0;
-      idx_format < _arr_elem_cnt(astc_formats_used); idx_format++ ) {
+  for ( uint_fast8_t idx_fmt = 0; idx_fmt < _arr_elem_cnt(astc_formats_used); idx_fmt++ ) {
     VkFormatProperties2 format_props;
     format_props.sType = VK_STRUCTURE_TYPE_FORMAT_PROPERTIES_2;
     format_props.pNext = nullptr;
     vkGetPhysicalDeviceFormatProperties2(
         arr_phys_devices[idx_phys_deviced_picked],
-        astc_formats_used[idx_format],
+        astc_formats_used[idx_fmt],
         &format_props
         );
     if ( !(format_props.formatProperties.optimalTilingFeatures &
@@ -1833,14 +1878,13 @@ error_after_window_early:
       VK_FORMAT_BC7_UNORM_BLOCK,
     };
     all_formats_are_supported = 1;
-    for ( uint_fast8_t idx_format = 0;
-        idx_format < _arr_elem_cnt(s3tc_formats_used); idx_format++ ) {
+    for ( uint_fast8_t idx_fmt = 0; idx_fmt < _arr_elem_cnt(s3tc_formats_used); idx_fmt++ ) {
       VkFormatProperties2 format_props;
       format_props.sType = VK_STRUCTURE_TYPE_FORMAT_PROPERTIES_2;
       format_props.pNext = nullptr;
       vkGetPhysicalDeviceFormatProperties2(
           arr_phys_devices[idx_phys_deviced_picked],
-          s3tc_formats_used[idx_format],
+          s3tc_formats_used[idx_fmt],
           &format_props
           );
       if ( !(format_props.formatProperties.optimalTilingFeatures &
@@ -1862,29 +1906,35 @@ error_after_window_early:
           "[Vulkan] %s doesn't support optimal operations on compressed texture data.\n",
           arr_device_props[idx_phys_deviced_picked].properties.deviceName );
 error_after_swapchain_images:
-      if( cara_vk.wsi_semaphore_acquire != VK_NULL_HANDLE ) {
-        vkDestroySemaphore( cara_vk.log_dev,
-            cara_vk.wsi_semaphore_acquire,
-            nullptr );
-        cara_vk.wsi_semaphore_acquire = VK_NULL_HANDLE;
+      for ( unsigned int fif_idx = 0; fif_idx < cara_max_nr_fif; fif_idx++ ) {
+        if( cara_vk.arr_acquire_semaphores[fif_idx] != VK_NULL_HANDLE ) {
+          vkDestroySemaphore( cara_vk.log_dev, cara_vk.arr_acquire_semaphores[fif_idx], nullptr );
+          cara_vk.arr_acquire_semaphores[fif_idx] = VK_NULL_HANDLE;
+        }
       }
-      if( cara_vk.wsi_semaphore_present != VK_NULL_HANDLE ) {
-        vkDestroySemaphore( cara_vk.log_dev,
-            cara_vk.wsi_semaphore_present,
-            nullptr );
-        cara_vk.wsi_semaphore_present = VK_NULL_HANDLE;
+      if( cara_vk.arr_wsi_present_semaphores != nullptr ) {
+        for ( unsigned int swapchain_img_idx = 0;
+            swapchain_img_idx < nr_swapchain_imgs; swapchain_img_idx++ ) {
+          if( cara_vk.arr_wsi_present_semaphores[swapchain_img_idx] != VK_NULL_HANDLE ) {
+            vkDestroySemaphore( cara_vk.log_dev,
+                cara_vk.arr_wsi_present_semaphores[swapchain_img_idx],
+                nullptr );
+            cara_vk.arr_wsi_present_semaphores[swapchain_img_idx] = VK_NULL_HANDLE;
+          }
+        }
+        ma_free( cara_single.mem_arena, worker_state->worker_info->idx_self,
+            cara_vk.arr_wsi_present_semaphores );
+        cara_vk.arr_wsi_present_semaphores = nullptr;
       }
-      if( cara_vk.main_semaphore_before_A != VK_NULL_HANDLE ) {
-        vkDestroySemaphore( cara_vk.log_dev,
-            cara_vk.main_semaphore_before_A,
-            nullptr );
-        cara_vk.main_semaphore_before_A = VK_NULL_HANDLE;
-      }
-      if( cara_vk.main_semaphore_after_A != VK_NULL_HANDLE ) {
-        vkDestroySemaphore( cara_vk.log_dev,
-            cara_vk.main_semaphore_after_A,
-            nullptr );
-        cara_vk.main_semaphore_after_A = VK_NULL_HANDLE;
+      for ( unsigned int fif_idx = 0; fif_idx < cara_max_nr_fif; fif_idx++ ) {
+        if( cara_vk.arr_semaphore_before_A[fif_idx] != VK_NULL_HANDLE ) {
+          vkDestroySemaphore( cara_vk.log_dev, cara_vk.arr_acquire_semaphores[fif_idx], nullptr );
+          cara_vk.arr_semaphore_before_A[fif_idx] = VK_NULL_HANDLE;
+        }
+        if( cara_vk.arr_semaphore_after_A[fif_idx] != VK_NULL_HANDLE ) {
+          vkDestroySemaphore( cara_vk.log_dev, cara_vk.arr_acquire_semaphores[fif_idx], nullptr );
+          cara_vk.arr_semaphore_after_A[fif_idx] = VK_NULL_HANDLE;
+        }
       }
       ma_free( cara_single.mem_arena,
           worker_state->worker_info->idx_self,
@@ -1896,9 +1946,10 @@ error_after_logical_device:
         {
           if ( cara_vk.trans_bufs.arr_cmd_pools[idx_command_pool] )
           {
-            vkDestroyCommandPool(cara_vk.log_dev,
+            vkDestroyCommandPool( cara_vk.log_dev,
                 cara_vk.trans_bufs.arr_cmd_pools[idx_command_pool],
-                &cara_vk.vk_alloc_callbacks);
+                nullptr );
+                //&cara_vk.vk_alloc_callbacks );
 
             cara_vk.trans_bufs.arr_cmd_pools[idx_command_pool] = 0;
           }
@@ -1906,14 +1957,15 @@ error_after_logical_device:
       }
 
       for ( uint_fast8_t idx_framebuffer = 0;
-          idx_framebuffer < cara_nr_cmd_centers; idx_framebuffer++ ) {
+          idx_framebuffer < cara_max_nr_fif; idx_framebuffer++ ) {
         for ( uint_fast8_t worker_idx = 0;
             worker_idx <= cara_single.proc_map->nr_processors; worker_idx++ ) {
           if ( cara_vk.arr_frame_infos[idx_framebuffer].arr_cmd_pools[worker_idx] ) {
             vkDestroyCommandPool(
                 new_log_dev,
                 cara_vk.arr_frame_infos[idx_framebuffer].arr_cmd_pools[worker_idx],
-                &cara_vk.vk_alloc_callbacks
+                nullptr
+                //&cara_vk.vk_alloc_callbacks
                 );
 
             cara_vk.arr_frame_infos[idx_framebuffer].arr_cmd_pools[worker_idx] = 0;
@@ -1921,7 +1973,8 @@ error_after_logical_device:
         }
       }
 
-      vkDestroyDevice(new_log_dev, &cara_vk.vk_alloc_callbacks);
+      //vkDestroyDevice( new_log_dev, &cara_vk.vk_alloc_callbacks );
+      vkDestroyDevice( new_log_dev, nullptr );
 error_after_arr_q_create_info:
       ma_free( cara_single.mem_arena,
           worker_state->worker_info->idx_self,
@@ -1935,26 +1988,66 @@ error_after_presentation_surface:
       SDL_Vulkan_DestroySurface(
           vk_instance,
           presentation_surface,
-          &cara_vk.vk_alloc_callbacks
+          nullptr
+          //&cara_vk.vk_alloc_callbacks
           );
       SDL_DestroyWindow(window);
       //ma_free(cara_single.mem_arena, worker_state->worker_info->idx_self, window);
-      vkDestroyInstance(vk_instance, &cara_vk.vk_alloc_callbacks);
+      //vkDestroyInstance(vk_instance, &cara_vk.vk_alloc_callbacks);
+      vkDestroyInstance( vk_instance, nullptr );
       ma_free(cara_single.mem_arena, worker_state->worker_info->idx_self, arr_device_props);
       ma_free( cara_single.mem_arena,
           worker_state->worker_info->idx_self, arr_phys_devices );
-      unload_shared_lib( vulkan_library );
+      //unload_shared_lib( vulkan_library );
       return 1;
     }
   }
 
+  // Choose a depth buffer format
+  VkFormat arr_zbuf_cands[] = {
+    VK_FORMAT_D32_SFLOAT,
+    VK_FORMAT_D32_SFLOAT_S8_UINT,
+    VK_FORMAT_D24_UNORM_S8_UINT,
+    VK_FORMAT_D16_UNORM,
+  };
+  VkFormatProperties2 format_props;
+  format_props.sType = VK_STRUCTURE_TYPE_FORMAT_PROPERTIES_2;
+  format_props.pNext = nullptr;
+  VkFormat chosen_fmt = VK_FORMAT_R8_BOOL_ARM;
+  for ( uint_fast8_t idx_fmt = 0; idx_fmt < _arr_elem_cnt(arr_zbuf_cands); idx_fmt++ ) {
+    vkGetPhysicalDeviceFormatProperties2(
+        arr_phys_devices[idx_phys_deviced_picked],
+        arr_zbuf_cands[idx_fmt],
+        &format_props
+        );
+    if ( format_props.formatProperties.optimalTilingFeatures &
+        VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT ) {
+      chosen_fmt = idx_fmt;
+      break;
+    }
+  }
+  if ( chosen_fmt == VK_FORMAT_R8_BOOL_ARM ) {
+    for ( uint_fast8_t idx_fmt = 0; idx_fmt < _arr_elem_cnt(arr_zbuf_cands); idx_fmt++ ) {
+      vkGetPhysicalDeviceFormatProperties2(
+          arr_phys_devices[idx_phys_deviced_picked],
+          arr_zbuf_cands[idx_fmt],
+          &format_props
+          );
+      if ( format_props.formatProperties.linearTilingFeatures &
+          VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT ) {
+        chosen_fmt = idx_fmt;
+        break;
+      }
+    }
+  }
+  cara_vk.zbuf_fmt = chosen_fmt;
 
 
   cara_vk.log_dev = new_log_dev;
   cara_vk.vk_instance = vk_instance;
-  cara_vk.vk_library = vulkan_library;
+  //cara_vk.vk_library = vulkan_library;
   cara_vk.window = window;
-  cara_vk.nr_vk_img = nr_vk_imgs;
+  cara_vk.nr_swapchain_imgs = nr_swapchain_imgs;
   cara_vk.swapchain = swapchain;
   cara_vk.arr_swapchain_imgs = arr_swapchain_images;
   cara_vk.dims_swapchain_imgs = image_size;
@@ -1991,18 +2084,21 @@ void destroy_vulkan_objects( struct ms_worker_info * worker_info )
   }
 
   if ( cara_vk.framebuffer ) {
-    vkDestroyFramebuffer( cara_vk.log_dev, cara_vk.framebuffer, &cara_vk.vk_alloc_callbacks );
+    //vkDestroyFramebuffer( cara_vk.log_dev, cara_vk.framebuffer, &cara_vk.vk_alloc_callbacks );
+    vkDestroyFramebuffer( cara_vk.log_dev, cara_vk.framebuffer, nullptr );
     cara_vk.framebuffer = VK_NULL_HANDLE;
   }
 
   if ( cara_vk.render_pass ) {
-    vkDestroyRenderPass( cara_vk.log_dev, cara_vk.render_pass, &cara_vk.vk_alloc_callbacks );
+    //vkDestroyRenderPass( cara_vk.log_dev, cara_vk.render_pass, &cara_vk.vk_alloc_callbacks );
+    vkDestroyRenderPass( cara_vk.log_dev, cara_vk.render_pass, nullptr );
     cara_vk.render_pass = VK_NULL_HANDLE;
   }
 
   if ( cara_vk.pipeline_layout ) {
     vkDestroyPipelineLayout( cara_vk.log_dev, cara_vk.pipeline_layout,
-        &cara_vk.vk_alloc_callbacks );
+        //&cara_vk.vk_alloc_callbacks );
+        nullptr );
     cara_vk.pipeline_layout = VK_NULL_HANDLE;
   }
 
@@ -2012,27 +2108,32 @@ void destroy_vulkan_objects( struct ms_worker_info * worker_info )
   }
 
   if ( cara_vk.dp_first ) {
-    vkDestroyDescriptorPool( cara_vk.log_dev, cara_vk.dp_first, &cara_vk.vk_alloc_callbacks );
+    //vkDestroyDescriptorPool( cara_vk.log_dev, cara_vk.dp_first, &cara_vk.vk_alloc_callbacks );
+    vkDestroyDescriptorPool( cara_vk.log_dev, cara_vk.dp_first, nullptr );
     cara_vk.dp_first = VK_NULL_HANDLE;
   }
 
   if ( cara_vk.dsl_first ) {
-    vkDestroyDescriptorSetLayout( cara_vk.log_dev, cara_vk.dsl_first, &cara_vk.vk_alloc_callbacks );
+    //vkDestroyDescriptorSetLayout( cara_vk.log_dev, cara_vk.dsl_first, &cara_vk.vk_alloc_callbacks );
+    vkDestroyDescriptorSetLayout( cara_vk.log_dev, cara_vk.dsl_first, nullptr );
     cara_vk.dsl_first = VK_NULL_HANDLE;
   }
 
   if ( cara_vk.sampler_8_2048_tex ) {
-    vkDestroySampler( cara_vk.log_dev, cara_vk.sampler_8_2048_tex, &cara_vk.vk_alloc_callbacks );
+    //vkDestroySampler( cara_vk.log_dev, cara_vk.sampler_8_2048_tex, &cara_vk.vk_alloc_callbacks );
+    vkDestroySampler( cara_vk.log_dev, cara_vk.sampler_8_2048_tex, nullptr );
     cara_vk.sampler_8_2048_tex = VK_NULL_HANDLE;
   }
 
   if ( cara_vk.iv_8_2048_tex ) {
-    vkDestroyImageView( cara_vk.log_dev, cara_vk.iv_8_2048_tex, &cara_vk.vk_alloc_callbacks );
+    //vkDestroyImageView( cara_vk.log_dev, cara_vk.iv_8_2048_tex, &cara_vk.vk_alloc_callbacks );
+    vkDestroyImageView( cara_vk.log_dev, cara_vk.iv_8_2048_tex, nullptr );
     cara_vk.iv_8_2048_tex = VK_NULL_HANDLE;
   }
 
   if ( cara_vk.sampler_8_2048_tex ) {
-    vkDestroyImage( cara_vk.log_dev, cara_vk.vki_8_2048_tex, &cara_vk.vk_alloc_callbacks );
+    //vkDestroyImage( cara_vk.log_dev, cara_vk.vki_8_2048_tex, &cara_vk.vk_alloc_callbacks );
+    vkDestroyImage( cara_vk.log_dev, cara_vk.vki_8_2048_tex, nullptr );
     cara_vk.vki_8_2048_tex = VK_NULL_HANDLE;
   }
 
@@ -2043,36 +2144,45 @@ void destroy_vulkan_objects( struct ms_worker_info * worker_info )
   }
 
   // FIXME Host access to `semaphore` must be externally synchronized (vkDestroySemaphore)
-  if( cara_vk.wsi_semaphore_acquire != VK_NULL_HANDLE ) {
-    vkDestroySemaphore( cara_vk.log_dev,
-        cara_vk.wsi_semaphore_acquire,
-        &cara_vk.vk_alloc_callbacks );
-    cara_vk.wsi_semaphore_acquire = VK_NULL_HANDLE;
+  for ( unsigned int fif_idx = 0; fif_idx < cara_max_nr_fif; fif_idx++ ) {
+    if( cara_vk.arr_acquire_semaphores[fif_idx] != VK_NULL_HANDLE ) {
+      vkDestroySemaphore( cara_vk.log_dev, cara_vk.arr_acquire_semaphores[fif_idx],
+          //&cara_vk.vk_alloc_callbacks );
+          nullptr );
+      cara_vk.arr_acquire_semaphores[fif_idx] = VK_NULL_HANDLE;
+    }
   }
-  if( cara_vk.wsi_semaphore_present != VK_NULL_HANDLE ) {
-    vkDestroySemaphore( cara_vk.log_dev,
-        cara_vk.wsi_semaphore_present,
-        &cara_vk.vk_alloc_callbacks );
-    cara_vk.wsi_semaphore_present = VK_NULL_HANDLE;
+  if( cara_vk.arr_wsi_present_semaphores != nullptr ) {
+    for ( unsigned int swapchain_img_idx = 0;
+        swapchain_img_idx < cara_vk.nr_swapchain_imgs; swapchain_img_idx++ ) {
+      if( cara_vk.arr_wsi_present_semaphores[swapchain_img_idx] != VK_NULL_HANDLE ) {
+        vkDestroySemaphore( cara_vk.log_dev,
+            cara_vk.arr_wsi_present_semaphores[swapchain_img_idx],
+            //&cara_vk.vk_alloc_callbacks );
+            nullptr );
+        cara_vk.arr_wsi_present_semaphores[swapchain_img_idx] = VK_NULL_HANDLE;
+      }
+    }
+    ma_free( cara_single.mem_arena, worker_info->idx_self, cara_vk.arr_wsi_present_semaphores );
+    cara_vk.arr_wsi_present_semaphores = nullptr;
   }
-  if( cara_vk.main_semaphore_before_A != VK_NULL_HANDLE ) {
-    vkDestroySemaphore( cara_vk.log_dev,
-        cara_vk.main_semaphore_before_A,
-        &cara_vk.vk_alloc_callbacks );
-    cara_vk.main_semaphore_before_A = VK_NULL_HANDLE;
-  }
-  if( cara_vk.main_semaphore_after_A != VK_NULL_HANDLE ) {
-    vkDestroySemaphore( cara_vk.log_dev,
-        cara_vk.main_semaphore_after_A,
-        &cara_vk.vk_alloc_callbacks );
-    cara_vk.main_semaphore_after_A = VK_NULL_HANDLE;
+  for ( unsigned int fif_idx = 0; fif_idx < cara_max_nr_fif; fif_idx++ ) {
+    if( cara_vk.arr_semaphore_before_A[fif_idx] != VK_NULL_HANDLE ) {
+      vkDestroySemaphore( cara_vk.log_dev, cara_vk.arr_acquire_semaphores[fif_idx], nullptr );
+      cara_vk.arr_semaphore_before_A[fif_idx] = VK_NULL_HANDLE;
+    }
+    if( cara_vk.arr_semaphore_after_A[fif_idx] != VK_NULL_HANDLE ) {
+      vkDestroySemaphore( cara_vk.log_dev, cara_vk.arr_acquire_semaphores[fif_idx], nullptr );
+      cara_vk.arr_semaphore_after_A[fif_idx] = VK_NULL_HANDLE;
+    }
   }
 
   if ( cara_vk.swapchain ) {
     // FIXME Host access to swapchain must be externally synchronized
     vkDestroySwapchainKHR( cara_vk.log_dev,
         cara_vk.swapchain,
-        &cara_vk.vk_alloc_callbacks );
+        //&cara_vk.vk_alloc_callbacks );
+        nullptr );
     cara_vk.swapchain = VK_NULL_HANDLE;
 
     ma_free( cara_single.mem_arena, worker_info->idx_self, cara_vk.arr_swapchain_imgs );
@@ -2086,10 +2196,11 @@ void destroy_vulkan_objects( struct ms_worker_info * worker_info )
         //fprintf( stdout, "trans_bufs.arr_cmd_pools[%u] = %#018lx\n", idx_command_pool,
         //    ptr2ui(cara_vk.trans_bufs.arr_cmd_pools[idx_command_pool]) );
         // FIXME Host access to `commandPool` must be externally synchronized
-        vkDestroyCommandPool(cara_vk.log_dev,
+        vkDestroyCommandPool( cara_vk.log_dev,
             cara_vk.trans_bufs.arr_cmd_pools[idx_command_pool],
-            &cara_vk.vk_alloc_callbacks);
-      }
+            //&cara_vk.vk_alloc_callbacks );
+            nullptr );
+       }
     }
     ma_free( cara_single.mem_arena, worker_info->idx_self, cara_vk.trans_bufs.arr_cmd_pools );
     cara_vk.trans_bufs.arr_cmd_pools = nullptr;
@@ -2097,7 +2208,7 @@ void destroy_vulkan_objects( struct ms_worker_info * worker_info )
 
   if ( cara_vk.arr_frame_infos[0].arr_cmd_pools ) {
     for ( uint_fast8_t idx_framebuffer = 0;
-        idx_framebuffer < cara_nr_cmd_centers; idx_framebuffer++ ) {
+        idx_framebuffer < cara_max_nr_fif; idx_framebuffer++ ) {
       for ( uint_fast8_t idx_command_pool = 0;
           idx_command_pool <= cara_single.proc_map->nr_processors; idx_command_pool++ ) {
         if ( cara_vk.arr_frame_infos[idx_framebuffer].arr_cmd_pools[idx_command_pool] ) {
@@ -2107,7 +2218,8 @@ void destroy_vulkan_objects( struct ms_worker_info * worker_info )
           //    ptr2ui(cara_vk.arr_framebufs[idx_framebuffer].arr_cmd_pools[idx_command_pool]) );
           vkDestroyCommandPool( cara_vk.log_dev,
               cara_vk.arr_frame_infos[idx_framebuffer].arr_cmd_pools[idx_command_pool],
-              &cara_vk.vk_alloc_callbacks );
+              //&cara_vk.vk_alloc_callbacks );
+              nullptr );
         }
       }
     }
@@ -2124,7 +2236,8 @@ void destroy_vulkan_objects( struct ms_worker_info * worker_info )
     SDL_Vulkan_DestroySurface(
         cara_vk.vk_instance,
         cara_vk.presentation_surface,
-        &cara_vk.vk_alloc_callbacks);
+        //&cara_vk.vk_alloc_callbacks );
+        nullptr );
     cara_vk.presentation_surface = VK_NULL_HANDLE;
   }
 
@@ -2134,19 +2247,21 @@ void destroy_vulkan_objects( struct ms_worker_info * worker_info )
   }
 
   if ( cara_vk.log_dev ) {
-    vkDestroyDevice( cara_vk.log_dev, &cara_vk.vk_alloc_callbacks );
+    //vkDestroyDevice( cara_vk.log_dev, &cara_vk.vk_alloc_callbacks );
+    vkDestroyDevice( cara_vk.log_dev, nullptr );
     cara_vk.log_dev = VK_NULL_HANDLE;
   }
 
   if ( cara_vk.vk_instance ) {
-    vkDestroyInstance( cara_vk.vk_instance, &cara_vk.vk_alloc_callbacks );
+    //vkDestroyInstance( cara_vk.vk_instance, &cara_vk.vk_alloc_callbacks );
+    vkDestroyInstance( cara_vk.vk_instance, nullptr );
     cara_vk.vk_instance = VK_NULL_HANDLE;
   }
 
-  if ( cara_vk.vk_library ) {
-    unload_shared_lib( cara_vk.vk_library );
-    cara_vk.vk_library = nullptr;
-  }
+  //if ( cara_vk.vk_library ) {
+  //  unload_shared_lib( cara_vk.vk_library );
+  //  cara_vk.vk_library = nullptr;
+  //}
 
 }
 

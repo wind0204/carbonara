@@ -33,10 +33,10 @@ int vf_load_func_exported_from_vulkan_loader_library(shared_lib * vulkan_library
 
 //-------------------------------------------------------------------------------------------------
 // Vulkan functions can be divided into three levels, which are global, instance, and device.
-// Device-level functions are used to perform typical operations such as drawing, shader-modules
-// creation, image creation, or data copying. Instance-level functions allow us to create logical
-// devices. To do all this, and to load device and instance-level functions, we need to create an
-// Instance. This operation is performed with global-level functions, which we need to load first.
+//  Device-level functions are used to perform typical operations such as drawing, shader-modules
+//  creation, image creation, or data copying. Instance-level functions allow us to create logical
+//  devices. To do all this, and to load device and instance-level functions, we need to create an
+//  Instance. This operation is performed with global-level functions, which we need to load first.
 int vf_load_global_level_functions() {
 #define GLOBAL_LEVEL_VULKAN_FUNCTION( name )                                  \
   name = (PFN_##name)vkGetInstanceProcAddr( 0, #name );                       \
@@ -58,8 +58,8 @@ int vf_load_global_level_functions() {
 
 //-------------------------------------------------------------------------------------------------
 // How can we tell if a function is instance- or device-level? All device-level functions have
-// their first parameter of type VkDevice, VkQueue, or VkCommandBuffer. So, if a function doesn't
-// have such a parameter and is not from the global level, it is from an instance level.
+//  their first parameter of type VkDevice, VkQueue, or VkCommandBuffer. So, if a function doesn't
+//  have such a parameter and is not from the global level, it is from an instance level.
 int vf_load_instance_level_functions(VkInstance vk_instance,
     const char * const * enabled_extensions,
     uint_fast8_t nr_enabled_extensions) {
@@ -102,13 +102,13 @@ int vf_load_instance_level_functions(VkInstance vk_instance,
 
 //-------------------------------------------------------------------------------------------------
 // If we want to avoid unnecessary jumps and acquire function pointers corresponding directly to a
-// given device, we should do that by using a vkGetDeviceProcAddr(). This way, we can avoid the
-// intermediate function call and improve the performance of our application. Such an approach also
-// has some drawbacks: We need to acquire function pointers for each device created in an
-// application. If we want to perform operations on many different devices, we need a separate list
-// of function pointers for each logical device. We can't use functions acquired from one device
-// to perform operations on a different device. But using C language's preprocessor, it is quite
-// easy to acquire function pointers specific to a given device.
+//  given device, we should do that by using a vkGetDeviceProcAddr(). This way, we can avoid the
+//  intermediate function call and improve the performance of our application. Such an approach also
+//  has some drawbacks: We need to acquire function pointers for each device created in an
+//  application. If we want to perform operations on many different devices, we need a separate list
+//  of function pointers for each logical device. We can't use functions acquired from one device
+//  to perform operations on a different device. But using C language's preprocessor, it is quite
+//  easy to acquire function pointers specific to a given device.
 int vf_load_device_level_functions(VkDevice vk_device,
     const char * const * enabled_extensions,
     uint_fast8_t nr_enabled_extensions) {

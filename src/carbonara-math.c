@@ -14,9 +14,9 @@ static inline void get_rotaion_matrix_impl(
     float angle,
     float * restrict dst )
 {
-  const float c = cosf(angle);
-  const float _1_c = 1.0f - c;
-  const float s = sinf(angle);
+  const float cos = cosf(angle);
+  const float one_minus_c = 1.0f - cos;
+  const float sin = sinf(angle);
 
   const float x = pivot[0];
   const float y = pivot[1];
@@ -24,9 +24,9 @@ static inline void get_rotaion_matrix_impl(
 
   // I guess the compiler would probably vectorize it since there is a
   // quite a bit of computation with a very small number of memory loads.
-  // #. Mult :  3 +6 +3 = 12
-  // #. Plus/Minus :  3 +3*2 = 9
-  // #. Load :  3 float
+  // # of Mult :  3 +6 +3 = 12
+  // # of Add/Sub :  3 +3*2 = 9
+  // # of Load :  3 float
 
   // x * x*(1-c) + c
   // y * y*(1-c) + c
@@ -35,19 +35,19 @@ static inline void get_rotaion_matrix_impl(
   // x * z*(1-c) [(-ys)|(+ys)]
   // y * z*(1-c) [(-xs)|(+xs)]
 
-  dst[4*0 + 0] = x * x * _1_c + c;
-  dst[4*0 + 1] = y * x * _1_c - z * s;
-  dst[4*0 + 2] = z * x * _1_c + y * s;
+  dst[4*0 + 0] = x * x * one_minus_c + cos;
+  dst[4*0 + 1] = y * x * one_minus_c - z * sin;
+  dst[4*0 + 2] = z * x * one_minus_c + y * sin;
   dst[4*0 + 3] = 0.0f;
 
-  dst[4*1 + 0] = x * y * _1_c + z * s;
-  dst[4*1 + 1] = y * y * _1_c + c;
-  dst[4*1 + 2] = z * y * _1_c - x * s;
+  dst[4*1 + 0] = x * y * one_minus_c + z * sin;
+  dst[4*1 + 1] = y * y * one_minus_c + cos;
+  dst[4*1 + 2] = z * y * one_minus_c - x * sin;
   dst[4*1 + 3] = 0.0f;
 
-  dst[4*2 + 0] =  x * z * _1_c - y * s;
-  dst[4*2 + 1] =  y * z * _1_c + x * s;
-  dst[4*2 + 2] = z * z * _1_c + c;
+  dst[4*2 + 0] =  x * z * one_minus_c - y * sin;
+  dst[4*2 + 1] =  y * z * one_minus_c + x * sin;
+  dst[4*2 + 2] = z * z * one_minus_c + cos;
   dst[4*2 + 3] = 0.0f;
 
   dst[4*3 + 0] = 0.0f;

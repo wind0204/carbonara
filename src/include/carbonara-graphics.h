@@ -8,7 +8,7 @@
 #include <SDL3/SDL_video.h>
 
 #include "carbonara.h"
-#include "appdev_support-shared_library.h"
+//#include "appdev_support-shared_library.h"
 #include "memorable_arena.h"
 
 
@@ -19,8 +19,8 @@
  */
 constexpr float cara_1m = 1.0 / 2;
 
-// I guess two sets of command pools is okay?
-constexpr unsigned int cara_nr_cmd_centers = 2;
+// I guess two sets of command pools is okay? two frames in flight.
+constexpr unsigned int cara_max_nr_fif = 2;
 
 enum cara_signs_born : uint64_t {
   csb_origin = 0,
@@ -91,8 +91,10 @@ struct cara_vk_single {
   static_assert( alignof(int64_t) >= alignof(void*), "Sort the struct members!" );
   char * stone_texture;
   char * sand_texture;
+  char * spv_simplest_vert;
   SDL_Window * window;
   VkImage * arr_swapchain_imgs;
+  VkSemaphore * arr_wsi_present_semaphores;  // One binary semaphore per swapchain img
   static_assert( alignof(void*) >= alignof(struct ma_vk_mem_mgr),
       "Sort the struct members!" );
   struct ma_vk_mem_mgr vmm;
@@ -122,10 +124,9 @@ struct cara_vk_single {
   VkFramebuffer framebuffer;
 
   VkSurfaceKHR presentation_surface;
-  VkSemaphore main_semaphore_before_A;  // a timeline swapchain
-  VkSemaphore main_semaphore_after_A;   // a timeline swapchain
-  VkSemaphore wsi_semaphore_acquire;    // a binary swapchain
-  VkSemaphore wsi_semaphore_present;    // a binary swapchain
+  VkSemaphore arr_semaphore_before_A[cara_max_nr_fif];  // a timeline semaphore
+  VkSemaphore arr_semaphore_after_A[cara_max_nr_fif];   // a timeline semaphore
+  VkSemaphore arr_acquire_semaphores[cara_max_nr_fif];  // binary semaphores
   VkQueue graphics_q;  ///< WARNING It can point to the same queue compute_q or transfer_q is
                        ///< pointing to.
   VkQueue transfer_q;  ///< WARNING It can point to the same queue graphics_q or compute_q is
@@ -134,7 +135,7 @@ struct cara_vk_single {
                        ///< pointing to.
   static_assert( alignof(VkQueue) >= alignof(struct vk_frame_info),
       "Sort the struct members!" );
-  struct vk_frame_info arr_frame_infos[cara_nr_cmd_centers];
+  struct vk_frame_info arr_frame_infos[cara_max_nr_fif];
   static_assert( alignof(struct vk_frame_info) >= alignof(struct vk_transfer_buf),
       "Sort the struct members!" );
   struct vk_transfer_buf trans_bufs;
@@ -142,13 +143,15 @@ struct cara_vk_single {
       "Sort the struct members!" );
   VkDevice log_dev;  // A logical device. #pointer-size-aligned
   VkInstance vk_instance;  // #pointer-size-aligned
-  static_assert( alignof(VkInstance) >= alignof(shared_lib), "Sort the struct members!" );
-  shared_lib vk_library;
-  static_assert( alignof(shared_lib) >= alignof(VkAllocationCallbacks),
+  //static_assert( alignof(VkInstance) >= alignof(shared_lib), "Sort the struct members!" );
+  //shared_lib vk_library;
+  //static_assert( alignof(shared_lib) >= alignof(VkAllocationCallbacks),
+  static_assert( alignof(VkInstance) >= alignof(VkAllocationCallbacks),
       "Sort the struct members!" );
-  VkAllocationCallbacks vk_alloc_callbacks;  // XXX Keep it here instead of in cara_engine?
+  //VkAllocationCallbacks vk_alloc_callbacks;  // XXX Keep it here instead of in cara_engine?
   static_assert( alignof(VkAllocationCallbacks) >= alignof(VkFormat), "Sort the struct members!" );
-  VkFormat color_att_format;  // 32-bit aligned
+  VkFormat color_att_fmt;  // 32-bit aligned
+  VkFormat zbuf_fmt;  // 32-bit aligned
   static_assert( alignof(VkFormat) >= alignof(VkExtent2D), "Sort the struct members!" );
   VkExtent2D dims_swapchain_imgs;  // VkExtent2D is 32-bit aligned
   static_assert( alignof(VkExtent2D) >= alignof(uint32_t), "Sort the struct members!" );
@@ -157,7 +160,7 @@ struct cara_vk_single {
   uint32_t compute_q_fam_idx;
   float max_anisotropy;
   atomic_uint_least8_t tmp_var_ready;
-  uint8_t nr_vk_img;
+  uint8_t nr_swapchain_imgs;
   uint8_t texture_format_chosen; // either texture_format_astc or texture_format_s3tc
 };
 
@@ -174,6 +177,14 @@ enum cara_subpass : unsigned char {
 
 
 //-------------------------------------------------------------------------------------------------
+__attribute__((always_inline)) [[maybe_unused]]
+static bool has_stencil_buf( VkFormat format )
+{
+  return format == VK_FORMAT_D32_SFLOAT_S8_UINT || format == VK_FORMAT_D24_UNORM_S8_UINT;
+}
+
+
+//-------------------------------------------------------------------------------------------------
 __attribute__((always_inline))
 static inline VkCommandBuffer * cara_get_arr_cmd_buf_for_graphics(
     uint_fast8_t nr_workers, uint_fast8_t fb_idx )
@@ -181,7 +192,7 @@ static inline VkCommandBuffer * cara_get_arr_cmd_buf_for_graphics(
   const VkCommandPool * first_pool = cara_vk.arr_frame_infos[0].arr_cmd_pools;
 
   VkCommandBuffer * ret;
-  ret = (void*)( first_pool + ( 1 + nr_workers ) * cara_nr_cmd_centers );
+  ret = (void*)( first_pool + ( 1 + nr_workers ) * cara_max_nr_fif );
   ret = ret + fb_idx * nr_workers * cara_max_nr_subpasses;
 
   return ret;

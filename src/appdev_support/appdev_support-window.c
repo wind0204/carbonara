@@ -69,7 +69,8 @@ enum WMSizeHintsFlag : unsigned short
 
 
 #include "util-c_lang-basic.h"
-#include "vulkan_functions.h"
+//#include "vulkan_functions.h"
+#include <volk.h>
 #include "err_msg.h"
 
 

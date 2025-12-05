@@ -248,10 +248,10 @@ DEVICE_LEVEL_VULKAN_FUNCTION_FROM_EXTENSION( vkQueuePresentKHR, VK_KHR_SWAPCHAIN
     // Host access to `queue` must be externally synchronized
 DEVICE_LEVEL_VULKAN_FUNCTION_FROM_EXTENSION( vkDestroySwapchainKHR, VK_KHR_SWAPCHAIN_EXTENSION_NAME )  //\
     // Host access to swapchain must be externally synchronized
-DEVICE_LEVEL_VULKAN_FUNCTION_FROM_EXTENSION( vkQueueSubmit2KHR, VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME )  //\
+DEVICE_LEVEL_VULKAN_FUNCTION_FROM_EXTENSION( vkQueueSubmit2, VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME )  //\
     // Host access to `queue` must be externally synchronized
     // Host access to `fence` must be externally synchronized
-DEVICE_LEVEL_VULKAN_FUNCTION_FROM_EXTENSION( vkCmdPipelineBarrier2KHR, VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME )  //\
+DEVICE_LEVEL_VULKAN_FUNCTION_FROM_EXTENSION( vkCmdPipelineBarrier2, VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME )  //\
     // Host access to `commandBuffer` must be externally synchronized
     // Host access to the VkCommandPool that `commandBuffer` was allocated from must be externally
     //  synchronized

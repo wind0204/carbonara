@@ -94,8 +94,7 @@ if( NOT DEFINED ENV{VULKAN_SDK} )
 endif()
 message( STATUS "\$ENV{VULKAN_SDK}: $ENV{VULKAN_SDK}" )
 
-# I guess I wanted to prevent vulkan.h from preparing function prototypes
-# and to just load function pointers dynamically from a device.
+# Prevent symbole conflicts
 add_definitions( -DVK_NO_PROTOTYPES )
 
 
@@ -416,7 +415,7 @@ add_executable( carbonara
   src/carbonara-rainbow.c
   src/carbonara-mm.c
   src/carbonara-vulkan.c
-  src/vulkan/vulkan_functions.c
+  #src/vulkan/vulkan_functions.c
   )
 target_compile_options( carbonara PRIVATE ${C_FLAGS_IN_HOUSE} )
 target_compile_options( carbonara PRIVATE -Weverything -Werror -Wno-c++98-compat -Wno-pre-c11-compat -Wno-unused-macros -Wno-gnu-alignof-expression -Wno-error=unused-function -Wno-double-promotion -Wno-logical-op-parentheses -Wno-unsafe-buffer-usage -Wno-extra-semi-stmt -Wno-shorten-64-to-32 -Wno-sign-conversion -Wno-vla -Wno-switch-enum -Wno-cast-qual -Wno-implicit-int-conversion -Wno-declaration-after-statement -Wno-gnu-pointer-arith -Wno-keyword-macro -Wno-padded -Wno-pre-c23-compat -Wno-switch-default )
@@ -572,7 +571,7 @@ include_directories( "${CMAKE_CURRENT_SOURCE_DIR}/src/memorable_arena" )
 #include_directories( SYSTEM "${CMAKE_CURRENT_SOURCE_DIR}/extern/SOIL2" )
 include_directories( SYSTEM "${CMAKE_CURRENT_SOURCE_DIR}/extern/tclib" )
 
-include_directories( "$ENV{VULKAN_SDK}/include" )
+include_directories( SYSTEM "$ENV{VULKAN_SDK}/include" )
 
 #include_directories( "${CMAKE_CURRENT_SOURCE_DIR}/src/err_msg" )
 target_include_directories( Err_msg PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src/err_msg" )
@@ -684,6 +683,7 @@ target_link_libraries( carbonara PRIVATE Memorable_arena )
 target_link_libraries( carbonara PRIVATE Err_msg )
 target_link_libraries( carbonara PRIVATE Info_struct )
 target_link_libraries( carbonara PRIVATE Util-c_lang )
+target_link_libraries( carbonara PRIVATE ${CMAKE_DL_LIBS} )  # for volk
 #target_link_libraries( carbonara PRIVATE joltc )
 
 #target_link_libraries( carbonara PRIVATE ${SDL2_LIBRARIES} )
@@ -704,9 +704,6 @@ target_link_libraries( packer PRIVATE m )
 
 target_link_libraries( Info_struct PRIVATE Sorter )
 
-# These libraries will be linked dynamically instead
-#target_link_libraries( carbonara PRIVATE Vulkan::Vulkan )
-#target_link_libraries( carbonara PRIVATE ${PLATFORM_LIBRARY}::${PLATFORM_LIBRARY} )
 
 
 
