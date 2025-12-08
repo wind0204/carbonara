@@ -30,6 +30,18 @@ enum cara_signs_born : uint64_t {
   csb_present_swapchain_img,
 };
 
+enum cara_subpass : unsigned char {
+  cs_depth_only = 0,
+  cs_main_render,
+  cs_copy_to_swapchain_img,
+  cara_nr_subpasses,
+};
+
+enum cara_framebuffers : unsigned char {
+  fb_depth = 0,
+  fb_color,
+  fb_swapchain,
+};
 
 constexpr size_t cara_vk_page_len = 512 * 1024;
 struct vk_buf_512kb {
@@ -67,7 +79,7 @@ struct vk_frame_info {
 /**
  * \brief VkCommandPool, VkCommandBuffer for transferring data
  */
-struct vk_transfer_buf {
+struct vk_trans_buf {
   VkCommandPool * arr_cmd_pools;  ///< The number of the entries in the array is equal to
                                   ///< 1+[the number of workers] Command pools cannot be accessed
                                   ///< at the same time from multiple threads (command buffers from
@@ -88,10 +100,17 @@ struct vk_transfer_buf {
  */
 struct cara_vk_single {
   int64_t asset_size;  // const unsigned int len_mipmapped_2048 = 16 + 16 + (4*4)*4/4 + (8*8)*4/4 + (16*16)*4/4 + (32*32)*4/4 + (64*64)*4/4 + (128*128)*4/4 + (256*256)*4/4 + (512*512)*4/4 + (1024*1024)*4/4 + (2048*2048)*4/4; ..Plus header size for now
+  int64_t len_depth_only;
+  int64_t len_depth_only_frag;
+  int64_t len_simple_vert;
+  int64_t len_simple_frag;
   static_assert( alignof(int64_t) >= alignof(void*), "Sort the struct members!" );
   char * stone_texture;
   char * sand_texture;
-  char * spv_simplest_vert;
+  void * spv_depth_only;
+  void * spv_depth_only_frag;
+  void * spv_simple_vert;
+  void * spv_simple_frag;
   SDL_Window * window;
   VkImage * arr_swapchain_imgs;
   VkSemaphore * arr_wsi_present_semaphores;  // One binary semaphore per swapchain img
@@ -116,12 +135,23 @@ struct cara_vk_single {
   VkImageView iv_depth;  // TODO
   VkImageView iv_swapchain_img;  // TODO
   VkSampler sampler_8_2048_tex;
-  VkDescriptorSetLayout dsl_first;
-  VkDescriptorPool dp_first;
-  VkDescriptorSet ds_first;
-  VkPipelineLayout pipeline_layout;
+  VkDescriptorSetLayout dsl_depth_only;
+  VkDescriptorSetLayout dsl_main_render;
+  VkDescriptorSetLayout dsl_copy2sc;
+  VkDescriptorPool dp_main_render;
+  VkDescriptorSet ds_main_render;
+  VkPipelineLayout pll_depth_only;
+  VkPipelineLayout pll_main_render;
+  VkPipelineLayout pll_copy2sc;
+  VkPipeline arr_pipelines[cara_nr_subpasses];
   VkRenderPass render_pass;
   VkFramebuffer framebuffer;
+  VkShaderModule sm_depth_only;
+  VkShaderModule sm_depth_only_frag;
+  VkShaderModule sm_simple_vert;
+  VkShaderModule sm_simple_frag;
+  VkShaderModule sm_copy2sc_vert;
+  VkShaderModule sm_copy2sc_frag;
 
   VkSurfaceKHR presentation_surface;
   VkSemaphore arr_semaphore_before_A[cara_max_nr_fif];  // a timeline semaphore
@@ -136,10 +166,10 @@ struct cara_vk_single {
   static_assert( alignof(VkQueue) >= alignof(struct vk_frame_info),
       "Sort the struct members!" );
   struct vk_frame_info arr_frame_infos[cara_max_nr_fif];
-  static_assert( alignof(struct vk_frame_info) >= alignof(struct vk_transfer_buf),
+  static_assert( alignof(struct vk_frame_info) >= alignof(struct vk_trans_buf),
       "Sort the struct members!" );
-  struct vk_transfer_buf trans_bufs;
-  static_assert( alignof(struct vk_transfer_buf) >= alignof(VkDevice),
+  struct vk_trans_buf trans_buf;
+  static_assert( alignof(struct vk_trans_buf) >= alignof(VkDevice),
       "Sort the struct members!" );
   VkDevice log_dev;  // A logical device. #pointer-size-aligned
   VkInstance vk_instance;  // #pointer-size-aligned
@@ -159,21 +189,13 @@ struct cara_vk_single {
   uint32_t trans_q_fam_idx;
   uint32_t compute_q_fam_idx;
   float max_anisotropy;
-  atomic_uint_least8_t tmp_var_ready;
+  //atomic_uint_least8_t tmp_var_ready;
   uint8_t nr_swapchain_imgs;
   uint8_t texture_format_chosen; // either texture_format_astc or texture_format_s3tc
 };
 
 // In carbonara-vulkan.c
 extern struct cara_vk_single cara_vk;
-
-
-enum cara_subpass : unsigned char {
-  cs_depth_prepass = 0,
-  cs_main_render_pass,
-  cs_copy_to_swapchain_img,
-  cara_max_nr_subpasses
-};
 
 
 //-------------------------------------------------------------------------------------------------
@@ -193,7 +215,7 @@ static inline VkCommandBuffer * cara_get_arr_cmd_buf_for_graphics(
 
   VkCommandBuffer * ret;
   ret = (void*)( first_pool + ( 1 + nr_workers ) * cara_max_nr_fif );
-  ret = ret + fb_idx * nr_workers * cara_max_nr_subpasses;
+  ret = ret + fb_idx * nr_workers * cara_nr_subpasses;
 
   return ret;
 }
@@ -203,13 +225,16 @@ __attribute__((always_inline))
 static inline VkCommandBuffer * cara_get_arr_cmd_bufs_for_transfer(
     uint_fast8_t nr_workers )
 {
-  const VkCommandPool * first_pool = cara_vk.trans_bufs.arr_cmd_pools;
+  const VkCommandPool * first_pool = cara_vk.trans_buf.arr_cmd_pools;
 
   VkCommandBuffer * first_cmd_buf;
   first_cmd_buf = (void*)( first_pool + ( 1 + nr_workers ) );
 
   return first_cmd_buf;
 }
+
+//-------------------------------------------------------------------------------------------------
+enum err_msg create_renderpass_and_framebuffer( struct cara_vk_single * cara_vk );
 
 //-------------------------------------------------------------------------------------------------
 /*
@@ -219,7 +244,7 @@ static inline VkCommandBuffer * cara_get_arr_cmd_bufs_for_transfer(
 
 //-------------------------------------------------------------------------------------------------
 /*
- * \brief Initialize the part of the engine that utilizes vulkan
+ * \brief Initialize the vullkan part
  */
 uint8_t init_vulkan( uint32_t vendor_id_pref, uint32_t device_id_pref,
     memorable_arena_t * restrict arena,

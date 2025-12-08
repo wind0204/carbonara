@@ -416,6 +416,7 @@ add_executable( carbonara
   src/carbonara-mm.c
   src/carbonara-vulkan.c
   #src/vulkan/vulkan_functions.c
+  src/util/util-spall.c
   )
 target_compile_options( carbonara PRIVATE ${C_FLAGS_IN_HOUSE} )
 target_compile_options( carbonara PRIVATE -Weverything -Werror -Wno-c++98-compat -Wno-pre-c11-compat -Wno-unused-macros -Wno-gnu-alignof-expression -Wno-error=unused-function -Wno-double-promotion -Wno-logical-op-parentheses -Wno-unsafe-buffer-usage -Wno-extra-semi-stmt -Wno-shorten-64-to-32 -Wno-sign-conversion -Wno-vla -Wno-switch-enum -Wno-cast-qual -Wno-implicit-int-conversion -Wno-declaration-after-statement -Wno-gnu-pointer-arith -Wno-keyword-macro -Wno-padded -Wno-pre-c23-compat -Wno-switch-default )
@@ -567,6 +568,7 @@ include_directories( "${PROJECT_BINARY_DIR}/src" )
 # So I made some header filles visible globally:
 include_directories( "${CMAKE_CURRENT_SOURCE_DIR}/src/appdev_support" )
 include_directories( "${CMAKE_CURRENT_SOURCE_DIR}/src/memorable_arena" )
+include_directories( "${CMAKE_CURRENT_SOURCE_DIR}/src/util" )
 
 #include_directories( SYSTEM "${CMAKE_CURRENT_SOURCE_DIR}/extern/SOIL2" )
 include_directories( SYSTEM "${CMAKE_CURRENT_SOURCE_DIR}/extern/tclib" )
@@ -615,14 +617,6 @@ target_include_directories( Sorter PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src/sorte
 #target_include_directories( Info_struct PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src/sorter" )
 
 #target_include_directories( carbonara PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src/asspacker" )
-
-target_include_directories( carbonara PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src/util" )
-target_include_directories( tester PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src/util" )
-target_include_directories( App-dev_support PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src/util" )
-target_include_directories( Info_struct PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src/util" )
-target_include_directories( packer PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src/util" )
-target_include_directories( Memorable_arena PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src/util" )
-target_include_directories( Sorter PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src/util" )
 
 target_include_directories( Util-hwloc PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/extern/util" )
 #target_include_directories( App-dev_support PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/extern/util" )

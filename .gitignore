@@ -1,3 +1,4 @@
+spirv/
 build-*/
 build/
 extern/SDL

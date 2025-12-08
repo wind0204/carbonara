@@ -30,6 +30,7 @@
 //#include "vulkan_functions.h"
 #include "memorable_arena.h"
 #include "err_msg.h"
+#include "util-spall.h"
 
 #ifdef DEBUG_MODE
 #include <stdio.h>
@@ -41,8 +42,10 @@
   [[maybe_unused]]
   static const char * enabled_layer_names[] = {
     "VK_LAYER_KHRONOS_validation",
-    //"VK_LAYER_LUNARG_crash_diagnostic",  // This makes vkCreateDevice complain about requesting a
-                                           //  feature that is not present in the driver.
+    "VK_LAYER_LUNARG_api_dump",
+    //"VK_LAYER_LUNARG_crash_diagnostic",  // I can't use this somehow. vkCreateDevice will complain
+                                         // about requesting a feature that is not present in the
+                                         // driver.
   };
 #endif
 
@@ -239,11 +242,27 @@ uint8_t init_vulkan(
   //
   auto the_texture = cara_vk.stone_texture;
   auto the_texture2 = cara_vk.sand_texture;
-  auto the_size = cara_vk.asset_size;
+  auto len_2048_bc7 = cara_vk.asset_size;
+  auto vert_shader = cara_vk.spv_simple_vert;
+  auto len_vert_shader = cara_vk.len_simple_vert;
+  auto frag_shader = cara_vk.spv_simple_frag;
+  auto len_frag_shader = cara_vk.len_simple_frag;
+  auto depth_only_shader = cara_vk.spv_depth_only;
+  auto len_depth_only_shader = cara_vk.len_depth_only;
+  auto depth_only_frag_shader = cara_vk.spv_depth_only_frag;
+  auto len_depth_only_frag_shader = cara_vk.len_depth_only_frag;
   memset( &cara_vk, 0, sizeof(struct cara_vk_single) );
   cara_vk.stone_texture = the_texture;
   cara_vk.sand_texture = the_texture2;
-  cara_vk.asset_size = the_size;
+  cara_vk.asset_size = len_2048_bc7;
+  cara_vk.spv_simple_vert = vert_shader;
+  cara_vk.len_simple_vert = len_vert_shader;
+  cara_vk.spv_simple_frag = frag_shader;
+  cara_vk.len_simple_frag = len_frag_shader;
+  cara_vk.spv_depth_only = depth_only_shader;
+  cara_vk.len_depth_only = len_depth_only_shader;
+  cara_vk.spv_depth_only_frag = depth_only_frag_shader;
+  cara_vk.len_depth_only_frag = len_depth_only_frag_shader;
 
   cara_vk.vk_alloc_callbacks.pfnAllocation = cara_malloc_vk;
   cara_vk.vk_alloc_callbacks.pfnFree = cara_free_vk;
@@ -390,7 +409,7 @@ uint8_t init_vulkan(
       //unload_shared_lib( vulkan_library );
       return 1;
     }
- 
+
 
     // Check if there is a required device extension not supported by the device
     nr_required_extensions = _arr_elem_cnt( names_device_extensions_required );
@@ -1479,14 +1498,14 @@ error_after_window_early:
       cara_max_nr_fif * (
         sizeof(VkCommandPool) * (1 + cara_single.proc_map->nr_processors) +
         sizeof(VkCommandBuffer) *
-        (cara_max_nr_subpasses * cara_single.proc_map->nr_processors) )
+        (cara_nr_subpasses * cara_single.proc_map->nr_processors) )
       );
   memset( cara_vk.arr_frame_infos[0].arr_cmd_pools,
       0,
       cara_max_nr_fif * (
         sizeof(VkCommandPool) * (1 + cara_single.proc_map->nr_processors) +
         sizeof(VkCommandBuffer) *
-        (cara_max_nr_subpasses * cara_single.proc_map->nr_processors) )
+        (cara_nr_subpasses * cara_single.proc_map->nr_processors) )
       );
   for ( unsigned int cmd_center_idx = 1;
       cmd_center_idx < cara_max_nr_fif; cmd_center_idx++ ) {
@@ -1522,7 +1541,7 @@ error_after_window_early:
   cmd_buf_alloc_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
   cmd_buf_alloc_info.pNext = nullptr;
   //cmd_buf_alloc_info.commandPool = CREATE_A_POOL_FIRST;
-  cmd_buf_alloc_info.commandBufferCount = cara_max_nr_subpasses;
+  cmd_buf_alloc_info.commandBufferCount = cara_nr_subpasses;
   cmd_buf_alloc_info.level = VK_COMMAND_BUFFER_LEVEL_SECONDARY;  // - Primary command buffers can be
                                                         // directly submitted to queues. They can
                                                         // also execute (call) secondary command
@@ -1555,10 +1574,10 @@ error_after_window_early:
           &cmd_buf_alloc_info,
           &cara_get_arr_cmd_buf_for_graphics(
             cara_single.proc_map->nr_processors, fb_idx
-            )[fb_idx * cara_single.proc_map->nr_processors * cara_max_nr_subpasses +
-            worker_idx * cara_max_nr_subpasses]
+            )[fb_idx * cara_single.proc_map->nr_processors * cara_nr_subpasses +
+            worker_idx * cara_nr_subpasses]
           );
-      
+
       if ( result != VK_SUCCESS ) {
         fprintf( stderr, "[Vulkan] Failed to allocate command buffers. (%s)\n",
             string_VkResult(result) );
@@ -1570,8 +1589,8 @@ error_after_window_early:
           worker_idx,
           ptr2ui(cara_get_arr_cmd_buf_for_graphics(
             cara_single.proc_map->nr_processors, fb_idx
-            )[fb_idx * cara_single.proc_map->nr_processors * cara_max_nr_subpasses +
-            worker_idx * cara_max_nr_subpasses]) );
+            )[fb_idx * cara_single.proc_map->nr_processors * cara_nr_subpasses +
+            worker_idx * cara_nr_subpasses]) );
 #endif
 
     }
@@ -1600,9 +1619,9 @@ error_after_window_early:
         &cmd_buf_alloc_info,
         &cara_vk.arr_frame_infos[fb_idx].primary_cmd_buf
         );
-    cmd_buf_alloc_info.commandBufferCount = cara_max_nr_subpasses;
+    cmd_buf_alloc_info.commandBufferCount = cara_nr_subpasses;
     cmd_buf_alloc_info.level = VK_COMMAND_BUFFER_LEVEL_SECONDARY;
-    
+
     if ( result != VK_SUCCESS ) {
       fprintf( stderr, "[Vulkan] Failed to allocate a command buffer. (%s)\n",
           string_VkResult(result) );
@@ -1611,7 +1630,7 @@ error_after_window_early:
 #ifdef DEBUG_MODE
     fprintf( stderr, "[Vulkan-Debug] GP fb_idx=%u new_cmd_buf=%#018lx\n",
         fb_idx,
-        ptr2ui(cara_vk.arr_frame_infos[fb_idx].primary_cmd_buf) ); 
+        ptr2ui(cara_vk.arr_frame_infos[fb_idx].primary_cmd_buf) );
 #endif
 
   }
@@ -1623,12 +1642,12 @@ error_after_window_early:
 
   static_assert( alignof(VkCommandPool) >= alignof(VkCommandBuffer),
       "should be aligned in order." );
-  cara_vk.trans_bufs.arr_cmd_pools =
+  cara_vk.trans_buf.arr_cmd_pools =
     cara_malloc( &worker_state->malloc_helper,
       alignof(VkCommandPool),
       sizeof(VkCommandPool) * (1 + cara_single.proc_map->nr_processors) +
       sizeof(VkCommandBuffer) * cara_single.proc_map->nr_processors );
-  memset( cara_vk.trans_bufs.arr_cmd_pools,
+  memset( cara_vk.trans_buf.arr_cmd_pools,
       0,
       sizeof(VkCommandPool) * (1 + cara_single.proc_map->nr_processors) +
       sizeof(VkCommandBuffer) * cara_single.proc_map->nr_processors );
@@ -1641,7 +1660,7 @@ error_after_window_early:
         &cmd_pool_create_info,
         &cara_vk.vk_alloc_callbacks,
         //nullptr,
-        &cara_vk.trans_bufs.arr_cmd_pools[worker_idx]
+        &cara_vk.trans_buf.arr_cmd_pools[worker_idx]
         );
     if ( result != VK_SUCCESS ) {
       fprintf( stderr, "[Vulkan] Could not prepare a Vulkan command pool for transfer commands. "
@@ -1651,17 +1670,17 @@ error_after_window_early:
 #ifdef DEBUG_MODE
     fprintf( stderr, "[Vulkan-Debug] T worker_idx=%u new_cmd_buf=%#018lx\n",
         worker_idx,
-        ptr2ui(cara_vk.trans_bufs.arr_cmd_pools[worker_idx]) );
+        ptr2ui(cara_vk.trans_buf.arr_cmd_pools[worker_idx]) );
 #endif
 
     cmd_buf_alloc_info.commandPool =
-      cara_vk.trans_bufs.arr_cmd_pools[worker_idx];
+      cara_vk.trans_buf.arr_cmd_pools[worker_idx];
     result = vkAllocateCommandBuffers(
         new_log_dev,
         &cmd_buf_alloc_info,
         &cara_get_arr_cmd_bufs_for_transfer( cara_single.proc_map->nr_processors )[worker_idx]
         );
-    
+
     if ( result != VK_SUCCESS ) {
       fprintf( stderr, "[Vulkan] Failed to allocate command buffers. (%s)\n",
           string_VkResult(result) );
@@ -1676,7 +1695,7 @@ error_after_window_early:
       &cmd_pool_create_info,
       &cara_vk.vk_alloc_callbacks,
       //nullptr,
-      &cara_vk.trans_bufs.arr_cmd_pools[cara_single.proc_map->nr_processors]
+      &cara_vk.trans_buf.arr_cmd_pools[cara_single.proc_map->nr_processors]
       );
   if ( result != VK_SUCCESS ) {
     fprintf( stderr, "[Vulkan] Could not prepare a Vulkan command pool. (%s)\n",
@@ -1686,14 +1705,14 @@ error_after_window_early:
 
   cmd_buf_alloc_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
   cmd_buf_alloc_info.commandPool =
-    cara_vk.trans_bufs.arr_cmd_pools[cara_single.proc_map->nr_processors];
+    cara_vk.trans_buf.arr_cmd_pools[cara_single.proc_map->nr_processors];
 
   result = vkAllocateCommandBuffers(
       new_log_dev,
       &cmd_buf_alloc_info,
-      &cara_vk.trans_bufs.primary_cmd_buf
+      &cara_vk.trans_buf.primary_cmd_buf
       );
-  
+
   if ( result != VK_SUCCESS ) {
     fprintf( stderr, "[Vulkan] Failed to allocate a command buffer. (%s)\n",
         string_VkResult(result) );
@@ -1701,7 +1720,7 @@ error_after_window_early:
   }
 #ifdef DEBUG_MODE
   fprintf( stderr, "[Vulkan-Debug] TP new_cmd_buf=%#018lx\n",
-      ptr2ui(cara_vk.trans_bufs.primary_cmd_buf) );
+      ptr2ui(cara_vk.trans_buf.primary_cmd_buf) );
 #endif
 
 
@@ -1760,7 +1779,7 @@ error_after_window_early:
     fprintf( stderr, "[Vulkan] %s\n", err_msg_text[err_msg_out_of_memory] );
     goto error_after_swapchain_images;
   }
-  memset( cara_vk.trans_bufs.arr_cmd_pools, 0, sizeof(VkSemaphore) * nr_swapchain_imgs );
+  memset( cara_vk.trans_buf.arr_cmd_pools, 0, sizeof(VkSemaphore) * nr_swapchain_imgs );
   for ( unsigned int swapchain_img_idx = 0;
       swapchain_img_idx < nr_swapchain_imgs; swapchain_img_idx++ ) {
     result = vkCreateSemaphore( new_log_dev,
@@ -1940,19 +1959,19 @@ error_after_swapchain_images:
           worker_state->worker_info->idx_self,
           arr_swapchain_images );
 error_after_logical_device:
-      if ( cara_vk.trans_bufs.arr_cmd_pools ) {
+      if ( cara_vk.trans_buf.arr_cmd_pools ) {
         for ( uint_fast8_t idx_command_pool = 0;
             idx_command_pool <= cara_single.proc_map->nr_processors; idx_command_pool++ )
         {
-          if ( cara_vk.trans_bufs.arr_cmd_pools[idx_command_pool] )
+          if ( cara_vk.trans_buf.arr_cmd_pools[idx_command_pool] )
           {
             vkDestroyCommandPool( cara_vk.log_dev,
-                cara_vk.trans_bufs.arr_cmd_pools[idx_command_pool],
+                cara_vk.trans_buf.arr_cmd_pools[idx_command_pool],
                 &cara_vk.vk_alloc_callbacks
                 //nullptr
                 );
 
-            cara_vk.trans_bufs.arr_cmd_pools[idx_command_pool] = 0;
+            cara_vk.trans_buf.arr_cmd_pools[idx_command_pool] = 0;
           }
         }
       }
@@ -2063,7 +2082,7 @@ error_after_presentation_surface:
   ma_free(cara_single.mem_arena, worker_state->worker_info->idx_self, arr_qfam_props);
   ma_free(cara_single.mem_arena, worker_state->worker_info->idx_self, arr_device_props);
   ma_free(cara_single.mem_arena, worker_state->worker_info->idx_self, arr_phys_devices);
-  atomic_store_explicit( &cara_vk.tmp_var_ready, -7, memory_order_release);
+  //atomic_store_explicit( &cara_vk.tmp_var_ready, -7, memory_order_release);
 
   return 0;
 }
@@ -2090,6 +2109,19 @@ void destroy_vulkan_objects( struct ms_worker_info * worker_info )
       break;
   }
 
+  if ( cara_vk.sm_simple_frag ) {
+    vkDestroyShaderModule( cara_vk.log_dev, cara_vk.sm_simple_frag, &cara_vk.vk_alloc_callbacks );
+    cara_vk.sm_simple_frag = VK_NULL_HANDLE;
+  }
+  if ( cara_vk.sm_simple_vert ) {
+    vkDestroyShaderModule( cara_vk.log_dev, cara_vk.sm_simple_vert, &cara_vk.vk_alloc_callbacks );
+    cara_vk.sm_simple_vert = VK_NULL_HANDLE;
+  }
+  if ( cara_vk.sm_depth_only ) {
+    vkDestroyShaderModule( cara_vk.log_dev, cara_vk.sm_depth_only, &cara_vk.vk_alloc_callbacks );
+    cara_vk.sm_depth_only = VK_NULL_HANDLE;
+  }
+
   if ( cara_vk.framebuffer ) {
     vkDestroyFramebuffer( cara_vk.log_dev, cara_vk.framebuffer, &cara_vk.vk_alloc_callbacks );
     //vkDestroyFramebuffer( cara_vk.log_dev, cara_vk.framebuffer, nullptr );
@@ -2102,29 +2134,36 @@ void destroy_vulkan_objects( struct ms_worker_info * worker_info )
     cara_vk.render_pass = VK_NULL_HANDLE;
   }
 
-  if ( cara_vk.pipeline_layout ) {
-    vkDestroyPipelineLayout( cara_vk.log_dev, cara_vk.pipeline_layout,
+  if ( cara_vk.pll_depth_only ) {
+    vkDestroyPipelineLayout( cara_vk.log_dev, cara_vk.pll_depth_only,
         &cara_vk.vk_alloc_callbacks
         //nullptr
         );
-    cara_vk.pipeline_layout = VK_NULL_HANDLE;
+    cara_vk.pll_depth_only = VK_NULL_HANDLE;
+  }
+  if ( cara_vk.pll_main_render ) {
+    vkDestroyPipelineLayout( cara_vk.log_dev, cara_vk.pll_main_render,
+        &cara_vk.vk_alloc_callbacks
+        //nullptr
+        );
+    cara_vk.pll_main_render = VK_NULL_HANDLE;
   }
 
-  if ( cara_vk.ds_first ) {
-    vkResetDescriptorPool( cara_vk.log_dev, cara_vk.dp_first, 0 );
-    cara_vk.ds_first = VK_NULL_HANDLE;
+  if ( cara_vk.ds_main_render ) {
+    vkResetDescriptorPool( cara_vk.log_dev, cara_vk.dp_main_render, 0 );
+    cara_vk.ds_main_render = VK_NULL_HANDLE;
   }
 
-  if ( cara_vk.dp_first ) {
-    vkDestroyDescriptorPool( cara_vk.log_dev, cara_vk.dp_first, &cara_vk.vk_alloc_callbacks );
+  if ( cara_vk.dp_main_render ) {
+    vkDestroyDescriptorPool( cara_vk.log_dev, cara_vk.dp_main_render, &cara_vk.vk_alloc_callbacks );
     //vkDestroyDescriptorPool( cara_vk.log_dev, cara_vk.dp_first, nullptr );
-    cara_vk.dp_first = VK_NULL_HANDLE;
+    cara_vk.dp_main_render = VK_NULL_HANDLE;
   }
 
-  if ( cara_vk.dsl_first ) {
-    vkDestroyDescriptorSetLayout( cara_vk.log_dev, cara_vk.dsl_first, &cara_vk.vk_alloc_callbacks );
+  if ( cara_vk.dsl_depth_only ) {
+    vkDestroyDescriptorSetLayout( cara_vk.log_dev, cara_vk.dsl_depth_only, &cara_vk.vk_alloc_callbacks );
     //vkDestroyDescriptorSetLayout( cara_vk.log_dev, cara_vk.dsl_first, nullptr );
-    cara_vk.dsl_first = VK_NULL_HANDLE;
+    cara_vk.dsl_depth_only = VK_NULL_HANDLE;
   }
 
   if ( cara_vk.sampler_8_2048_tex ) {
@@ -2200,22 +2239,22 @@ void destroy_vulkan_objects( struct ms_worker_info * worker_info )
     cara_vk.arr_swapchain_imgs = nullptr;
   }
 
-  if ( cara_vk.trans_bufs.arr_cmd_pools ) {
+  if ( cara_vk.trans_buf.arr_cmd_pools ) {
     for ( uint_fast8_t idx_command_pool = 0;
         idx_command_pool <= cara_single.proc_map->nr_processors; idx_command_pool++ ) {
-      if ( cara_vk.trans_bufs.arr_cmd_pools[idx_command_pool] ) {
+      if ( cara_vk.trans_buf.arr_cmd_pools[idx_command_pool] ) {
         //fprintf( stdout, "trans_bufs.arr_cmd_pools[%u] = %#018lx\n", idx_command_pool,
         //    ptr2ui(cara_vk.trans_bufs.arr_cmd_pools[idx_command_pool]) );
         // FIXME Host access to `commandPool` must be externally synchronized
         vkDestroyCommandPool( cara_vk.log_dev,
-            cara_vk.trans_bufs.arr_cmd_pools[idx_command_pool],
+            cara_vk.trans_buf.arr_cmd_pools[idx_command_pool],
             &cara_vk.vk_alloc_callbacks
             //nullptr
             );
        }
     }
-    ma_free( cara_single.mem_arena, worker_info->idx_self, cara_vk.trans_bufs.arr_cmd_pools );
-    cara_vk.trans_bufs.arr_cmd_pools = nullptr;
+    ma_free( cara_single.mem_arena, worker_info->idx_self, cara_vk.trans_buf.arr_cmd_pools );
+    cara_vk.trans_buf.arr_cmd_pools = nullptr;
   }
 
   if ( cara_vk.arr_frame_infos[0].arr_cmd_pools ) {
@@ -2279,4 +2318,320 @@ void destroy_vulkan_objects( struct ms_worker_info * worker_info )
 
 }
 
+
+
+
+//-------------------------------------------------------------------------------------------------
+enum err_msg create_renderpass_and_framebuffer( struct cara_vk_single * single_ton )
+{
+  //
+  // Define attachments
+  //
+
+  // The color attachment
+  VkAttachmentDescription2 arr_att_descs[3];
+  for ( unsigned int att_idx = 0; att_idx < _arr_elem_cnt( arr_att_descs ); att_idx++ ) {
+    arr_att_descs[att_idx].flags = 0;
+    arr_att_descs[att_idx].samples = VK_SAMPLE_COUNT_1_BIT;
+    arr_att_descs[att_idx].pNext = nullptr;
+    arr_att_descs[att_idx].sType = VK_STRUCTURE_TYPE_ATTACHMENT_DESCRIPTION_2;
+    arr_att_descs[att_idx].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;  // An UNDEFINED layout can
+                                                             // always be used for an initial/old
+                                                             // layout—It means that we don't need
+                                                             // images content when a memory barrier
+                                                             // is set up.
+    // NOTE Consider chaining VkAttachmentDescriptionStencilLayout in the pNext field in order to
+    // set stencilInitialLayout and stencilFinalLayout
+  }
+  // The depth buffer
+  arr_att_descs[fb_depth].format = single_ton->zbuf_fmt;
+  arr_att_descs[fb_depth].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+  arr_att_descs[fb_depth].storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+  arr_att_descs[fb_depth].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+  arr_att_descs[fb_depth].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+  arr_att_descs[fb_depth].finalLayout = has_stencil_buf( single_ton->zbuf_fmt ) ?
+    VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL : VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
+
+  // The color buffer
+  arr_att_descs[fb_color].format = single_ton->color_att_fmt;
+  arr_att_descs[fb_color].loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+  arr_att_descs[fb_color].storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+  arr_att_descs[fb_color].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+  arr_att_descs[fb_color].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+  arr_att_descs[fb_color].finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+                                                                        // We should set it to the
+                                                                        // same layout value as
+                                                                        // specified in the last
+                                                                        // subpass of a render pass.
+
+  // The swapchain image
+  arr_att_descs[fb_swapchain].format = single_ton->color_att_fmt;
+  arr_att_descs[fb_swapchain].loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+  arr_att_descs[fb_swapchain].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+  arr_att_descs[fb_swapchain].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+  arr_att_descs[fb_swapchain].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+  arr_att_descs[fb_swapchain].finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;  // We are rendering
+                                                                 // directly into a swapchain image
+                                                                 // and we want to display it on
+                                                                 // screen; We should use a
+                                                                 // PRESENT_SRC layout.
+
+  // Prepare the array of VkAttachmentReference2
+  VkAttachmentReference2 arr_att_refs[3];
+  for ( unsigned int att_idx = 0; att_idx < _arr_elem_cnt( arr_att_refs ); att_idx++ ) {
+    arr_att_refs[att_idx].sType = VK_STRUCTURE_TYPE_ATTACHMENT_REFERENCE_2;
+    arr_att_refs[att_idx].pNext = nullptr;
+  }
+  arr_att_refs[fb_depth].attachment = fb_depth;
+  arr_att_refs[fb_depth].layout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
+  arr_att_refs[fb_depth].aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+  arr_att_refs[fb_color].attachment = fb_color;
+  arr_att_refs[fb_color].layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+  arr_att_refs[fb_color].aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+  arr_att_refs[fb_swapchain].attachment = fb_swapchain;
+  arr_att_refs[fb_swapchain].layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+  arr_att_refs[fb_swapchain].aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+
+
+  //
+  // Define subpasses
+  //
+
+  // Operations performed in a render pass are grouped into subpasses. Each subpass represents a
+  //  stage or a phase of our rendering commands in which a subset of render pass's attachments are
+  //  used (into which we render or from which we read data).
+  // A render pass always requires at least one subpass that is automatically started when we begin
+  //  a render pass. And for each subpass, we need to prepare a description.
+  VkSubpassDescription2 arr_subpass_desc[cara_nr_subpasses];
+  for ( unsigned int sp_idx = 0; sp_idx < _arr_elem_cnt( arr_subpass_desc ); sp_idx++ ) {
+    arr_subpass_desc[sp_idx].flags = 0;
+    arr_subpass_desc[sp_idx].pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+    arr_subpass_desc[sp_idx].sType = VK_STRUCTURE_TYPE_SUBPASS_DESCRIPTION_2;
+    arr_subpass_desc[sp_idx].pNext = nullptr;
+    arr_subpass_desc[sp_idx].viewMask = 0;
+  }
+
+  arr_subpass_desc[cs_depth_only].inputAttachmentCount = 0;
+  arr_subpass_desc[cs_depth_only].pInputAttachments = nullptr;
+  arr_subpass_desc[cs_depth_only].colorAttachmentCount = 0;
+  arr_subpass_desc[cs_depth_only].pColorAttachments = nullptr;
+  arr_subpass_desc[cs_depth_only].pResolveAttachments = nullptr;
+  arr_subpass_desc[cs_depth_only].pDepthStencilAttachment = &arr_att_refs[fb_depth];
+  arr_subpass_desc[cs_depth_only].preserveAttachmentCount = 0;
+  arr_subpass_desc[cs_depth_only].pPreserveAttachments = nullptr;
+
+  arr_subpass_desc[cs_main_render].inputAttachmentCount = 0;
+  arr_subpass_desc[cs_main_render].pInputAttachments = nullptr;
+  arr_subpass_desc[cs_main_render].colorAttachmentCount = 1;
+  arr_subpass_desc[cs_main_render].pColorAttachments = &arr_att_refs[fb_color];
+  arr_subpass_desc[cs_main_render].pResolveAttachments = nullptr;  // If any of the color
+                    // attachments should be resolved (changed from multisampled to single-sampled),
+                    // specify a pointer to the first element of the array with same number of
+                    // elements as pColorAttachments or use a nullptr value if no color attachments
+                    // need to be resolved; each member of the pResolveAttachments array corresponds
+                    // to the color attachment at the same index and specifies to which attachment a
+                    // given color attachment should be resolved at the end of the subpass; for each
+                    // member of the array use specified values as described in points A and B;
+                    // Use a VK_ATTACHMENT_UNUSED value for the attachment index if the given color
+                    // attachment should not be resolved.
+          // A: Index of the attachment in the list of all render pass attachments for `attachment`.
+          // B: A layout given image should be automatically transitioned to at the beginning of
+          //   the subpass for `layout`.
+  arr_subpass_desc[cs_main_render].pDepthStencilAttachment = &arr_att_refs[fb_depth];
+  arr_subpass_desc[cs_main_render].preserveAttachmentCount = 0;
+  arr_subpass_desc[cs_main_render].pPreserveAttachments = nullptr;
+
+  VkAttachmentReference2 input_att_ref;
+  input_att_ref.sType = VK_STRUCTURE_TYPE_ATTACHMENT_REFERENCE_2;
+  input_att_ref.pNext = nullptr;
+  input_att_ref.attachment = fb_color;
+  input_att_ref.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+  input_att_ref.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;;
+  arr_subpass_desc[cs_copy_to_swapchain_img].inputAttachmentCount = 1;
+  arr_subpass_desc[cs_copy_to_swapchain_img].pInputAttachments = &input_att_ref;
+  arr_subpass_desc[cs_copy_to_swapchain_img].colorAttachmentCount = 1;
+  arr_subpass_desc[cs_copy_to_swapchain_img].pColorAttachments = &arr_att_refs[fb_swapchain];
+  arr_subpass_desc[cs_copy_to_swapchain_img].pResolveAttachments = nullptr;
+  arr_subpass_desc[cs_copy_to_swapchain_img].pDepthStencilAttachment = nullptr;
+  arr_subpass_desc[cs_copy_to_swapchain_img].preserveAttachmentCount = 0;
+  arr_subpass_desc[cs_copy_to_swapchain_img].pPreserveAttachments = nullptr;
+
+
+  //
+  // Subpass dependencies
+  //
+
+  // When operations in a given subpass depend on the results of operations in one of the earlier
+  //  subpasses in the same render pass, we need to specify subpass dependencies. This is also
+  //  required if there are dependencies between operations recorded within a render pass and those
+  //  performed before it, or between operations that are executed after a render pass and those
+  //  performed within the render pass. It is also possible to define dependencies within a single
+  //  subpass.
+  VkSubpassDependency2 sp_dep[2];
+  for ( unsigned int dep_idx = 0; dep_idx < _arr_elem_cnt(sp_dep); dep_idx++ ) {
+    sp_dep[dep_idx].pNext = nullptr;
+    sp_dep[dep_idx].sType = VK_STRUCTURE_TYPE_SUBPASS_DEPENDENCY_2;
+    sp_dep[dep_idx].viewOffset = 0;
+  }
+  // cs_depth_only - cs_main_render
+  sp_dep[0].srcSubpass = cs_depth_only;  // The index of a subpass from which ("producing")
+                                         // operations should be finished before the second set of
+                                         // ("consuming") operations (or a VK_SUBPASS_EXTERNAL value
+                                         // for commands before the render pass).
+  sp_dep[0].dstSubpass = cs_main_render;  // The index of a subpass whose operations depend on the
+                                          // previous set of commands (or a VK_SUBPASS_EXTERNAL
+                                          // value for operations after the render pass).
+  sp_dep[0].srcStageMask = VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT_KHR;  // The set of pipeline
+                                                                // stages which produce the result
+                                                                // read by the "consuming" commands.
+  sp_dep[0].dstStageMask = VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT_KHR;
+  sp_dep[0].srcAccessMask = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT_KHR;
+  sp_dep[0].dstAccessMask = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT_KHR;
+  sp_dep[0].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;  // For dependencyFlags, use a
+                                   // VK_DEPENDENCY_BY_REGION_BIT value if the dependency is defined
+                                   // by region—it means that operations generating data for a given
+                                   // memory region must finish before operations reading data from
+                                   // the same region can be executed; if this flag is not specified
+                                   // dependency is global, which means that data for the whole
+                                   // image must be generated before "consuming" commands can be
+                                   // executed.
+  // cs_main_render - cs_copy_to_swapchain_img
+  sp_dep[1].srcSubpass = cs_main_render;
+  sp_dep[1].dstSubpass = cs_copy_to_swapchain_img;
+  sp_dep[1].srcStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT_KHR;
+  sp_dep[1].dstStageMask = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT_KHR;
+  sp_dep[1].srcAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT_KHR;
+  sp_dep[1].dstAccessMask = VK_ACCESS_2_INPUT_ATTACHMENT_READ_BIT_KHR;
+  sp_dep[1].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
+
+
+  // We don't need to set up dependencies for the layout transitions—these are performed
+  // automatically based on the information provided for the render pass attachment and subpass
+  // descriptions. What's more, when we specify different attachment layouts for different subpasses
+  // but in both subpasses the given attachment is used only for reading, we also don't need to
+  // specify a dependency.
+
+  //
+  // Call vkCreateRenderPass
+  //
+  VkRenderPassCreateInfo2 rp_create_info;
+  rp_create_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO_2;
+  rp_create_info.pNext = nullptr;
+  rp_create_info.flags = 0;
+  rp_create_info.attachmentCount = _arr_elem_cnt( arr_att_descs );
+  rp_create_info.pAttachments = arr_att_descs;
+  rp_create_info.subpassCount = _arr_elem_cnt( arr_subpass_desc );
+  rp_create_info.pSubpasses = arr_subpass_desc;
+  rp_create_info.dependencyCount = _arr_elem_cnt( sp_dep );
+  rp_create_info.pDependencies = sp_dep;
+  rp_create_info.correlatedViewMaskCount = 0;
+  rp_create_info.pCorrelatedViewMasks = nullptr;
+  SPALL_BEGIN("create_rp");
+  VkResult result;
+  result = vkCreateRenderPass2( single_ton->log_dev, &rp_create_info,
+      &single_ton->vk_alloc_callbacks,
+      //nullptr,
+      &single_ton->render_pass );
+  if ( result != VK_SUCCESS ) {
+    fprintf( stderr, "[Carbonara] Error occurred creating a render pass. '%s'\n",
+        string_VkResult(result) );
+    goto stop_everything_after_failure;
+  }
+  SPALL_END();
+
+
+  //
+  // Prepare framebuffers
+  //
+
+  // Framebuffers are used along with render passes. They specify what image resources should be
+  // used for corresponding attachments defined in a render pass. They also define the size of a
+  // renderable area. That's why when we want to record drawing operations, we not only need to
+  // create a render pass, but also a framebuffer.
+
+  // Framebuffers also define the size of a renderable area—the dimensions into which all rendering
+  // will be confined. However, what we need to remember is that it is up to us to make sure that
+  // the pixels/fragments outside of the specified range are not modified. For this purpose, we need
+  // to specify the appropriate parameters (viewport and scissor test) during the pipeline creation
+  // or when setting corresponding dynamic states
+  // (refer to the Preparing viewport and scissor test state recipe from Chapter 8, Graphics and
+  // Compute Pipelines and to the Setting a dynamic viewport and scissors state recipe from Chapter
+  // 9, Command Recording and Drawing).
+  VkFramebufferAttachmentImageInfo fb_att_img_info[3];
+  for ( unsigned int att_idx = 0; att_idx < _arr_elem_cnt( fb_att_img_info ); att_idx++ ) {
+    fb_att_img_info[att_idx].sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_ATTACHMENT_IMAGE_INFO;
+    fb_att_img_info[att_idx].pNext = nullptr;
+    fb_att_img_info[att_idx].flags = 0;
+    fb_att_img_info[att_idx].width = test_width;
+    fb_att_img_info[att_idx].height = test_height;
+    fb_att_img_info[att_idx].layerCount = 1;
+    fb_att_img_info[att_idx].viewFormatCount = 1;
+  }
+  fb_att_img_info[fb_color].usage =
+    VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT;
+  fb_att_img_info[fb_color].pViewFormats = &single_ton->color_att_fmt;
+
+  const VkFormat depth_fmt = single_ton->zbuf_fmt;
+  fb_att_img_info[fb_depth].usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+  fb_att_img_info[fb_depth].pViewFormats = &depth_fmt;
+
+  fb_att_img_info[fb_swapchain].usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+  fb_att_img_info[fb_swapchain].pViewFormats = &single_ton->color_att_fmt;
+  fb_att_img_info[fb_swapchain].width = test_width;
+  fb_att_img_info[fb_swapchain].height = test_height;
+
+  VkFramebufferAttachmentsCreateInfo fb_atts_create_info;
+  fb_atts_create_info.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_ATTACHMENTS_CREATE_INFO;
+  fb_atts_create_info.pNext = nullptr;
+  fb_atts_create_info.attachmentImageInfoCount = _arr_elem_cnt( fb_att_img_info );
+  fb_atts_create_info.pAttachmentImageInfos = fb_att_img_info;
+
+  VkFramebufferCreateInfo fb_create_info;
+  fb_create_info.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+  fb_create_info.pNext = &fb_atts_create_info;
+  fb_create_info.flags = VK_FRAMEBUFFER_CREATE_IMAGELESS_BIT;  // Framebuffers are created with a
+                                                      // small amount of additional metadata about
+                                                      // the image views that will be used in
+                                                      // `VkFramebufferAttachmentsCreateInfo`, and
+                                                      // the actual image views are provided at
+                                                      // render pass begin time via
+                                                      // `VkRenderPassAttachmentBeginInfoKHR`.
+  fb_create_info.renderPass = single_ton->render_pass;
+  fb_create_info.attachmentCount = _arr_elem_cnt( fb_att_img_info );
+  fb_create_info.pAttachments = nullptr;
+  fb_create_info.width = test_width;
+  fb_create_info.height = test_height;
+  fb_create_info.layers = 1;
+  SPALL_BEGIN("create_fb");
+  result = vkCreateFramebuffer( single_ton->log_dev, &fb_create_info,
+      &single_ton->vk_alloc_callbacks,
+      //nullptr
+      &single_ton->framebuffer );
+  if ( result != VK_SUCCESS ) {
+    fprintf( stderr, "[Carbonara] Error occurred in vkCreateFramebuffer. '%s'\n",
+        string_VkResult(result) );
+    goto stop_everything_after_failure;
+  }
+  SPALL_END();
+
+  return err_msg_no_error;
+
+stop_everything_after_failure:
+
+  if ( single_ton->framebuffer ) {
+    vkDestroyFramebuffer( single_ton->log_dev, single_ton->framebuffer,
+        &single_ton->vk_alloc_callbacks );
+        //nullptr );
+    single_ton->framebuffer = VK_NULL_HANDLE;
+  }
+
+  if ( single_ton->render_pass ) {
+    vkDestroyRenderPass( single_ton->log_dev, single_ton->render_pass,
+        &single_ton->vk_alloc_callbacks );
+        //nullptr );
+    single_ton->render_pass = VK_NULL_HANDLE;
+  }
+
+  return err_msg_unknown;
+}
 

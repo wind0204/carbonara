@@ -1,3 +1,4 @@
+#include <hwloc/bitmap.h>  // FIXME remove this
 #if defined(__i386) || defined(__i386__) || defined(_M_IX86) || defined(__x86_64) \
     || defined(__x86_64__) || defined(__amd64) || defined(_M_X64)
   #ifdef _MSC_VER
@@ -17,22 +18,11 @@
 
 #if defined(ENABLE_PROFILING)
   #include <spall.h>
-
-  #define SPALL_BEGIN( name_tag ) spall_buffer_begin( &spall_ctx, p_spall_buf,  \
-      (name_tag),                                                               \
-      sizeof((name_tag)) - 1,                                                   \
-      _rdtsc()                                                                  \
-      );
-  #define SPALL_END() spall_buffer_end( &spall_ctx, p_spall_buf, _rdtsc() );
-
-  static SpallProfile spall_ctx;
-  static thread_local SpallBuffer * p_spall_buf;
+  #include <util-spall.h>
   static SpallBuffer spall_buf_for_main;
-
 #else  // defined(ENABLE_PROFILING)
   #define SPALL_BEGIN( name_tag )
   #define SPALL_END()
-
 #endif  // defined(ENABLE_PROFILING)
 
 
@@ -89,6 +79,9 @@ static thread * threads;
 static char * asset_buf1;
 static char * asset_buf2;
 static char * asset_buf3;
+static char * asset_buf4;
+static char * asset_buf5;
+static char * asset_buf6;
 
 
 //-------------------------------------------------------------------------------------------------
@@ -297,18 +290,20 @@ SDL_AppResult SDL_AppIterate( [[maybe_unused]] void *appstate )
   switch ( result ) {
     default:
       //
-      // TODO Recreate the swapchain?
+      // TODO Recreate the swapchain? ( VK_ERROR_OUT_OF_DATE_KHR )
       //
-      break;
-    case VK_SUCCESS:
-    case VK_SUBOPTIMAL_KHR:
-      //
-      // TODO
       // images used by the presentation engine must have a VK_IMAGE_LAYOUT_PRESENT_SRC_KHR
       // layout. But if we want to render into an image, it must have a
       // VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL layout. The operation of changing the layout is
       // called a transition (refer to the Setting an image memory barrier recipe from Chapter 4,
       // Resources and Memory).
+      //
+      break;
+    case VK_SUCCESS:
+    case VK_SUBOPTIMAL_KHR:
+      // You might want to change the viewport and scissor
+      // TODO vkCmdSetViewport()
+      // TODO vkCmdSetScissor()
       break;
   }
 
@@ -511,7 +506,7 @@ SDL_AppResult SDL_AppInit(
   // If it returns SDL_APP_SUCCESS, SDL calls SDL_AppQuit and terminates with an exit code that
   // reports success to the platform.
   fprintf( stdout, "[TEST] %s %d-%d\n", Carbonara_APP_NAME, Carbonara_VERSION_MAJOR, Carbonara_VERSION_MINOR );
-  atomic_init( &cara_vk.tmp_var_ready, 0 );
+  //atomic_init( &cara_vk.tmp_var_ready, 0 );
 
 #if defined(__i386) || defined(__i386__) || defined(_M_IX86) || defined(__x86_64)\
   || defined(__x86_64__) || defined(__amd64) || defined(_M_X64)
@@ -650,10 +645,11 @@ enum err_msg init_carbonara( uint32_t len_each_arena, uint64_t proc_info )
   //atomic_init(&cara_single.nr_job_arg_groups_taken, 0);
   atomic_init(&cara_single.nr_job_batch_descriptors_taken, 0);
 
-  cara_single.len_each_arena = len_each_arena;
 
 
+  //
   // Prepare processor_map
+  //
   cara_single.proc_map = prepare_processor_map();
 
   union ucl_x86_proc_info x86_proc_info;
@@ -663,6 +659,11 @@ enum err_msg init_carbonara( uint32_t len_each_arena, uint64_t proc_info )
   proc_info = x86_proc_info.whole;
 
   cara_single.proc_info = proc_info;
+
+
+  //
+  // Prepare the time system and the performance traces
+  //
   enum err_msg err;
 #ifdef ENABLE_PROFILING
   err = init_appdev_support_timer(x86_proc_info.whole, 0);
@@ -725,6 +726,12 @@ enum err_msg init_carbonara( uint32_t len_each_arena, uint64_t proc_info )
   }
   p_spall_buf = &spall_buf_for_main;
 #endif  // ENABLE_PROFILING
+
+
+  //
+  // Init memory arena
+  //
+
   SPALL_BEGIN( "init_carb-after_prepare_processor_map" );
 
   //size_t large_page_size = page_sizes[x86_proc_info.large_page_size_class];
@@ -734,6 +741,7 @@ enum err_msg init_carbonara( uint32_t len_each_arena, uint64_t proc_info )
     return err_msg_out_of_memory;
   }
   cara_single.mem_arena->id = 0;
+  cara_single.len_each_arena = len_each_arena;
   err = ma_init_arena(
       proc_info,
       cara_single.mem_arena,
@@ -749,40 +757,36 @@ enum err_msg init_carbonara( uint32_t len_each_arena, uint64_t proc_info )
   struct ma_sub_arena * ma_head = ma_get_sub_arena(cara_single.mem_arena, 1);
 
 
-  // Prepare array lists
-  struct cara_malloc_helper * malloc_helper;
-  malloc_helper = (void*) ma_malloc( ma_head,
-      _get_nr_units_to_cover( sizeof(struct cara_malloc_helper), CACHELINE_LEN ),
-      0,
-      0 );
-  malloc_helper->node_recently_used = cara_single.mem_arena->head;
-  malloc_helper->worker_idx = 0;
-  //malloc_helper->alignment = CACHELINE_LEN;
+  //
+  // Temporary struct ms_worker_info and struct cara_worker_state
+  //
+  struct ms_worker_info tmp_worker_info;
+  tmp_worker_info.cpuset = (hwloc_bitmap_t){0};
+  tmp_worker_info.deployment_flags = 0;
+  tmp_worker_info.idx_core = 0;
+  tmp_worker_info.idx_missing_sibling = 0;
+  tmp_worker_info.idx_one_sibling = 2;
+  tmp_worker_info.idx_self = 0;
+  tmp_worker_info.puid = 0;
+  struct cara_worker_state tmp_ws;
+  tmp_ws.current_batch = nullptr;
+  tmp_ws.worker_info = &tmp_worker_info;
+  tmp_ws.malloc_helper.worker_idx = 0;
+  tmp_ws.malloc_helper.node_recently_used = cara_single.mem_arena->head;
 
-  uint_fast8_t elem_size = CACHELINE_LEN;
-  if ( elem_size < sizeof(struct cara_job_batch_desc_64) ) {
-    elem_size = sizeof(struct cara_job_batch_desc_64);
-  }
 
-  //const uint32_t node_size = sizeof(struct cara_job_batch_desc_64) * 4
+
+  //
+  // Prepare job list
+  //
+  constexpr uint_fast8_t elem_size = CACHELINE_LEN;
+  assume( elem_size == sizeof(struct cara_job_batch_desc_64) );
   const uint32_t node_size_b4_rev = elem_size * cara_single.proc_map->nr_processors;
   uint32_t node_size = _align_to_power_of_two( node_size_b4_rev, ALIGN_FOR_AVX512 );
   node_size = _align_to_the_close_power_of_two( node_size );
 
-  /*
-  cara_single.job_arg_pool = infos_al_init(
-      .node_size=node_size,
-      .elem_size=elem_size,
-      .custom_malloc=cara_malloc_dynamic_wide_aligned,
-      .custom_free=cara_free_dynamic,
-      .userdata=malloc_helper,
-      );
-
-  cara_init_job_arg_pool_node(cara_single.job_arg_pool->list->head->data);
-  */
-
   cara_single.job_list = infos_al_create(
-      malloc_helper,
+      &tmp_ws.malloc_helper,
       cara_malloc,
       node_size, elem_size, 0
       );
@@ -790,7 +794,9 @@ enum err_msg init_carbonara( uint32_t len_each_arena, uint64_t proc_info )
   cara_init_job_list_node(cara_single.job_list->list.head.data);
 
 
+  //
   // Keep the processor_map in the mm_memo_map
+  //
   struct processor_map * p_orig_proc_map = cara_single.proc_map;
   cara_single.proc_map = ma_malloc(
       ma_head,
@@ -800,12 +806,6 @@ enum err_msg init_carbonara( uint32_t len_each_arena, uint64_t proc_info )
         CACHELINE_LEN ),
       0,
       0 );
-
-  /*
-  cara_single.proc_map = cara_malloc_dyn( sizeof(struct mm_colored_string) + sizeof(struct processor_map)
-        + cara_single.proc_map->nr_processors * (sizeof(struct ms_worker_info) + sizeof(struct __hwloc_bitmap_s) +
-       HWLOC_BITMAP_PREALLOC_ULONGS * sizeof(unsigned long)), &malloc_helper);
-       */
   memcpy(
       cara_single.proc_map,
       p_orig_proc_map,
@@ -825,6 +825,7 @@ enum err_msg init_carbonara( uint32_t len_each_arena, uint64_t proc_info )
   }
   free(p_orig_proc_map);
 
+
 #ifdef DEBUG_MODE
   fprintf( stdout, "[MA] capacity = %u\n", ma_head->capacity );
   fprintf( stdout, "[MA] nr_free_chunks = %u\n", ma_head->smm.total_space_left );
@@ -838,7 +839,9 @@ enum err_msg init_carbonara( uint32_t len_each_arena, uint64_t proc_info )
 #endif
 
 
-  // Set up the first batch of jobs
+  //
+  // Write the very first job batch
+  //
   struct cara_job_batch_desc_64 * batch = infos_al_get_elem(cara_single.job_list, 0);
   for ( uint_fast8_t job_idx = 1; job_idx < CARBONARA_MAX_NR_JOBS_IN_A_JOB_DESC_64;
       job_idx++ ) {
@@ -857,6 +860,10 @@ enum err_msg init_carbonara( uint32_t len_each_arena, uint64_t proc_info )
   atomic_fetch_add_explicit( &cara_single.nr_job_batch_descriptors_taken, 1,
       memory_order_release );
 
+
+  //
+  // Prepare timers
+  //
 
   // NOTE The core crystal clock frequency of the ART(Always Running Timer) in an amd64 CPU is
   // usually around 25MHz, 24MHz ~19.2MHz, which means the resolution is 40ns, 41.666ns or
@@ -877,13 +884,12 @@ enum err_msg init_carbonara( uint32_t len_each_arena, uint64_t proc_info )
   }
   assume( !pc_ofs_per_sec );
 
-
   atomic_init( &cara_single.cur_time_in_5us_general, 0 );
 
-  cara_single.periodic_jobs_periods_5us = cara_malloc( malloc_helper,
+  cara_single.periodic_jobs_periods_5us = cara_malloc( &tmp_ws.malloc_helper,
       alignof(*cara_single.periodic_jobs_periods_5us),
       sizeof(*cara_single.periodic_jobs_periods_5us)*max_nr_pjobs );
-  cara_single.periodic_jobs = cara_malloc( malloc_helper,
+  cara_single.periodic_jobs = cara_malloc( &tmp_ws.malloc_helper,
       alignof(*cara_single.periodic_jobs),
       sizeof(*cara_single.periodic_jobs)*max_nr_pjobs );
 
@@ -896,6 +902,10 @@ enum err_msg init_carbonara( uint32_t len_each_arena, uint64_t proc_info )
 #endif
   };
 
+
+  //
+  // Prepare periodic jobs
+  //
   unsigned int pjob_idx = 0;
   cara_single.periodic_jobs[pjob_idx] = jf_idx_maint_job_list;
   cara_single.periodic_jobs_periods_5us[pjob_idx] = 1000 * nr_5us_in_1ms;
@@ -908,7 +918,7 @@ enum err_msg init_carbonara( uint32_t len_each_arena, uint64_t proc_info )
   cara_single.periodic_jobs_periods_5us[pjob_idx] = 2000 * nr_5us_in_1ms;
 #endif
 
-  struct infos_bst * bst = infos_bst_create( malloc_helper, cara_malloc,
+  struct infos_bst * bst = infos_bst_create( &tmp_ws.malloc_helper, cara_malloc,
       job_spawners_time_to_act,
       sizeof(job_spawners_time_to_act)/sizeof(*job_spawners_time_to_act),
       max_nr_pjobs,
@@ -916,33 +926,40 @@ enum err_msg init_carbonara( uint32_t len_each_arena, uint64_t proc_info )
   cara_single.tree_of_times_to_act = bst;
 
 
-  void * string = ma_malloc(
-      ma_head,
-      _get_nr_units_to_cover(
-        //len_new_stack + sizeof(thread) * cara_single.proc_map->nr_processors,
-        sizeof(thread) * cara_single.proc_map->nr_processors,
-        CACHELINE_LEN ),
-      malloc_helper,
-      cara_malloc );
 
-  // In the mm_malloc call above we asked for space for the array of threads.
-  atomic_init( &cara_single.nr_workers_resigned, 0 );
-  threads = string;
-
+  //
+  // Prepare signal handlers
+  //
   signal(SIGHUP, handle_sigint);
   signal(SIGINT, handle_sigint);
   signal(SIGQUIT, handle_sigint);
   signal(SIGTERM, handle_sigint);
   signal(SIGSEGV, handle_sigsegv);
 
+
   SPALL_END();  // after prepare_processor_map
 
 
-
+  //
+  // init SDL3 and vulkan
+  //
   SPALL_BEGIN("init_sdl");
   if ( init_sdl() ) {
     fprintf( stderr, "[Carbonara] Could not initialize SDL.\n" );
     return err_msg_unknown;
+  }
+  SPALL_END();
+
+
+  SPALL_BEGIN("init_vulkan");
+  // TODO Set a prefered set of vendor_id_pref + device_id_pref if there is a saved preference data
+  if ( init_vulkan(0, 0, cara_single.mem_arena, &tmp_ws) ) {
+    fprintf( stderr, "[Carbonara] Could not initialize Vulkan.\n" );
+    return err_msg_unknown;
+  }
+  const int ret = SDL_ShowWindow( cara_vk.window );
+  if ( !ret ) {
+    fprintf( stderr, "[Carbonara] Could not unhide the window. (%s)\n", SDL_GetError() );
   }
   SPALL_END();
 
@@ -958,7 +975,10 @@ enum err_msg init_carbonara( uint32_t len_each_arena, uint64_t proc_info )
   SPALL_BEGIN( "Load stone.dds" );
   cara_vk.stone_texture = nullptr;
   cara_vk.sand_texture = nullptr;
-  cara_vk.spv_simplest_vert = nullptr;
+  cara_vk.spv_simple_vert = nullptr;
+  cara_vk.spv_simple_frag = nullptr;
+  cara_vk.spv_depth_only = nullptr;
+  cara_vk.spv_depth_only_frag = nullptr;
   cara_vk.asset_size = 0;
   constexpr char fpath_stone[] = "/home/dewr/Products/carbonara/assets/textures/stone-01.dds";
   constexpr char fpath_sand[] = "/home/dewr/Products/carbonara/assets/textures/sand-01.dds";
@@ -985,7 +1005,7 @@ enum err_msg init_carbonara( uint32_t len_each_arena, uint64_t proc_info )
 
   assume( file_size == dds_header_size + len_mipmapped_2048 );
   asset_buf1 = cara_malloc(
-      malloc_helper, CACHELINE_LEN, len_mipmapped_2048 + dds_header_size );
+      &tmp_ws.malloc_helper, CACHELINE_LEN, len_mipmapped_2048 + dds_header_size );
   if ( !SDL_ReadAsyncIO(
         new_async_io,
         asset_buf1,
@@ -1063,7 +1083,7 @@ done_with_stone:
   }
 
   asset_buf2 = cara_malloc(
-      malloc_helper, CACHELINE_LEN, len_mipmapped_2048 + dds_header_size );
+      &tmp_ws.malloc_helper, CACHELINE_LEN, len_mipmapped_2048 + dds_header_size );
   if ( !SDL_ReadAsyncIO(
         new_async_io,
         asset_buf2,
@@ -1158,9 +1178,9 @@ done_with_sand:
   */
 
   new_async_io = SDL_AsyncIOFromFile(
-      "/home/dewr/Products/carbonara/spirv/simplest_vert.hlsl.spv", "r" );
+      "/home/dewr/Products/carbonara/spirv/simple_test.hlsl.vert.spv", "r" );
   file_size = SDL_GetAsyncIOSize( new_async_io );
-  asset_buf3 = cara_malloc( malloc_helper, CACHELINE_LEN, file_size );
+  asset_buf3 = cara_malloc( &tmp_ws.malloc_helper, CACHELINE_LEN, file_size );
   if ( !SDL_ReadAsyncIO(
         new_async_io,
         asset_buf3,
@@ -1195,11 +1215,153 @@ done_with_sand:
           async_io_outcome.result == SDL_ASYNCIO_CANCELED ? "cancelled" : "failure" );
     }
     assume( ptr2ui(async_io_outcome.userdata) == 555 );
-    cara_vk.spv_simplest_vert = asset_buf3;
+    cara_vk.spv_simple_vert = asset_buf3;
+    cara_vk.len_simple_vert = file_size;
+  }
+
+  new_async_io = SDL_AsyncIOFromFile(
+      "/home/dewr/Products/carbonara/spirv/simple_test.hlsl.frag.spv", "r" );
+  file_size = SDL_GetAsyncIOSize( new_async_io );
+  asset_buf4 = cara_malloc( &tmp_ws.malloc_helper, CACHELINE_LEN, file_size );
+  if ( !SDL_ReadAsyncIO(
+        new_async_io,
+        asset_buf4,
+        0,
+        UINT64_C(0) + file_size,
+        my_io_queue,
+        ui2ptr(33)) ) {
+    fprintf( stderr, "[Carbonara] SDL_ReadAsyncIO failed!\n" );
+  }
+  if ( !SDL_WaitAsyncIOResult(my_io_queue, &async_io_outcome, 1000*10) ) {
+    fprintf( stderr, "[Carbonara] SDL_WaitAsyncIOResult after a read request failed!\n" );
+  }
+  if ( async_io_outcome.result != SDL_ASYNCIO_COMPLETE ) {
+    fprintf( stderr, "[Carbonara] AsyncIO task was not done! result=%s\n",
+        async_io_outcome.result == SDL_ASYNCIO_CANCELED ? "cancelled" : "failure" );
+    if ( async_io_outcome.result == SDL_ASYNCIO_FAILURE ) {
+      fprintf( stderr, "[Carbonara] The reason behind the failure:'%s'\n", SDL_GetError() );
+    }
+    assume( ptr2ui(async_io_outcome.userdata) == 33 );
+  } else {  // if ( async_io_outcome.result != SDL_ASYNCIO_COMPLETE )
+    fprintf( stdout, "[Carbonara-Debug] requested:%lu, transferred:%lu, offset:%lu\n",
+        async_io_outcome.bytes_requested,
+        async_io_outcome.bytes_transferred,
+        async_io_outcome.offset );
+    while ( !SDL_CloseAsyncIO(new_async_io, false, my_io_queue, ui2ptr(555)) ) {
+      hold_up_thread( 1000 * 100 );
+    }
+    if ( !SDL_WaitAsyncIOResult(my_io_queue, &async_io_outcome, 1000*10) ) {
+      fprintf( stderr, "[Carbonara] SDL_WaitAsyncIOResult after a close request failed!\n" );
+    } else if ( async_io_outcome.result != SDL_ASYNCIO_COMPLETE ) {
+      fprintf( stdout, "[Carbonara-Debug] closed? result=%s\n",
+          async_io_outcome.result == SDL_ASYNCIO_CANCELED ? "cancelled" : "failure" );
+    }
+    assume( ptr2ui(async_io_outcome.userdata) == 555 );
+    cara_vk.spv_simple_frag = asset_buf4;
+    cara_vk.len_simple_frag = file_size;
+  }
+
+  new_async_io = SDL_AsyncIOFromFile(
+      "/home/dewr/Products/carbonara/spirv/depth_only_prepass.hlsl.vert.spv", "r" );
+  file_size = SDL_GetAsyncIOSize( new_async_io );
+  asset_buf5 = cara_malloc( &tmp_ws.malloc_helper, CACHELINE_LEN, file_size );
+  if ( !SDL_ReadAsyncIO(
+        new_async_io,
+        asset_buf5,
+        0,
+        UINT64_C(0) + file_size,
+        my_io_queue,
+        ui2ptr(33)) ) {
+    fprintf( stderr, "[Carbonara] SDL_ReadAsyncIO failed!\n" );
+  }
+  if ( !SDL_WaitAsyncIOResult(my_io_queue, &async_io_outcome, 1000*10) ) {
+    fprintf( stderr, "[Carbonara] SDL_WaitAsyncIOResult after a read request failed!\n" );
+  }
+  if ( async_io_outcome.result != SDL_ASYNCIO_COMPLETE ) {
+    fprintf( stderr, "[Carbonara] AsyncIO task was not done! result=%s\n",
+        async_io_outcome.result == SDL_ASYNCIO_CANCELED ? "cancelled" : "failure" );
+    if ( async_io_outcome.result == SDL_ASYNCIO_FAILURE ) {
+      fprintf( stderr, "[Carbonara] The reason behind the failure:'%s'\n", SDL_GetError() );
+    }
+    assume( ptr2ui(async_io_outcome.userdata) == 33 );
+  } else {  // if ( async_io_outcome.result != SDL_ASYNCIO_COMPLETE )
+    fprintf( stdout, "[Carbonara-Debug] requested:%lu, transferred:%lu, offset:%lu\n",
+        async_io_outcome.bytes_requested,
+        async_io_outcome.bytes_transferred,
+        async_io_outcome.offset );
+    while ( !SDL_CloseAsyncIO(new_async_io, false, my_io_queue, ui2ptr(555)) ) {
+      hold_up_thread( 1000 * 100 );
+    }
+    if ( !SDL_WaitAsyncIOResult(my_io_queue, &async_io_outcome, 1000*10) ) {
+      fprintf( stderr, "[Carbonara] SDL_WaitAsyncIOResult after a close request failed!\n" );
+    } else if ( async_io_outcome.result != SDL_ASYNCIO_COMPLETE ) {
+      fprintf( stdout, "[Carbonara-Debug] closed? result=%s\n",
+          async_io_outcome.result == SDL_ASYNCIO_CANCELED ? "cancelled" : "failure" );
+    }
+    assume( ptr2ui(async_io_outcome.userdata) == 555 );
+    cara_vk.spv_depth_only = asset_buf5;
+    cara_vk.len_depth_only = file_size;
+  }
+
+  new_async_io = SDL_AsyncIOFromFile(
+      "/home/dewr/Products/carbonara/spirv/depth_only_prepass.hlsl.frag.spv", "r" );
+  file_size = SDL_GetAsyncIOSize( new_async_io );
+  asset_buf6 = cara_malloc( &tmp_ws.malloc_helper, CACHELINE_LEN, file_size );
+  if ( !SDL_ReadAsyncIO(
+        new_async_io,
+        asset_buf6,
+        0,
+        UINT64_C(0) + file_size,
+        my_io_queue,
+        ui2ptr(33)) ) {
+    fprintf( stderr, "[Carbonara] SDL_ReadAsyncIO failed!\n" );
+  }
+  if ( !SDL_WaitAsyncIOResult(my_io_queue, &async_io_outcome, 1000*10) ) {
+    fprintf( stderr, "[Carbonara] SDL_WaitAsyncIOResult after a read request failed!\n" );
+  }
+  if ( async_io_outcome.result != SDL_ASYNCIO_COMPLETE ) {
+    fprintf( stderr, "[Carbonara] AsyncIO task was not done! result=%s\n",
+        async_io_outcome.result == SDL_ASYNCIO_CANCELED ? "cancelled" : "failure" );
+    if ( async_io_outcome.result == SDL_ASYNCIO_FAILURE ) {
+      fprintf( stderr, "[Carbonara] The reason behind the failure:'%s'\n", SDL_GetError() );
+    }
+    assume( ptr2ui(async_io_outcome.userdata) == 33 );
+  } else {  // if ( async_io_outcome.result != SDL_ASYNCIO_COMPLETE )
+    fprintf( stdout, "[Carbonara-Debug] requested:%lu, transferred:%lu, offset:%lu\n",
+        async_io_outcome.bytes_requested,
+        async_io_outcome.bytes_transferred,
+        async_io_outcome.offset );
+    while ( !SDL_CloseAsyncIO(new_async_io, false, my_io_queue, ui2ptr(555)) ) {
+      hold_up_thread( 1000 * 100 );
+    }
+    if ( !SDL_WaitAsyncIOResult(my_io_queue, &async_io_outcome, 1000*10) ) {
+      fprintf( stderr, "[Carbonara] SDL_WaitAsyncIOResult after a close request failed!\n" );
+    } else if ( async_io_outcome.result != SDL_ASYNCIO_COMPLETE ) {
+      fprintf( stdout, "[Carbonara-Debug] closed? result=%s\n",
+          async_io_outcome.result == SDL_ASYNCIO_CANCELED ? "cancelled" : "failure" );
+    }
+    assume( ptr2ui(async_io_outcome.userdata) == 555 );
+    cara_vk.spv_depth_only_frag = asset_buf6;
+    cara_vk.len_depth_only_frag = file_size;
   }
 
 
 
+  //
+  // Spawn threads
+  //
+  void * string = ma_malloc(
+      ma_head,
+      _get_nr_units_to_cover(
+        //len_new_stack + sizeof(thread) * cara_single.proc_map->nr_processors,
+        sizeof(thread) * cara_single.proc_map->nr_processors,
+        CACHELINE_LEN ),
+      &tmp_ws.malloc_helper,
+      cara_malloc );
+
+  // In the mm_malloc call above we asked for space for the array of threads.
+  atomic_init( &cara_single.nr_workers_resigned, 0 );
+  threads = string;
 
   for ( uint_fast8_t proc_idx = 0;
       proc_idx < cara_single.proc_map->nr_processors;
@@ -1251,9 +1413,8 @@ done_with_sand:
   //}
 
 
-
   // Release the temporary malloc_helper as user #0
-  ma_free(cara_single.mem_arena, 0, malloc_helper);
+  //ma_free(cara_single.mem_arena, 0, malloc_helper);
 
   return 0;
 }
@@ -1811,19 +1972,6 @@ void jf_kickstart( struct cara_worker_state * ws )
   uint_fast8_t is_frame_id_even = 0;
 
 
-  SPALL_BEGIN("init_vulkan");
-  // TODO Set a prefered set of vendor_id_pref + device_id_pref if there is a saved preference data
-  if ( init_vulkan(0, 0, cara_single.mem_arena, ws) ) {
-    fprintf( stderr, "[Carbonara] Could not initialize Vulkan.\n" );
-    goto stop_everything_after_failure;
-  }
-  const int ret = SDL_ShowWindow( cara_vk.window );
-  if ( !ret ) {
-    fprintf( stderr, "[Carbonara] Could not unhide the window. (%s)\n", SDL_GetError() );
-  }
-  SPALL_END();
-
-
 
   // TODO move the code below away!
   fprintf( stdout, "[Carbonara-Debug] tctex_load_mem for stone...\n" );
@@ -1962,7 +2110,7 @@ void jf_kickstart( struct cara_worker_state * ws )
 
 
   // Begin recording on the primary buffer
-  VkCommandBuffer trans_buf = cara_vk.trans_bufs.primary_cmd_buf;
+  VkCommandBuffer trans_buf = cara_vk.trans_buf.primary_cmd_buf;
 #ifdef DEBUG_MODE
   fprintf( stderr, "[Vulkan-Debug] TP cmd_buf=%#018lx\n", ptr2ui(trans_buf) );
 #endif
@@ -2329,28 +2477,64 @@ void jf_kickstart( struct cara_worker_state * ws )
   // defines what type of resources can be accessed by a given pipeline. Created layouts, apart from
   // pipeline layout creation, are also required during descriptor set allocation.
   //
-  VkDescriptorSetLayoutBinding arr_bindings[1];
-  for ( unsigned int i = 0; i < _arr_elem_cnt( arr_bindings ); i++ ) {
-    arr_bindings[i].binding = i;
-    arr_bindings[i].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    arr_bindings[i].descriptorCount = 1;
-    arr_bindings[i].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT |
-      0;
-    arr_bindings[i].pImmutableSamplers = &cara_vk.sampler_8_2048_tex;
-  }
   VkDescriptorSetLayoutCreateInfo dsl_create_info;
   dsl_create_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
   dsl_create_info.pNext = nullptr;
   dsl_create_info.flags = 0;
-  dsl_create_info.bindingCount = _arr_elem_cnt( arr_bindings );
-  dsl_create_info.pBindings = arr_bindings;
-  SPALL_BEGIN("create_dsl");
+  //dsl_create_info.bindingCount = _arr_elem_cnt( arr_bindings );
+  //dsl_create_info.pBindings = arr_bindings;
+  dsl_create_info.bindingCount = 0;
+  dsl_create_info.pBindings = nullptr;
+
+  // Bindings for cs_main_render
+  VkDescriptorSetLayoutBinding arr_bindings_main_render[1];
+  for ( unsigned int i = 0; i < _arr_elem_cnt( arr_bindings_main_render ); i++ ) {
+    arr_bindings_main_render[i].binding = i;
+    arr_bindings_main_render[i].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    arr_bindings_main_render[i].descriptorCount = 1;
+    arr_bindings_main_render[i].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+    arr_bindings_main_render[i].pImmutableSamplers = &cara_vk.sampler_8_2048_tex;
+  }
+
+  // Bindings for cs_copy_to_swapchain_img
+  VkDescriptorSetLayoutBinding arr_bindings_cp2sc[1];
+  for ( unsigned int i = 0; i < _arr_elem_cnt( arr_bindings_cp2sc ); i++ ) {
+    arr_bindings_cp2sc[i].binding = i;
+    arr_bindings_cp2sc[i].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    arr_bindings_cp2sc[i].descriptorCount = 1;
+    arr_bindings_cp2sc[i].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+    arr_bindings_cp2sc[i].pImmutableSamplers = nullptr;
+  }
+
+  SPALL_BEGIN("create_dsls");
   result = vkCreateDescriptorSetLayout( cara_vk.log_dev, &dsl_create_info,
-      &cara_vk.vk_alloc_callbacks, &cara_vk.dsl_first
-      //nullptr, &cara_vk.dsl_first
+      &cara_vk.vk_alloc_callbacks, &cara_vk.dsl_depth_only
+      //nullptr, &cara_vk.dsl_depth_only
       );
   if ( result != VK_SUCCESS ) {
-    fprintf( stderr, "[Carbonara] Error occurred during DSL creation. '%s'\n",
+    fprintf( stderr, "[Carbonara] Error occurred during DSL creation.(D) '%s'\n",
+        string_VkResult(result) );
+    goto stop_everything_after_failure;
+  }
+  dsl_create_info.bindingCount = _arr_elem_cnt( arr_bindings_main_render );
+  dsl_create_info.pBindings = arr_bindings_main_render;
+  result = vkCreateDescriptorSetLayout( cara_vk.log_dev, &dsl_create_info,
+      &cara_vk.vk_alloc_callbacks, &cara_vk.dsl_main_render
+      //nullptr, &cara_vk.dsl_main_render
+      );
+  if ( result != VK_SUCCESS ) {
+    fprintf( stderr, "[Carbonara] Error occurred during DSL creation.(M) '%s'\n",
+        string_VkResult(result) );
+    goto stop_everything_after_failure;
+  }
+  dsl_create_info.bindingCount = _arr_elem_cnt( arr_bindings_cp2sc );
+  dsl_create_info.pBindings = arr_bindings_cp2sc;
+  result = vkCreateDescriptorSetLayout( cara_vk.log_dev, &dsl_create_info,
+      &cara_vk.vk_alloc_callbacks, &cara_vk.dsl_copy2sc
+      //nullptr, &cara_vk.dsl_copy2sc
+      );
+  if ( result != VK_SUCCESS ) {
+    fprintf( stderr, "[Carbonara] Error occurred during DSL creation.(C) '%s'\n",
         string_VkResult(result) );
     goto stop_everything_after_failure;
   }
@@ -2372,8 +2556,8 @@ void jf_kickstart( struct cara_worker_state * ws )
   dp_create_info.pPoolSizes = arr_pool_sizes;
   SPALL_BEGIN("create_dp");
   result = vkCreateDescriptorPool( cara_vk.log_dev, &dp_create_info,
-      &cara_vk.vk_alloc_callbacks, &cara_vk.dp_first
-      //nullptr, &cara_vk.dp_first
+      &cara_vk.vk_alloc_callbacks, &cara_vk.dp_main_render
+      //nullptr, &cara_vk.dp_main_render
       );
   // When we have created a pool, we can allocate descriptor sets from it. But we must remember that
   //  we can't do this in multiple threads at the same time.
@@ -2388,14 +2572,15 @@ void jf_kickstart( struct cara_worker_state * ws )
   //
   // Allocate a descriptor set
   //
-  VkDescriptorSetAllocateInfo ds_alloc_info;
-  ds_alloc_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-  ds_alloc_info.pNext = nullptr;
-  ds_alloc_info.descriptorPool = cara_vk.dp_first;
-  ds_alloc_info.descriptorSetCount = 1;
-  ds_alloc_info.pSetLayouts = &cara_vk.dsl_first;
+  VkDescriptorSetAllocateInfo main_render_ds_alloc_info;
+  main_render_ds_alloc_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+  main_render_ds_alloc_info.pNext = nullptr;
+  main_render_ds_alloc_info.descriptorPool = cara_vk.dp_main_render;
+  main_render_ds_alloc_info.descriptorSetCount = 1;
+  main_render_ds_alloc_info.pSetLayouts = &cara_vk.dsl_main_render;
   SPALL_BEGIN("alloc_ds");
-  result = vkAllocateDescriptorSets( cara_vk.log_dev, &ds_alloc_info, &cara_vk.ds_first );
+  result = vkAllocateDescriptorSets( cara_vk.log_dev, &main_render_ds_alloc_info,
+      &cara_vk.ds_main_render );
   if ( result != VK_SUCCESS ) {
     fprintf( stderr, "[Carbonara] Error occurred during descriptor set allocation. '%s'\n",
         string_VkResult(result) );
@@ -2413,7 +2598,7 @@ void jf_kickstart( struct cara_worker_state * ws )
   VkWriteDescriptorSet arr_desc_writes[1];
   arr_desc_writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
   arr_desc_writes[0].pNext = nullptr;
-  arr_desc_writes[0].dstSet = cara_vk.ds_first;
+  arr_desc_writes[0].dstSet = cara_vk.ds_main_render;
   arr_desc_writes[0].dstBinding = 0;
   arr_desc_writes[0].dstArrayElement = 0;
   arr_desc_writes[0].descriptorCount = 1;
@@ -2430,26 +2615,357 @@ void jf_kickstart( struct cara_worker_state * ws )
   SPALL_END();
 
 
-  // TODO Do we really have to create a pipeline layout and bind a descriptor set so early??
+  //
+  // Create a shader module
+  //
+
+  // A VkShaderModule is an opaque handle to a shader module object in the Vulkan API.
+  // It serves as a container for shader code written in the SPIR-V binary format.
+  VkShaderModuleCreateInfo sm_create_info;
+  sm_create_info.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+  sm_create_info.pNext = nullptr;
+  sm_create_info.flags = 0;
+  sm_create_info.codeSize = cara_vk.len_simple_vert;
+  sm_create_info.pCode = cara_vk.spv_simple_vert;
+  SPALL_BEGIN("create_shader_modules");
+  // Shader compilation and linkage is performed during the pipeline object creation, not when a
+  //  shader module is created.
+  result = vkCreateShaderModule( cara_vk.log_dev, &sm_create_info, &cara_vk.vk_alloc_callbacks,
+      &cara_vk.sm_simple_vert );
+  if( result != VK_SUCCESS ) {
+    fprintf( stderr, "[Carbonara] Error occurred creating a shader module(V). '%s'\n",
+        string_VkResult(result) );
+    goto stop_everything_after_failure;
+  }
+  sm_create_info.codeSize = cara_vk.len_simple_frag;
+  sm_create_info.pCode = cara_vk.spv_simple_frag;
+  result = vkCreateShaderModule( cara_vk.log_dev, &sm_create_info, &cara_vk.vk_alloc_callbacks,
+      &cara_vk.sm_simple_frag );
+  if( result != VK_SUCCESS ) {
+    fprintf( stderr, "[Carbonara] Error occurred creating a shader module(F). '%s'\n",
+        string_VkResult(result) );
+    goto stop_everything_after_failure;
+  }
+  sm_create_info.codeSize = cara_vk.len_depth_only;
+  sm_create_info.pCode = cara_vk.spv_depth_only;
+  result = vkCreateShaderModule( cara_vk.log_dev, &sm_create_info, &cara_vk.vk_alloc_callbacks,
+      &cara_vk.sm_depth_only );
+  if( result != VK_SUCCESS ) {
+    fprintf( stderr, "[Carbonara] Error occurred creating a shader module(D). '%s'\n",
+        string_VkResult(result) );
+    goto stop_everything_after_failure;
+  }
+  sm_create_info.codeSize = cara_vk.len_depth_only_frag;
+  sm_create_info.pCode = cara_vk.spv_depth_only_frag;
+  result = vkCreateShaderModule( cara_vk.log_dev, &sm_create_info, &cara_vk.vk_alloc_callbacks,
+      &cara_vk.sm_depth_only_frag );
+  if( result != VK_SUCCESS ) {
+    fprintf( stderr, "[Carbonara] Error occurred creating a shader module(D). '%s'\n",
+        string_VkResult(result) );
+    goto stop_everything_after_failure;
+  }
+  SPALL_END();
+
+  //
+  // Shader stages
+  //
+  VkPipelineShaderStageCreateInfo main_render_plss_create_info[2];
+  for ( unsigned int ss_idx = 0; ss_idx < _arr_elem_cnt(main_render_plss_create_info); ss_idx++ ) {
+    main_render_plss_create_info[ss_idx].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    main_render_plss_create_info[ss_idx].pNext = nullptr;
+    main_render_plss_create_info[ss_idx].flags = 0;
+    main_render_plss_create_info[ss_idx].pSpecializationInfo = nullptr;
+  }
+  constexpr unsigned int vertex = 0;
+  constexpr unsigned int fragment = 1;
+  main_render_plss_create_info[vertex].stage = VK_SHADER_STAGE_VERTEX_BIT;
+  main_render_plss_create_info[vertex].module = cara_vk.sm_simple_vert;
+  main_render_plss_create_info[vertex].pName = "vert_main";
+  main_render_plss_create_info[fragment].stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+  main_render_plss_create_info[fragment].module = cara_vk.sm_simple_frag;
+  main_render_plss_create_info[fragment].pName = "frag_main";
+  // Shader stages for the depth-only prepass
+  // NOTE Fragment shader doesn't really do any work in depth-only prepass;  Do I really need to
+  //  specify them here for the early-fragment tests and late-fragment tests?
+  VkPipelineShaderStageCreateInfo depth_only_plss_create_info[2];
+  for ( unsigned int ss_idx = 0; ss_idx < _arr_elem_cnt(depth_only_plss_create_info); ss_idx++ ) {
+    depth_only_plss_create_info[ss_idx].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    depth_only_plss_create_info[ss_idx].pNext = nullptr;
+    depth_only_plss_create_info[ss_idx].flags = 0;
+    depth_only_plss_create_info[ss_idx].pSpecializationInfo = nullptr;
+  }
+  depth_only_plss_create_info[vertex].stage = VK_SHADER_STAGE_VERTEX_BIT;
+  depth_only_plss_create_info[vertex].module = cara_vk.sm_depth_only;
+  depth_only_plss_create_info[vertex].pName = "vert_main";
+  depth_only_plss_create_info[fragment].stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+  depth_only_plss_create_info[fragment].module = cara_vk.sm_depth_only_frag;
+  depth_only_plss_create_info[fragment].pName = "frag_main";
+  // Shader stages for cs_copy_to_swapchain_img
+  VkPipelineShaderStageCreateInfo copy2sc_plss_create_info[2];
+  for ( unsigned int ss_idx = 0; ss_idx < _arr_elem_cnt(copy2sc_plss_create_info); ss_idx++ ) {
+    copy2sc_plss_create_info[ss_idx].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    copy2sc_plss_create_info[ss_idx].pNext = nullptr;
+    copy2sc_plss_create_info[ss_idx].flags = 0;
+    copy2sc_plss_create_info[ss_idx].pSpecializationInfo = nullptr;
+  }
+  copy2sc_plss_create_info[vertex].stage = VK_SHADER_STAGE_VERTEX_BIT;
+  copy2sc_plss_create_info[vertex].module = cara_vk.sm_simple_vert;
+  copy2sc_plss_create_info[vertex].pName = "vert_main";
+  copy2sc_plss_create_info[fragment].stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+  copy2sc_plss_create_info[fragment].module = cara_vk.sm_simple_frag;
+  copy2sc_plss_create_info[fragment].pName = "frag_main";
+
+  //
+  // Vertex input binding description
+  //
+  VkVertexInputBindingDescription main_render_vib_desc;
+  main_render_vib_desc.binding = 0;
+  main_render_vib_desc.stride = sizeof(float)*3 + sizeof(float)*3;  // position and color
+  main_render_vib_desc.inputRate = VK_VERTEX_INPUT_RATE_INSTANCE;
+  VkVertexInputAttributeDescription main_render_arr_via_desc[] = {
+    // location, binding, format, offset
+    { 0, 0, VK_FORMAT_R32G32B32_SFLOAT, 0 },
+    { 1, 0, VK_FORMAT_R32G32B32_SFLOAT, sizeof(float)*3 },
+  };
+  VkPipelineVertexInputStateCreateInfo main_render_plvis_create_info;
+  main_render_plvis_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+  main_render_plvis_create_info.pNext = nullptr;
+  main_render_plvis_create_info.flags = 0;
+  main_render_plvis_create_info.vertexBindingDescriptionCount = 1;
+  main_render_plvis_create_info.pVertexBindingDescriptions = &main_render_vib_desc;
+  main_render_plvis_create_info.vertexAttributeDescriptionCount = _arr_elem_cnt( main_render_arr_via_desc );
+  main_render_plvis_create_info.pVertexAttributeDescriptions = main_render_arr_via_desc;
+  // Vertex input binding description for depth-only prepass
+  VkVertexInputBindingDescription depth_only_vib_desc;
+  depth_only_vib_desc.binding = 0;
+  depth_only_vib_desc.stride = sizeof(float)*3;  // position
+  depth_only_vib_desc.inputRate = VK_VERTEX_INPUT_RATE_INSTANCE;
+  VkVertexInputAttributeDescription depth_only_arr_via_desc[] = {
+    // location, binding, format, offset
+    { 0, 0, VK_FORMAT_R32G32B32_SFLOAT, 0 },
+  };
+  VkPipelineVertexInputStateCreateInfo depth_only_plvis_create_info;
+  depth_only_plvis_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+  depth_only_plvis_create_info.pNext = nullptr;
+  depth_only_plvis_create_info.flags = 0;
+  depth_only_plvis_create_info.vertexBindingDescriptionCount = 1;
+  depth_only_plvis_create_info.pVertexBindingDescriptions = &depth_only_vib_desc;
+  depth_only_plvis_create_info.vertexAttributeDescriptionCount =
+    _arr_elem_cnt( depth_only_arr_via_desc );
+  depth_only_plvis_create_info.pVertexAttributeDescriptions = depth_only_arr_via_desc;
+  // Vertex input binding description for cs_copy_to_swapchain_img
+  VkVertexInputBindingDescription copy2sc_vib_desc;
+  copy2sc_vib_desc.binding = 0;
+  copy2sc_vib_desc.stride = sizeof(float)*3;  // position
+  copy2sc_vib_desc.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+  VkVertexInputAttributeDescription copy2sc_arr_via_desc[] = {
+    // location, binding, format, offset
+    { 0, 0, VK_FORMAT_R32G32B32_SFLOAT, 0 },
+  };
+  VkPipelineVertexInputStateCreateInfo copy2sc_plvis_create_info;
+  copy2sc_plvis_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+  copy2sc_plvis_create_info.pNext = nullptr;
+  copy2sc_plvis_create_info.flags = 0;
+  copy2sc_plvis_create_info.vertexBindingDescriptionCount = 1;
+  copy2sc_plvis_create_info.pVertexBindingDescriptions = &copy2sc_vib_desc;
+  copy2sc_plvis_create_info.vertexAttributeDescriptionCount =
+    _arr_elem_cnt( copy2sc_arr_via_desc );
+  copy2sc_plvis_create_info.pVertexAttributeDescriptions = copy2sc_arr_via_desc;
+
+  //
+  // An input assembly state is required for the graphics pipeline creation.
+  //
+  VkPipelineInputAssemblyStateCreateInfo plias_create_info;
+  plias_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+  plias_create_info.pNext = nullptr;
+  plias_create_info.flags = 0;
+  plias_create_info.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+  plias_create_info.primitiveRestartEnable = VK_FALSE;
+
+  //
+  // Viewport ans scissor test
+  //
+  // The viewport and scissor test state is optional, though commonly used—we don't need to provide
+  //  it when rasterization is disabled.
+  VkViewport viewport;
+  // In Vulkan, the scissor test is always enabled.
+  VkRect2D scissor;
+  viewport.x = 0;
+  viewport.y = 0;
+  viewport.width = test_width;
+  viewport.height = test_height;
+  viewport.minDepth = .0f;
+  viewport.maxDepth = 1.0f;
+  scissor.offset = (VkOffset2D) {0};
+  scissor.extent = (VkExtent2D) { test_width, test_height };
+  // If we want to change some of the viewport or scissor test parameters, we need to recreate a
+  //  pipeline. But during the pipeline creation, we can specify that the viewport and scissor test
+  //  parameters are dynamic. This way, we don't need to recreate a pipeline to change these
+  //  parameters—we specify them during command buffer recording. But we need to remember that the
+  //  number of viewports (and scissor tests) is always specified during the pipeline creation. We
+  //  can't change it later.
+  VkPipelineViewportStateCreateInfo plvps_create_info;
+  plvps_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+  plvps_create_info.pNext = nullptr;
+  plvps_create_info.flags = 0;
+  plvps_create_info.viewportCount = 1;
+  plvps_create_info.pViewports = &viewport;
+  plvps_create_info.scissorCount = 1;
+  plvps_create_info.pScissors = &scissor;
+
+  //
+  // VkPipelineRasterizationStateCreateInfo
+  //
+  // A rasterization state is always required during the graphics pipeline creation.
+  // In OpenGL, by default, counterclockwise faces were considered front and culling was disabled.
+  //  In Vulkan, there is no default state so how we define these parameters is up to us.
+  VkPipelineRasterizationStateCreateInfo plrs_create_info;
+  plrs_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+  plrs_create_info.pNext = nullptr;
+  plrs_create_info.flags = 0;
+  plrs_create_info.depthClampEnable = VK_FALSE;  // Use a true value if a depth value for fragments
+                                                 //  whose depth is outside of the min/max range
+                                                 //  specified in a viewport state should be clamped
+                                                 //  within this range, or use a false value if
+                                                 //  fragments with depth outside of the this range
+                                                 //  should be clipped (discarded); when the
+                                                 //  depthClampEnable feature is not enabled only a
+                                                 //  false value can be specified.
+  plrs_create_info.rasterizerDiscardEnable = VK_FALSE;  // It controls whether primitives are
+                                                        // discarded immediately before the
+                                                        // rasterization stage.
+  plrs_create_info.polygonMode = VK_POLYGON_MODE_FILL;
+  plrs_create_info.cullMode = VK_CULL_MODE_BACK_BIT;
+  plrs_create_info.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+  plrs_create_info.depthBiasEnable = VK_FALSE;
+  plrs_create_info.depthBiasConstantFactor = .0f;
+  plrs_create_info.depthBiasClamp = .0f;  // It must be 0.0 when depthBiasEnable is VK_FALSE, etc.
+  plrs_create_info.depthBiasSlopeFactor = .0f;
+  plrs_create_info.lineWidth = 1.0f;
+
+  //
+  // MSAA
+  //
+  VkPipelineMultisampleStateCreateInfo plmss_create_info;
+  plmss_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+  plmss_create_info.pNext = nullptr;
+  plmss_create_info.flags = 0;
+  plmss_create_info.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+  plmss_create_info.sampleShadingEnable = VK_FALSE;
+  //plmss_create_info.minSampleShading = .5f;
+  plmss_create_info.pSampleMask = nullptr;
+  plmss_create_info.alphaToCoverageEnable = VK_FALSE;
+  plmss_create_info.alphaToOneEnable = VK_FALSE;
+
+  //
+  // Depth/Stencil
+  //
+  VkPipelineDepthStencilStateCreateInfo pldss_create_info;
+  pldss_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+  pldss_create_info.pNext = nullptr;
+  pldss_create_info.flags = 0;
+  pldss_create_info.depthTestEnable = VK_TRUE;
+  pldss_create_info.depthWriteEnable = VK_TRUE;
+  pldss_create_info.depthCompareOp = VK_COMPARE_OP_GREATER;
+  pldss_create_info.depthBoundsTestEnable = VK_FALSE;
+  pldss_create_info.stencilTestEnable = VK_FALSE;
+  VkStencilOpState stencil_op_state_front;
+  stencil_op_state_front.failOp = VK_STENCIL_OP_KEEP;
+  stencil_op_state_front.passOp = VK_STENCIL_OP_KEEP;
+  stencil_op_state_front.depthFailOp = VK_STENCIL_OP_KEEP;
+  stencil_op_state_front.compareOp = VK_COMPARE_OP_EQUAL;
+  stencil_op_state_front.compareMask = ~UINT32_C(0);
+  stencil_op_state_front.writeMask = ~UINT32_C(0);
+  stencil_op_state_front.reference = 0;
+  VkStencilOpState stencil_op_state_back;
+  stencil_op_state_back.failOp = VK_STENCIL_OP_KEEP;
+  stencil_op_state_back.passOp = VK_STENCIL_OP_KEEP;
+  stencil_op_state_back.depthFailOp = VK_STENCIL_OP_KEEP;
+  stencil_op_state_back.compareOp = VK_COMPARE_OP_NEVER;
+  stencil_op_state_back.compareMask = 0;
+  stencil_op_state_back.writeMask = 0;
+  stencil_op_state_back.reference = 0;
+  pldss_create_info.front = stencil_op_state_front;
+  pldss_create_info.back = stencil_op_state_back;
+  pldss_create_info.minDepthBounds = .0f;
+  pldss_create_info.maxDepthBounds = 1.0f;
+
+  //
+  // VkPipelineColorBlendAttachmentState
+  //
+  // The blending state is optional and is not required if rasterization is disabled or when there
+  //  are no color attachments in a subpass, in which a given graphics pipeline is used.
+  VkPipelineColorBlendAttachmentState plcbas;
+  plcbas.blendEnable = VK_FALSE;
+  plcbas.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+  plcbas.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+  plcbas.colorBlendOp = VK_BLEND_OP_ADD;
+  plcbas.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+  plcbas.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
+  plcbas.alphaBlendOp = VK_BLEND_OP_ADD;
+  plcbas.colorWriteMask =
+    VK_COLOR_COMPONENT_R_BIT |
+    VK_COLOR_COMPONENT_G_BIT |
+    VK_COLOR_COMPONENT_B_BIT |
+    0;
+  VkPipelineColorBlendStateCreateInfo plcbs_create_info;
+  plcbs_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+  plcbs_create_info.pNext = nullptr;
+  plcbs_create_info.flags = 0;
+  plcbs_create_info.logicOpEnable = VK_FALSE;
+  plcbs_create_info.logicOp = VK_LOGIC_OP_NO_OP;
+  plcbs_create_info.attachmentCount = 1;
+  plcbs_create_info.pAttachments = &plcbas;
+  plcbs_create_info.blendConstants[0] = .0f;
+  plcbs_create_info.blendConstants[1] = .0f;
+  plcbs_create_info.blendConstants[2] = .0f;
+  plcbs_create_info.blendConstants[3] = .0f;
+
+  //
+  // Dynamic states
+  //
+  // Define the dynamic parts of the pipeline
+  VkDynamicState dynamic_states[] = {
+    VK_DYNAMIC_STATE_VIEWPORT,  // vkCmdSetViewport()
+    VK_DYNAMIC_STATE_SCISSOR,  // vkCmdSetScissor()
+  };
+  VkPipelineDynamicStateCreateInfo plds_create_info;
+  plds_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
+  plds_create_info.pNext = nullptr;
+  plds_create_info.flags = 0;
+  plds_create_info.dynamicStateCount = _arr_elem_cnt( dynamic_states );
+  plds_create_info.pDynamicStates = dynamic_states;
 
   //
   // Create a pipeline layout
   //
   VkPushConstantRange arr_pc_ranges[1];
   arr_pc_ranges[0].offset = 0;  assume( arr_pc_ranges[0].offset % 4 == 0 );
-  arr_pc_ranges[0].size = 128;  assume( arr_pc_ranges[0].size % 4 == 0 );
+  arr_pc_ranges[0].size = 64;  assume( arr_pc_ranges[0].size % 4 == 0 );
   arr_pc_ranges[0].stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-  VkPipelineLayoutCreateInfo pl_create_info;
-  pl_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-  pl_create_info.pNext = nullptr;
-  pl_create_info.flags = 0;
-  pl_create_info.setLayoutCount = 1;
-  pl_create_info.pSetLayouts = &cara_vk.dsl_first;
-  pl_create_info.pushConstantRangeCount = _arr_elem_cnt( arr_pc_ranges );
-  pl_create_info.pPushConstantRanges = arr_pc_ranges;
+  VkPipelineLayoutCreateInfo pll_create_info;
+  pll_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+  pll_create_info.pNext = nullptr;
+  pll_create_info.flags = 0;
+  pll_create_info.setLayoutCount = 1;
+  pll_create_info.pSetLayouts = &cara_vk.dsl_depth_only;
+  pll_create_info.pushConstantRangeCount = _arr_elem_cnt( arr_pc_ranges );
+  pll_create_info.pPushConstantRanges = arr_pc_ranges;
+  // Usually, multiple pipelines will access different resources. During command buffer recording,
+  // we bind a given pipeline and descriptor sets. Only after that can we issue drawing commands.
+  // When we switch from one pipeline to another, we need to bind new descriptor sets according to
+  // the pipeline's needs. But frequently binding different descriptor sets may impact the
+  // performance of our application. That's why it is good to create pipelines with similar (or
+  // compatible) layouts and bind descriptor sets that do not change too often (that are common for
+  // many pipelines) to indices near the 0 (or near the start of a layout). This way, when we switch
+  // pipelines, descriptor sets near the start of the pipeline layout (from index 0 to some index N)
+  // can still be used and don't need to be updated. It is only necessary to bind the different
+  // descriptor sets--those that are placed at greater indices (after the given index N). But one
+  // additional condition must be met-- to be similar (or compatible), the pipeline layouts must use
+  // the same push constant ranges.
   SPALL_BEGIN("create_pipeline");
-  result = vkCreatePipelineLayout( cara_vk.log_dev, &pl_create_info,
-      &cara_vk.vk_alloc_callbacks, &cara_vk.pipeline_layout
+  result = vkCreatePipelineLayout( cara_vk.log_dev, &pll_create_info,
+      &cara_vk.vk_alloc_callbacks, &cara_vk.pll_depth_only
       //nullptr, &cara_vk.pipeline_layout
       );
   if( result != VK_SUCCESS ) {
@@ -2459,322 +2975,136 @@ void jf_kickstart( struct cara_worker_state * ws )
   }
   SPALL_END();
 
-  // TODO Create a graphics pipeline
-  // TODO Create a compute pipeline
-  // TODO Create a pipeline cache object
+  //
+  // Create a graphics pipeline
+  //
+  VkGraphicsPipelineCreateInfo arr_gpl_create_infos[cara_nr_subpasses];
+  for ( unsigned int sp_idx = 0; sp_idx < cara_nr_subpasses; sp_idx++ ) {
+    arr_gpl_create_infos[sp_idx].sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+    arr_gpl_create_infos[sp_idx].pNext = nullptr;
+    arr_gpl_create_infos[sp_idx].flags = 0;
+    arr_gpl_create_infos[sp_idx].basePipelineHandle = VK_NULL_HANDLE;  // It is a rare
+                        // situation when each created pipeline doesn't have any common state with
+                        // other pipelines. That's why, to speed up the pipeline creation, it is
+                        // possible to specify that a pipeline can be a parent of other pipelines
+                        // (allow derivatives) or that the pipeline will be a child of (derived
+                        // from) another pipeline. To use this feature and shorten the time needed
+                        // to create a pipeline, we can use basePipelineHandle or basePipelineIndex
+  }
+
+  SPALL_BEGIN("rp_n_fb");
+  err = create_renderpass_and_framebuffer( &cara_vk );
+  SPALL_END();
+  if ( err ) {
+    goto stop_everything_after_failure;
+  }
+
+  // cs_depth_only pipeline
+  arr_gpl_create_infos[cs_depth_only].stageCount = _arr_elem_cnt( depth_only_plss_create_info );
+  arr_gpl_create_infos[cs_depth_only].pStages = depth_only_plss_create_info;
+  arr_gpl_create_infos[cs_depth_only].pVertexInputState = &depth_only_plvis_create_info;
+  arr_gpl_create_infos[cs_depth_only].pInputAssemblyState = &plias_create_info;
+  arr_gpl_create_infos[cs_depth_only].pTessellationState = nullptr;
+  arr_gpl_create_infos[cs_depth_only].pViewportState = &plvps_create_info;
+  arr_gpl_create_infos[cs_depth_only].pRasterizationState = &plrs_create_info;
+  arr_gpl_create_infos[cs_depth_only].pMultisampleState = &plmss_create_info;  // NOTE
+                        // pMultisampleState is a pointer to a VkPipelineMultisampleStateCreateInfo
+                        // structure defining multisample state used when rasterization is enabled.
+                        // If the VK_EXT_extended_dynamic_state3 extension is enabled, it can be
+                        // NULL if the pipeline is created with all of
+                        // VK_DYNAMIC_STATE_RASTERIZATION_SAMPLES_EXT,
+                        // VK_DYNAMIC_STATE_SAMPLE_MASK_EXT, and
+                        // VK_DYNAMIC_STATE_ALPHA_TO_COVERAGE_ENABLE_EXT dynamic states set, and
+                        // either the alphaToOne feature is not enabled or
+                        // VK_DYNAMIC_STATE_ALPHA_TO_ONE_ENABLE_EXT is set, in which case
+                        // VkPipelineMultisampleStateCreateInfo::sampleShadingEnable is assumed to
+                        // be VK_FALSE.
+  arr_gpl_create_infos[cs_depth_only].pDepthStencilState = &pldss_create_info;
+  arr_gpl_create_infos[cs_depth_only].pColorBlendState = nullptr;  // No color attachment
+                        // TODO. Write &plcbs_create_info here for cs_main_render
+  arr_gpl_create_infos[cs_depth_only].pDynamicState = &plds_create_info;
+  arr_gpl_create_infos[cs_depth_only].layout = cara_vk.pll_depth_only;
+  arr_gpl_create_infos[cs_depth_only].renderPass = cara_vk.render_pass;
+  arr_gpl_create_infos[cs_depth_only].subpass = cs_depth_only;
+  arr_gpl_create_infos[cs_depth_only].basePipelineIndex = -1;  // We can't use both
+                        // basePipelineHandle and basePipelineIndex members; we can provide value
+                        // only for one of them. If we want to specify a handle, we must provide a
+                        // -1 value for the basePipelineIndex field. If we want to specify an index,
+                        // we need to provide a VK_NULL_HANDLE value for basePipelineHandle
+
+  // cs_main_render pipeline
+  arr_gpl_create_infos[cs_main_render].stageCount = _arr_elem_cnt( main_render_plss_create_info );
+  arr_gpl_create_infos[cs_main_render].pStages = main_render_plss_create_info;
+  arr_gpl_create_infos[cs_main_render].pVertexInputState = &main_render_plvis_create_info;
+  arr_gpl_create_infos[cs_main_render].pInputAssemblyState = &plias_create_info;
+  arr_gpl_create_infos[cs_main_render].pTessellationState = nullptr;
+  arr_gpl_create_infos[cs_main_render].pViewportState = &plvps_create_info;
+  arr_gpl_create_infos[cs_main_render].pRasterizationState = &plrs_create_info;
+  arr_gpl_create_infos[cs_main_render].pMultisampleState = &plmss_create_info;
+  arr_gpl_create_infos[cs_main_render].pDepthStencilState = &pldss_create_info;
+  arr_gpl_create_infos[cs_main_render].pColorBlendState = &plcbs_create_info;
+  arr_gpl_create_infos[cs_main_render].pDynamicState = &plds_create_info;
+  arr_gpl_create_infos[cs_main_render].layout = cara_vk.pll_main_render;
+  arr_gpl_create_infos[cs_main_render].renderPass = cara_vk.render_pass;
+  arr_gpl_create_infos[cs_main_render].subpass = cs_main_render;
+  arr_gpl_create_infos[cs_main_render].basePipelineIndex = cs_depth_only;
+
+  // cs_copy_to_swapchain_img pipeline
+  arr_gpl_create_infos[cs_copy_to_swapchain_img].stageCount =
+    _arr_elem_cnt( copy2sc_plss_create_info );
+  arr_gpl_create_infos[cs_copy_to_swapchain_img].pStages = copy2sc_plss_create_info;
+  arr_gpl_create_infos[cs_copy_to_swapchain_img].pVertexInputState = &copy2sc_plvis_create_info;
+  arr_gpl_create_infos[cs_copy_to_swapchain_img].pInputAssemblyState = &plias_create_info;
+  arr_gpl_create_infos[cs_copy_to_swapchain_img].pTessellationState = nullptr;
+  arr_gpl_create_infos[cs_copy_to_swapchain_img].pViewportState = &plvps_create_info;
+  arr_gpl_create_infos[cs_copy_to_swapchain_img].pRasterizationState = &plrs_create_info;
+  arr_gpl_create_infos[cs_copy_to_swapchain_img].pMultisampleState = &plmss_create_info;
+  arr_gpl_create_infos[cs_copy_to_swapchain_img].pDepthStencilState = &pldss_create_info;
+  arr_gpl_create_infos[cs_copy_to_swapchain_img].pColorBlendState = &plcbs_create_info;
+  arr_gpl_create_infos[cs_copy_to_swapchain_img].pDynamicState = &plds_create_info;
+  arr_gpl_create_infos[cs_copy_to_swapchain_img].layout = cara_vk.pll_copy2sc;
+  arr_gpl_create_infos[cs_copy_to_swapchain_img].renderPass = cara_vk.render_pass;
+  arr_gpl_create_infos[cs_copy_to_swapchain_img].subpass = cs_copy_to_swapchain_img;
+  arr_gpl_create_infos[cs_copy_to_swapchain_img].basePipelineIndex = cs_main_render;
+  // NOTE No pipeline cache utilized...
+  SPALL_BEGIN("create_G_pl");
+  vkCreateGraphicsPipelines( cara_vk.log_dev,
+      VK_NULL_HANDLE,  // Creating a pipeline object is a complicated and time-consuming process
+                       // from the driver's perspective. A pipeline object is not a simple wrapper
+                       // for parameters set during the creation. It involves preparing the states
+                       // of all programmable and fixed pipeline stages, setting an interface
+                       // between shaders and descriptor resources, compiling and linking shader
+                       // programs, and performing error checking (that is, checking if shaders are
+                       // linked properly). Results of these operations may be stored in a cache.
+                       // This cache can then be reused to speed up the creation of pipeline objects
+                       // with similar properties.
+      _arr_elem_cnt(arr_gpl_create_infos), arr_gpl_create_infos,
+      &cara_vk.vk_alloc_callbacks,
+      cara_vk.arr_pipelines
+      );
+  SPALL_END();
+
+
+
 
   //
   // Bind descriptor sets to the pipeline layout
   //
   SPALL_BEGIN("bind_ds");
-  vkCmdBindDescriptorSets( cmd_buf, VK_PIPELINE_BIND_POINT_GRAPHICS, cara_vk.pipeline_layout,
+  vkCmdBindDescriptorSets( cmd_buf, VK_PIPELINE_BIND_POINT_GRAPHICS, cara_vk.pll_depth_only,
       0,  // The first set number
-      1, &cara_vk.ds_first,  // Descriptor sets
+      1, &cara_vk.ds_main_render,  // Descriptor sets
       0, nullptr );  // Dynamic offsets
   SPALL_END();
-
-
-
-  //
-  // Define attachments
-  //
-
-  // NOTE Consider using VkAttachmentDescription2 to chain a
-  //  VkAttachmentDescriptionStencilLayout object in order to set stencilInitialLayout and
-  //  stencilFinalLayout
-  constexpr unsigned int depth = 0;
-  constexpr unsigned int color = 1;
-  constexpr unsigned int swapchain = 2;
-
-  // The color attachment
-  VkAttachmentDescription2 arr_att_descs[3];
-  for ( unsigned int att_idx = 0; att_idx < _arr_elem_cnt( arr_att_descs ); att_idx++ ) {
-    arr_att_descs[att_idx].flags = 0;
-    arr_att_descs[att_idx].samples = VK_SAMPLE_COUNT_1_BIT;
-    arr_att_descs[att_idx].pNext = nullptr;
-    arr_att_descs[att_idx].sType = VK_STRUCTURE_TYPE_ATTACHMENT_DESCRIPTION_2;
-    arr_att_descs[att_idx].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;  // An UNDEFINED layout can
-                                                             // always be used for an initial/old
-                                                             // layout—It means that we don't need
-                                                             // images content when a memory barrier
-                                                             // is set up.
-  }
-  arr_att_descs[color].format = cara_vk.color_att_fmt;
-  arr_att_descs[color].loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-  arr_att_descs[color].storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-  arr_att_descs[color].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-  arr_att_descs[color].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-  arr_att_descs[color].finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-
-  // The depth buffer
-  arr_att_descs[depth].format = cara_vk.zbuf_fmt;
-  arr_att_descs[depth].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-  arr_att_descs[depth].storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-  arr_att_descs[depth].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-  arr_att_descs[depth].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-  arr_att_descs[depth].finalLayout = has_stencil_buf( cara_vk.zbuf_fmt ) ?
-    VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL : VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
-                                                                        // We should set it to the
-                                                                        // same layout value as
-                                                                        // specified in the last
-                                                                        // subpass of a render pass.
-
-  // The swapchain image 
-  arr_att_descs[swapchain].format = cara_vk.color_att_fmt;
-  arr_att_descs[swapchain].loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-  arr_att_descs[swapchain].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-  arr_att_descs[swapchain].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-  arr_att_descs[swapchain].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-  arr_att_descs[swapchain].finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;  // We are rendering
-                                                                 // directly into a swapchain image
-                                                                 // and we want to display it on
-                                                                 // screen; We should use a
-                                                                 // PRESENT_SRC layout.
-
-  // Prepare the array of VkAttachmentReference2
-  VkAttachmentReference2 arr_att_refs[3];
-  for ( unsigned int att_idx = 0; att_idx < _arr_elem_cnt( arr_att_refs ); att_idx++ ) {
-    arr_att_refs[att_idx].sType = VK_STRUCTURE_TYPE_ATTACHMENT_REFERENCE_2;
-    arr_att_refs[att_idx].pNext = nullptr;
-  }
-  arr_att_refs[color].attachment = color;
-  arr_att_refs[color].layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-  arr_att_refs[color].aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-  arr_att_refs[depth].attachment = depth;
-  arr_att_refs[depth].layout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
-  arr_att_refs[depth].aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
-  arr_att_refs[swapchain].attachment = swapchain;
-  arr_att_refs[swapchain].layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-  arr_att_refs[swapchain].aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-
-
-  //
-  // Define subpasses
-  //
-
-  // Operations performed in a render pass are grouped into subpasses. Each subpass represents a
-  //  stage or a phase of our rendering commands in which a subset of render pass's attachments are
-  //  used (into which we render or from which we read data).
-  // A render pass always requires at least one subpass that is automatically started when we begin
-  //  a render pass. And for each subpass, we need to prepare a description.
-  VkSubpassDescription2 arr_subpass_desc[cara_max_nr_subpasses];
-  for ( unsigned int sp_idx = 0; sp_idx < _arr_elem_cnt( arr_subpass_desc ); sp_idx++ ) {
-    arr_subpass_desc[sp_idx].flags = 0;
-    arr_subpass_desc[sp_idx].pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
-    arr_subpass_desc[sp_idx].sType = VK_STRUCTURE_TYPE_SUBPASS_DESCRIPTION_2;
-    arr_subpass_desc[sp_idx].pNext = nullptr;
-    arr_subpass_desc[sp_idx].viewMask = 0;
-  }
-
-  arr_subpass_desc[cs_depth_prepass].inputAttachmentCount = 0;
-  arr_subpass_desc[cs_depth_prepass].pInputAttachments = nullptr;
-  arr_subpass_desc[cs_depth_prepass].colorAttachmentCount = 0;
-  arr_subpass_desc[cs_depth_prepass].pColorAttachments = nullptr;
-  arr_subpass_desc[cs_depth_prepass].pResolveAttachments = nullptr;
-  arr_subpass_desc[cs_depth_prepass].pDepthStencilAttachment = &arr_att_refs[depth];
-  arr_subpass_desc[cs_depth_prepass].preserveAttachmentCount = 0;
-  arr_subpass_desc[cs_depth_prepass].pPreserveAttachments = nullptr;
-
-  arr_subpass_desc[cs_main_render_pass].inputAttachmentCount = 0;
-  arr_subpass_desc[cs_main_render_pass].pInputAttachments = nullptr;
-  arr_subpass_desc[cs_main_render_pass].colorAttachmentCount = 1;
-  arr_subpass_desc[cs_main_render_pass].pColorAttachments = &arr_att_refs[color];
-  arr_subpass_desc[cs_main_render_pass].pResolveAttachments = nullptr;  // If any of the color
-                    // attachments should be resolved (changed from multisampled to single-sampled),
-                    // specify a pointer to the first element of the array with same number of
-                    // elements as pColorAttachments or use a nullptr value if no color attachments
-                    // need to be resolved; each member of the pResolveAttachments array corresponds
-                    // to the color attachment at the same index and specifies to which attachment a
-                    // given color attachment should be resolved at the end of the subpass; for each
-                    // member of the array use specified values as described in points A and B;
-                    // Use a VK_ATTACHMENT_UNUSED value for the attachment index if the given color
-                    // attachment should not be resolved.
-          // A: Index of the attachment in the list of all render pass attachments for `attachment`.
-          // B: A layout given image should be automatically transitioned to at the beginning of
-          //   the subpass for `layout`.
-  arr_subpass_desc[cs_main_render_pass].pDepthStencilAttachment = &arr_att_refs[depth];
-  arr_subpass_desc[cs_main_render_pass].preserveAttachmentCount = 0;
-  arr_subpass_desc[cs_main_render_pass].pPreserveAttachments = nullptr;
-
-  VkAttachmentReference2 input_att_ref;
-  input_att_ref.sType = VK_STRUCTURE_TYPE_ATTACHMENT_REFERENCE_2;
-  input_att_ref.pNext = nullptr;
-  input_att_ref.attachment = color;
-  input_att_ref.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-  input_att_ref.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;;
-  arr_subpass_desc[cs_copy_to_swapchain_img].inputAttachmentCount = 1;
-  arr_subpass_desc[cs_copy_to_swapchain_img].pInputAttachments = &input_att_ref;
-  arr_subpass_desc[cs_copy_to_swapchain_img].colorAttachmentCount = 1;
-  arr_subpass_desc[cs_copy_to_swapchain_img].pColorAttachments = &arr_att_refs[swapchain];
-  arr_subpass_desc[cs_copy_to_swapchain_img].pResolveAttachments = nullptr;
-  arr_subpass_desc[cs_copy_to_swapchain_img].pDepthStencilAttachment = nullptr;
-  arr_subpass_desc[cs_copy_to_swapchain_img].preserveAttachmentCount = 0;
-  arr_subpass_desc[cs_copy_to_swapchain_img].pPreserveAttachments = nullptr;
-
-
-  //
-  // Subpass dependencies
-  //
-
-  // When operations in a given subpass depend on the results of operations in one of the earlier
-  //  subpasses in the same render pass, we need to specify subpass dependencies. This is also
-  //  required if there are dependencies between operations recorded within a render pass and those
-  //  performed before it, or between operations that are executed after a render pass and those
-  //  performed within the render pass. It is also possible to define dependencies within a single
-  //  subpass.
-  VkSubpassDependency2 sp_dep[2];
-  for ( unsigned int dep_idx = 0; dep_idx < _arr_elem_cnt(sp_dep); dep_idx++ ) {
-    sp_dep[dep_idx].pNext = nullptr;
-    sp_dep[dep_idx].sType = VK_STRUCTURE_TYPE_SUBPASS_DEPENDENCY_2;
-    sp_dep[dep_idx].viewOffset = 0;
-  }
-  sp_dep[0].srcSubpass = cs_depth_prepass;  // The index of a subpass from which ("producing")
-                                         // operations should be finished before the second set of
-                                         // ("consuming") operations (or a VK_SUBPASS_EXTERNAL value
-                                         // for commands before the render pass).
-  sp_dep[0].dstSubpass = cs_main_render_pass;  // The index of a subpass whose operations depend on
-                                               // the previous set of commands (or a
-                                               // VK_SUBPASS_EXTERNAL value for operations after the
-                                               // render pass).
-  sp_dep[0].srcStageMask = VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT_KHR;  // The set of pipeline
-                                                                // stages which produce the result
-                                                                // read by the "consuming" commands.
-  sp_dep[0].dstStageMask = VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT_KHR;
-  sp_dep[0].srcAccessMask = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT_KHR;
-  sp_dep[0].dstAccessMask = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT_KHR;
-  sp_dep[0].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;  // For dependencyFlags, use a
-                                   // VK_DEPENDENCY_BY_REGION_BIT value if the dependency is defined
-                                   // by region—it means that operations generating data for a given
-                                   // memory region must finish before operations reading data from
-                                   // the same region can be executed; if this flag is not specified
-                                   // dependency is global, which means that data for the whole
-                                   // image must be generated before "consuming" commands can be
-                                   // executed.
-                                   //
-  sp_dep[1].srcSubpass = cs_main_render_pass;
-  sp_dep[1].dstSubpass = cs_copy_to_swapchain_img;
-  sp_dep[1].srcStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT_KHR;
-  sp_dep[1].dstStageMask = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT_KHR;
-  sp_dep[1].srcAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT_KHR;
-  sp_dep[1].dstAccessMask = VK_ACCESS_2_INPUT_ATTACHMENT_READ_BIT_KHR;
-  sp_dep[1].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
-
-
-  // We don't need to set up dependencies for the layout transitions—these are performed
-  // automatically based on the information provided for the render pass attachment and subpass
-  // descriptions. What's more, when we specify different attachment layouts for different subpasses
-  // but in both subpasses the given attachment is used only for reading, we also don't need to
-  // specify a dependency.
-
-  //
-  // Call vkCreateRenderPass
-  //
-  VkRenderPassCreateInfo2 rp_create_info;
-  rp_create_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO_2;
-  rp_create_info.pNext = nullptr;
-  rp_create_info.flags = 0;
-  rp_create_info.attachmentCount = _arr_elem_cnt( arr_att_descs );
-  rp_create_info.pAttachments = arr_att_descs;
-  rp_create_info.subpassCount = _arr_elem_cnt( arr_subpass_desc );
-  rp_create_info.pSubpasses = arr_subpass_desc;
-  rp_create_info.dependencyCount = _arr_elem_cnt( sp_dep );
-  rp_create_info.pDependencies = sp_dep;
-  rp_create_info.correlatedViewMaskCount = 0;
-  rp_create_info.pCorrelatedViewMasks = nullptr;
-  SPALL_BEGIN("create_rp");
-  result = vkCreateRenderPass2( cara_vk.log_dev, &rp_create_info, &cara_vk.vk_alloc_callbacks,
-      &cara_vk.render_pass );
-  //result = vkCreateRenderPass2( cara_vk.log_dev, &rp_create_info, nullptr, &cara_vk.render_pass );
-  if ( result != VK_SUCCESS ) {
-    fprintf( stderr, "[Carbonara] Error occurred creating a render pass. '%s'\n",
-        string_VkResult(result) );
-    goto stop_everything_after_failure;
-  }
-  SPALL_END();
-
-
-  //
-  // Prepare framebuffers
-  //
-  
-  // Framebuffers are used along with render passes. They specify what image resources should be
-  // used for corresponding attachments defined in a render pass. They also define the size of a
-  // renderable area. That's why when we want to record drawing operations, we not only need to
-  // create a render pass, but also a framebuffer.
-  
-  // Framebuffers also define the size of a renderable area--the dimensions into which all rendering
-  // will be confined. However, what we need to remember is that it is up to us to make sure that
-  // the pixels/fragments outside of the specified range are not modified. For this purpose, we need
-  // to specify the appropriate parameters (viewport and scissor test) during the pipeline creation
-  // or when setting corresponding dynamic states
-  // (refer to the Preparing viewport and scissor test state recipe from Chapter 8, Graphics and
-  // Compute Pipelines and to the Setting a dynamic viewport and scissors state recipe from Chapter
-  // 9, Command Recording and Drawing).
-  VkFramebufferAttachmentImageInfo fb_att_img_info[3];
-  for ( unsigned int att_idx = 0; att_idx < _arr_elem_cnt( fb_att_img_info ); att_idx++ ) {
-    fb_att_img_info[att_idx].sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_ATTACHMENT_IMAGE_INFO;
-    fb_att_img_info[att_idx].pNext = nullptr;
-    fb_att_img_info[att_idx].flags = 0;
-    fb_att_img_info[att_idx].width = test_width;
-    fb_att_img_info[att_idx].height = test_height;
-    fb_att_img_info[att_idx].layerCount = 1;
-    fb_att_img_info[att_idx].viewFormatCount = 1;
-  }
-  fb_att_img_info[color].usage =
-    VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT;
-  fb_att_img_info[color].pViewFormats = &cara_vk.color_att_fmt;
-
-  const VkFormat depth_fmt = cara_vk.zbuf_fmt;
-  fb_att_img_info[depth].usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
-  fb_att_img_info[depth].pViewFormats = &depth_fmt;
-
-  fb_att_img_info[swapchain].usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
-  fb_att_img_info[swapchain].pViewFormats = &cara_vk.color_att_fmt;
-  fb_att_img_info[swapchain].width = test_width;
-  fb_att_img_info[swapchain].height = test_height;
-
-  VkFramebufferAttachmentsCreateInfo fb_atts_create_info;
-  fb_atts_create_info.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_ATTACHMENTS_CREATE_INFO;
-  fb_atts_create_info.pNext = nullptr;
-  fb_atts_create_info.attachmentImageInfoCount = _arr_elem_cnt( fb_att_img_info );
-  fb_atts_create_info.pAttachmentImageInfos = fb_att_img_info;
-
-  VkFramebufferCreateInfo fb_create_info;
-  fb_create_info.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-  fb_create_info.pNext = &fb_atts_create_info;
-  fb_create_info.flags = VK_FRAMEBUFFER_CREATE_IMAGELESS_BIT;  // Framebuffers are created with a
-                                                      // small amount of additional metadata about
-                                                      // the image views that will be used in
-                                                      // `VkFramebufferAttachmentsCreateInfo`, and
-                                                      // the actual image views are provided at
-                                                      // render pass begin time via
-                                                      // `VkRenderPassAttachmentBeginInfoKHR`.
-  fb_create_info.renderPass = cara_vk.render_pass;
-  fb_create_info.attachmentCount = _arr_elem_cnt( fb_att_img_info );
-  fb_create_info.pAttachments = nullptr;
-  fb_create_info.width = test_width;
-  fb_create_info.height = test_height;
-  fb_create_info.layers = 1;
-  SPALL_BEGIN("create_fb");
-  result = vkCreateFramebuffer( cara_vk.log_dev, &fb_create_info, &cara_vk.vk_alloc_callbacks,
-      &cara_vk.framebuffer );
-  //result = vkCreateFramebuffer( cara_vk.log_dev, &fb_create_info, nullptr, &cara_vk.framebuffer );
-  if ( result != VK_SUCCESS ) {
-    fprintf( stderr, "[Carbonara] Error occurred in vkCreateFramebuffer. '%s'\n",
-        string_VkResult(result) );
-    goto stop_everything_after_failure;
-  }
-  SPALL_END();
-
 
 
   //
   // Begin a renderpass
   //
   VkImageView arr_ivs[3];
-  arr_ivs[depth] = cara_vk.iv_depth;
-  arr_ivs[color] = cara_vk.iv_main_render_tgt;
-  arr_ivs[swapchain] = cara_vk.iv_swapchain_img;
+  arr_ivs[fb_depth] = cara_vk.iv_depth;
+  arr_ivs[fb_color] = cara_vk.iv_main_render_tgt;
+  arr_ivs[fb_swapchain] = cara_vk.iv_swapchain_img;
   VkRenderPassAttachmentBeginInfoKHR rp_att_begin_info;
   rp_att_begin_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_ATTACHMENT_BEGIN_INFO_KHR;
   rp_att_begin_info.pNext = nullptr;
@@ -2795,26 +3125,29 @@ void jf_kickstart( struct cara_worker_state * ws )
   rp_begin_info.pClearValues = &clear_val;
 
 
+  // TODO acquire one swapchain img
+
+
   // VK_SUBPASS_CONTENTS_INLINE  specifies that the contents of the subpass will be recorded inline
   //  in the primary command buffer, and secondary command buffers must not be executed within the
   //  subpass.
-  vkCmdBeginRenderPass( cmd_buf, &rp_begin_info, VK_SUBPASS_CONTENTS_INLINE );
+  //vkCmdBeginRenderPass( cmd_buf, &rp_begin_info, VK_SUBPASS_CONTENTS_INLINE );
 
-  // TODO cs_depth_prepass
+  // TODO cs_depth_only
 
-  vkCmdNextSubpass( cmd_buf, VK_SUBPASS_CONTENTS_INLINE );
+  //vkCmdNextSubpass( cmd_buf, VK_SUBPASS_CONTENTS_INLINE );
 
   // TODO cs_main_render_pass
 
-  vkCmdNextSubpass( cmd_buf, VK_SUBPASS_CONTENTS_INLINE );
+  //vkCmdNextSubpass( cmd_buf, VK_SUBPASS_CONTENTS_INLINE );
 
   // TODO cs_copy_to_swapchain_img
 
   // End the render pass
-  vkCmdEndRenderPass( cmd_buf );  // Recording this function in a command buffer performs multiple
+  //vkCmdEndRenderPass( cmd_buf );  // Recording this function in a command buffer performs multiple
                                   // operations. Execution and memory dependencies are introduced
                                   // (like the ones in memory barriers) and image layout transitions
-                                  // are performed--images are transitioned from layouts specified
+                                  // are performed—images are transitioned from layouts specified
                                   // for the last subpass to the value of a final layout (refer to
                                   // the Specifying attachment descriptions recipe). Also
                                   // multisample resolving is performed on color attachments for
@@ -2910,7 +3243,7 @@ void jf_kickstart( struct cara_worker_state * ws )
   // TODO Host access to `commandPool` must be externally synchronized
   result = vkResetCommandPool(
       cara_vk.log_dev,
-      cara_vk.trans_bufs.arr_cmd_pools[
+      cara_vk.trans_buf.arr_cmd_pools[
         cara_single.proc_map->nr_processors ],
       release_resources ? VK_COMMAND_POOL_RESET_RELEASE_RESOURCES_BIT : 0 );
   if( result != VK_SUCCESS ) {
@@ -2937,8 +3270,11 @@ void jf_kickstart( struct cara_worker_state * ws )
         string_VkResult(result) );
     goto stop_everything_after_failure;
   }
-  SPALL_END();
+  SPALL_END();  // reset_graphics_cmd_pool
   SPALL_END();  // check_out_vulkan
+
+
+
   //TODO move the code above out of this function definition!
 
 
@@ -3021,41 +3357,50 @@ void jf_kickstart( struct cara_worker_state * ws )
   return;
 
 stop_everything_after_failure:
-  if ( cara_vk.framebuffer ) {
-    vkDestroyFramebuffer( cara_vk.log_dev, cara_vk.framebuffer, &cara_vk.vk_alloc_callbacks );
-    //vkDestroyFramebuffer( cara_vk.log_dev, cara_vk.framebuffer, nullptr );
-    cara_vk.framebuffer = VK_NULL_HANDLE;
+
+  if ( cara_vk.sm_simple_frag ) {
+    vkDestroyShaderModule( cara_vk.log_dev, cara_vk.sm_simple_frag, &cara_vk.vk_alloc_callbacks );
+    cara_vk.sm_simple_frag = VK_NULL_HANDLE;
+  }
+  if ( cara_vk.sm_simple_vert ) {
+    vkDestroyShaderModule( cara_vk.log_dev, cara_vk.sm_simple_vert, &cara_vk.vk_alloc_callbacks );
+    cara_vk.sm_simple_vert = VK_NULL_HANDLE;
+  }
+  if ( cara_vk.sm_depth_only ) {
+    vkDestroyShaderModule( cara_vk.log_dev, cara_vk.sm_depth_only, &cara_vk.vk_alloc_callbacks );
+    cara_vk.sm_depth_only = VK_NULL_HANDLE;
   }
 
-  if ( cara_vk.render_pass ) {
-    vkDestroyRenderPass( cara_vk.log_dev, cara_vk.render_pass, &cara_vk.vk_alloc_callbacks );
-    //vkDestroyRenderPass( cara_vk.log_dev, cara_vk.render_pass, nullptr );
-    cara_vk.render_pass = VK_NULL_HANDLE;
-  }
-
-  if ( cara_vk.pipeline_layout ) {
-    vkDestroyPipelineLayout( cara_vk.log_dev, cara_vk.pipeline_layout,
+  if ( cara_vk.pll_depth_only ) {
+    vkDestroyPipelineLayout( cara_vk.log_dev, cara_vk.pll_depth_only,
         &cara_vk.vk_alloc_callbacks
         //nullptr
         );
-    cara_vk.pipeline_layout = VK_NULL_HANDLE;
+    cara_vk.pll_depth_only = VK_NULL_HANDLE;
+  }
+  if ( cara_vk.pll_main_render ) {
+    vkDestroyPipelineLayout( cara_vk.log_dev, cara_vk.pll_main_render,
+        &cara_vk.vk_alloc_callbacks
+        //nullptr
+        );
+    cara_vk.pll_main_render = VK_NULL_HANDLE;
   }
 
-  if ( cara_vk.ds_first ) {
-    vkResetDescriptorPool( cara_vk.log_dev, cara_vk.dp_first, 0 );
-    cara_vk.ds_first = VK_NULL_HANDLE;
+  if ( cara_vk.ds_main_render ) {
+    vkResetDescriptorPool( cara_vk.log_dev, cara_vk.dp_main_render, 0 );
+    cara_vk.ds_main_render = VK_NULL_HANDLE;
   }
 
-  if ( cara_vk.dp_first ) {
-    vkDestroyDescriptorPool( cara_vk.log_dev, cara_vk.dp_first, &cara_vk.vk_alloc_callbacks );
+  if ( cara_vk.dp_main_render ) {
+    vkDestroyDescriptorPool( cara_vk.log_dev, cara_vk.dp_main_render, &cara_vk.vk_alloc_callbacks );
     //vkDestroyDescriptorPool( cara_vk.log_dev, cara_vk.dp_first, nullptr );
-    cara_vk.dp_first = VK_NULL_HANDLE;
+    cara_vk.dp_main_render = VK_NULL_HANDLE;
   }
 
-  if ( cara_vk.dsl_first ) {
-    vkDestroyDescriptorSetLayout( cara_vk.log_dev, cara_vk.dsl_first, &cara_vk.vk_alloc_callbacks );
-    //vkDestroyDescriptorSetLayout( cara_vk.log_dev, cara_vk.dsl_first, nullptr );
-    cara_vk.dsl_first = VK_NULL_HANDLE;
+  if ( cara_vk.dsl_depth_only ) {
+    vkDestroyDescriptorSetLayout( cara_vk.log_dev, cara_vk.dsl_depth_only, &cara_vk.vk_alloc_callbacks );
+    //vkDestroyDescriptorSetLayout( cara_vk.log_dev, cara_vk.dsl_depth_only, nullptr );
+    cara_vk.dsl_depth_only = VK_NULL_HANDLE;
   }
 
   if ( cara_vk.sampler_8_2048_tex ) {
@@ -3103,25 +3448,25 @@ stop_everything_after_failure:
   atomic_store_explicit(&batch->progress, 0, memory_order_release);
   atomic_store_explicit(&batch->preferred_core, UINT8_MAX, memory_order_release);
 
-  struct func_call_stack_element * p_func_call_stack_element;
-  while (( p_func_call_stack_element = infos_stack_pop(
-          cara_single.foremans_quit_stack,
-          sizeof(struct func_call_stack_element)
-          ) )) {
-    if ( p_func_call_stack_element->arg ) {
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wcast-function-type-strict"
-      ( (void(*)(void*))p_func_call_stack_element->func ) ( p_func_call_stack_element->arg );
-#pragma GCC diagnostic pop
-    } else {
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wincompatible-function-pointer-types-strict"
-#pragma GCC diagnostic ignored "-Wincompatible-function-pointer-types"
-      void (*void_func) () = p_func_call_stack_element->func;
-#pragma GCC diagnostic pop
-      void_func();
-    }
-  }
+//  struct func_call_stack_element * p_func_call_stack_element;
+//  while (( p_func_call_stack_element = infos_stack_pop(
+//          cara_single.foremans_quit_stack,
+//          sizeof(struct func_call_stack_element)
+//          ) )) {
+//    if ( p_func_call_stack_element->arg ) {
+//#pragma GCC diagnostic push
+//#pragma GCC diagnostic ignored "-Wcast-function-type-strict"
+//      ( (void(*)(void*))p_func_call_stack_element->func ) ( p_func_call_stack_element->arg );
+//#pragma GCC diagnostic pop
+//    } else {
+//#pragma GCC diagnostic push
+//#pragma GCC diagnostic ignored "-Wincompatible-function-pointer-types-strict"
+//#pragma GCC diagnostic ignored "-Wincompatible-function-pointer-types"
+//      void (*void_func) () = p_func_call_stack_element->func;
+//#pragma GCC diagnostic pop
+//      void_func();
+//    }
+//  }
   return;
 }
 

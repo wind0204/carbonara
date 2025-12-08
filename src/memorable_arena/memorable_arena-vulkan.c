@@ -89,6 +89,7 @@ enum err_msg ma_init_vk_mem_mgr(
   vmm->p_staging_buf = nullptr;
   vmm->staging_buf = 0;
   vmm->staging_buf_malloc = 0;
+  vmm->len_staging_buf = 0;
 
 
   // Return 0
