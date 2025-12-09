@@ -261,12 +261,12 @@ uint64_t init_util_c_lang(void);
 
 //-------------------------------------------------------------------------------------------------
 /**
- * \brief Obtain the offset of a member field in a structure
+ * brief Obtain the offset of a field in a structure
  */
-#ifndef offsetof
-#define offsetof(the_struct, field_name) \
-  ( (uint_fast16_t) (0 + &((typeof(the_struct)*)0)->field_name) )
-#endif
+//#ifndef offsetof
+//#define offsetof(the_struct, field_name) \
+//  ( (0u + &((typeof(the_struct)*)0)->field_name) )
+//#endif
 
 //-------------------------------------------------------------------------------------------------
 /**

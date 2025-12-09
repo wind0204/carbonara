@@ -1,4 +1,3 @@
-#include <hwloc/bitmap.h>  // FIXME remove this
 #if defined(__i386) || defined(__i386__) || defined(_M_IX86) || defined(__x86_64) \
     || defined(__x86_64__) || defined(__amd64) || defined(_M_X64)
   #ifdef _MSC_VER
@@ -82,6 +81,8 @@ static char * asset_buf3;
 static char * asset_buf4;
 static char * asset_buf5;
 static char * asset_buf6;
+static char * asset_buf7;
+static char * asset_buf8;
 
 
 //-------------------------------------------------------------------------------------------------
@@ -150,6 +151,8 @@ void SDL_AppQuit( [[maybe_unused]] void *appstate, SDL_AppResult result )
       ma_free(cara_single.mem_arena, 0, cara_single.proc_map);
 
       remove_appdev_support_thread();
+
+      destroy_vulkan_objects( 0 );
 
       ma_end_arena(cara_single.mem_arena);
       break;
@@ -567,7 +570,6 @@ SDL_AppResult SDL_AppInit(
     return SDL_APP_FAILURE;
   }
 
-  init_appdev_support_processor_map();
   //init_graphics();
   init_info_struct( x86_proc_info.whole );
 
@@ -579,7 +581,6 @@ SDL_AppResult SDL_AppInit(
     //return 1;
     return SDL_APP_FAILURE;
   }
-
 
   while( 128 >= atomic_load_explicit(&cara_single.sign_to_start, memory_order_acquire) ) {
     hold_up_thread( 1000*750 );
@@ -760,19 +761,25 @@ enum err_msg init_carbonara( uint32_t len_each_arena, uint64_t proc_info )
   //
   // Temporary struct ms_worker_info and struct cara_worker_state
   //
-  struct ms_worker_info tmp_worker_info;
-  tmp_worker_info.cpuset = (hwloc_bitmap_t){0};
-  tmp_worker_info.deployment_flags = 0;
-  tmp_worker_info.idx_core = 0;
-  tmp_worker_info.idx_missing_sibling = 0;
-  tmp_worker_info.idx_one_sibling = 2;
-  tmp_worker_info.idx_self = 0;
-  tmp_worker_info.puid = 0;
   struct cara_worker_state tmp_ws;
   tmp_ws.current_batch = nullptr;
-  tmp_ws.worker_info = &tmp_worker_info;
+  tmp_ws.worker_info = (void*)&dummy_worker_info;
   tmp_ws.malloc_helper.worker_idx = 0;
   tmp_ws.malloc_helper.node_recently_used = cara_single.mem_arena->head;
+
+  //vk_alloc_callbacks.pfnAllocation = cara_malloc_vk;
+  //vk_alloc_callbacks.pfnFree = cara_free_vk;
+  //vk_alloc_callbacks.pfnInternalAllocation = nullptr;
+  //vk_alloc_callbacks.pfnInternalFree = nullptr;
+  //vk_alloc_callbacks.pfnReallocation = cara_realloc_vk;
+  //vk_alloc_callbacks.pUserData = (void*) &tmp_ws.malloc_helper;
+  // Nope, vulkan's internal buffers should not keep &tmp_ws.malloc_helper (transient stack frame)
+  vk_alloc_callbacks.pfnAllocation = default_malloc_vk;
+  vk_alloc_callbacks.pfnFree = default_free_vk;
+  vk_alloc_callbacks.pfnInternalAllocation = nullptr;
+  vk_alloc_callbacks.pfnInternalFree = nullptr;
+  vk_alloc_callbacks.pfnReallocation = default_realloc_vk;
+  vk_alloc_callbacks.pUserData = nullptr;
 
 
 
@@ -979,6 +986,8 @@ enum err_msg init_carbonara( uint32_t len_each_arena, uint64_t proc_info )
   cara_vk.spv_simple_frag = nullptr;
   cara_vk.spv_depth_only = nullptr;
   cara_vk.spv_depth_only_frag = nullptr;
+  cara_vk.spv_copy2sc_vert = nullptr;
+  cara_vk.spv_copy2sc_frag = nullptr;
   cara_vk.asset_size = 0;
   constexpr char fpath_stone[] = "/home/dewr/Products/carbonara/assets/textures/stone-01.dds";
   constexpr char fpath_sand[] = "/home/dewr/Products/carbonara/assets/textures/sand-01.dds";
@@ -1177,6 +1186,11 @@ done_with_sand:
   }
   */
 
+  //
+  // Load SPIR-V codes
+  //
+
+  // simple_test.hlsl.vert.spv
   new_async_io = SDL_AsyncIOFromFile(
       "/home/dewr/Products/carbonara/spirv/simple_test.hlsl.vert.spv", "r" );
   file_size = SDL_GetAsyncIOSize( new_async_io );
@@ -1219,6 +1233,7 @@ done_with_sand:
     cara_vk.len_simple_vert = file_size;
   }
 
+  // simple_test.hlsl.frag.spv
   new_async_io = SDL_AsyncIOFromFile(
       "/home/dewr/Products/carbonara/spirv/simple_test.hlsl.frag.spv", "r" );
   file_size = SDL_GetAsyncIOSize( new_async_io );
@@ -1261,6 +1276,7 @@ done_with_sand:
     cara_vk.len_simple_frag = file_size;
   }
 
+  // depth_only_prepass.hlsl.vert.spv
   new_async_io = SDL_AsyncIOFromFile(
       "/home/dewr/Products/carbonara/spirv/depth_only_prepass.hlsl.vert.spv", "r" );
   file_size = SDL_GetAsyncIOSize( new_async_io );
@@ -1303,6 +1319,7 @@ done_with_sand:
     cara_vk.len_depth_only = file_size;
   }
 
+  // depth_only_prepass.hlsl.frag.spv
   new_async_io = SDL_AsyncIOFromFile(
       "/home/dewr/Products/carbonara/spirv/depth_only_prepass.hlsl.frag.spv", "r" );
   file_size = SDL_GetAsyncIOSize( new_async_io );
@@ -1345,6 +1362,91 @@ done_with_sand:
     cara_vk.len_depth_only_frag = file_size;
   }
 
+  // copy_to_swapchain_img.hlsl.vert.spv
+  new_async_io = SDL_AsyncIOFromFile(
+      "/home/dewr/Products/carbonara/spirv/copy_to_swapchain_img.hlsl.vert.spv", "r" );
+  file_size = SDL_GetAsyncIOSize( new_async_io );
+  asset_buf7 = cara_malloc( &tmp_ws.malloc_helper, CACHELINE_LEN, file_size );
+  if ( !SDL_ReadAsyncIO(
+        new_async_io,
+        asset_buf7,
+        0,
+        UINT64_C(0) + file_size,
+        my_io_queue,
+        ui2ptr(33)) ) {
+    fprintf( stderr, "[Carbonara] SDL_ReadAsyncIO failed!\n" );
+  }
+  if ( !SDL_WaitAsyncIOResult(my_io_queue, &async_io_outcome, 1000*10) ) {
+    fprintf( stderr, "[Carbonara] SDL_WaitAsyncIOResult after a read request failed!\n" );
+  }
+  if ( async_io_outcome.result != SDL_ASYNCIO_COMPLETE ) {
+    fprintf( stderr, "[Carbonara] AsyncIO task was not done! result=%s\n",
+        async_io_outcome.result == SDL_ASYNCIO_CANCELED ? "cancelled" : "failure" );
+    if ( async_io_outcome.result == SDL_ASYNCIO_FAILURE ) {
+      fprintf( stderr, "[Carbonara] The reason behind the failure:'%s'\n", SDL_GetError() );
+    }
+    assume( ptr2ui(async_io_outcome.userdata) == 33 );
+  } else {  // if ( async_io_outcome.result != SDL_ASYNCIO_COMPLETE )
+    fprintf( stdout, "[Carbonara-Debug] requested:%lu, transferred:%lu, offset:%lu\n",
+        async_io_outcome.bytes_requested,
+        async_io_outcome.bytes_transferred,
+        async_io_outcome.offset );
+    while ( !SDL_CloseAsyncIO(new_async_io, false, my_io_queue, ui2ptr(555)) ) {
+      hold_up_thread( 1000 * 100 );
+    }
+    if ( !SDL_WaitAsyncIOResult(my_io_queue, &async_io_outcome, 1000*10) ) {
+      fprintf( stderr, "[Carbonara] SDL_WaitAsyncIOResult after a close request failed!\n" );
+    } else if ( async_io_outcome.result != SDL_ASYNCIO_COMPLETE ) {
+      fprintf( stdout, "[Carbonara-Debug] closed? result=%s\n",
+          async_io_outcome.result == SDL_ASYNCIO_CANCELED ? "cancelled" : "failure" );
+    }
+    assume( ptr2ui(async_io_outcome.userdata) == 555 );
+    cara_vk.spv_copy2sc_vert = asset_buf7;
+    cara_vk.len_copy2sc_vert = file_size;
+  }
+
+  // copy_to_swapchain_img.hlsl.frag.spv
+  new_async_io = SDL_AsyncIOFromFile(
+      "/home/dewr/Products/carbonara/spirv/copy_to_swapchain_img.hlsl.frag.spv", "r" );
+  file_size = SDL_GetAsyncIOSize( new_async_io );
+  asset_buf8 = cara_malloc( &tmp_ws.malloc_helper, CACHELINE_LEN, file_size );
+  if ( !SDL_ReadAsyncIO(
+        new_async_io,
+        asset_buf8,
+        0,
+        UINT64_C(0) + file_size,
+        my_io_queue,
+        ui2ptr(33)) ) {
+    fprintf( stderr, "[Carbonara] SDL_ReadAsyncIO failed!\n" );
+  }
+  if ( !SDL_WaitAsyncIOResult(my_io_queue, &async_io_outcome, 1000*10) ) {
+    fprintf( stderr, "[Carbonara] SDL_WaitAsyncIOResult after a read request failed!\n" );
+  }
+  if ( async_io_outcome.result != SDL_ASYNCIO_COMPLETE ) {
+    fprintf( stderr, "[Carbonara] AsyncIO task was not done! result=%s\n",
+        async_io_outcome.result == SDL_ASYNCIO_CANCELED ? "cancelled" : "failure" );
+    if ( async_io_outcome.result == SDL_ASYNCIO_FAILURE ) {
+      fprintf( stderr, "[Carbonara] The reason behind the failure:'%s'\n", SDL_GetError() );
+    }
+    assume( ptr2ui(async_io_outcome.userdata) == 33 );
+  } else {  // if ( async_io_outcome.result != SDL_ASYNCIO_COMPLETE )
+    fprintf( stdout, "[Carbonara-Debug] requested:%lu, transferred:%lu, offset:%lu\n",
+        async_io_outcome.bytes_requested,
+        async_io_outcome.bytes_transferred,
+        async_io_outcome.offset );
+    while ( !SDL_CloseAsyncIO(new_async_io, false, my_io_queue, ui2ptr(555)) ) {
+      hold_up_thread( 1000 * 100 );
+    }
+    if ( !SDL_WaitAsyncIOResult(my_io_queue, &async_io_outcome, 1000*10) ) {
+      fprintf( stderr, "[Carbonara] SDL_WaitAsyncIOResult after a close request failed!\n" );
+    } else if ( async_io_outcome.result != SDL_ASYNCIO_COMPLETE ) {
+      fprintf( stdout, "[Carbonara-Debug] closed? result=%s\n",
+          async_io_outcome.result == SDL_ASYNCIO_CANCELED ? "cancelled" : "failure" );
+    }
+    assume( ptr2ui(async_io_outcome.userdata) == 555 );
+    cara_vk.spv_copy2sc_frag = asset_buf8;
+    cara_vk.len_copy2sc_frag = file_size;
+  }
 
 
   //
@@ -1396,25 +1498,6 @@ done_with_sand:
     }
   }
 
-  //void * retval;
-  //for ( uint_fast8_t proc_idx = 0; proc_idx < cara_single.proc_map->nr_processors; proc_idx++ ) {
-  ////for ( uint_fast8_t proc_idx = 0; proc_idx < 1; proc_idx++ )
-  //  uint_fast8_t il_err = join_thread(threads[proc_idx], &retval);
-  //  if ( il_err ) {
-  //    switch ( il_err ) {
-  //      default:
-  //        fprintf( stderr, "[Carbonara] ERROR: There was an error occured while joining thread #%u = %u\n", proc_idx, il_err );
-  //    }
-  //  } else {
-#ifdef DEBUG_MODE
-  //    fprintf( stdout, "[Worker] retval from thread #%u = %ld\n", proc_idx, (long int)retval );
-#endif
-  //  }
-  //}
-
-
-  // Release the temporary malloc_helper as user #0
-  //ma_free(cara_single.mem_arena, 0, malloc_helper);
 
   return 0;
 }
@@ -1432,8 +1515,13 @@ void * launch_worker( void * arg )
   malloc_helper = &worker_state.malloc_helper;
   malloc_helper->worker_idx = worker->idx_self;
   malloc_helper->node_recently_used = cara_single.mem_arena->head;
-  //malloc_helper->alignment = CACHELINE_LEN;
-  //worker_state->mhelper_grower = malloc_helper_grower;
+  
+  vk_alloc_callbacks.pfnAllocation = cara_malloc_vk;
+  vk_alloc_callbacks.pfnFree = cara_free_vk;
+  vk_alloc_callbacks.pfnInternalAllocation = nullptr;
+  vk_alloc_callbacks.pfnInternalFree = nullptr;
+  vk_alloc_callbacks.pfnReallocation = cara_realloc_vk;
+  vk_alloc_callbacks.pUserData = (void*) malloc_helper;
 
 #ifdef ENABLE_PROFILING
   //constexpr size_t spall_buf_sz = 1 * 1024 * 1024;
@@ -1966,7 +2054,7 @@ __attribute__ ((target ("lzcnt")))
 void jf_kickstart( struct cara_worker_state * ws )
 {
   VkDeviceMemory * malloc = nullptr;
-  struct func_call_stack_element func_call_stack_element;
+  //struct func_call_stack_element func_call_stack_element;
 
   atomic_init( &cara_single.is_frame_id_even, 0 );
   uint_fast8_t is_frame_id_even = 0;
@@ -2043,7 +2131,7 @@ void jf_kickstart( struct cara_worker_state * ws )
   img_create_info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
   SPALL_BEGIN("create_img");
   VkResult result = vkCreateImage( cara_vk.log_dev,
-      &img_create_info, &cara_vk.vk_alloc_callbacks, &cara_vk.vki_8_2048_tex
+      &img_create_info, &vk_alloc_callbacks, &cara_vk.vki_8_2048_tex
       //&img_create_info, nullptr, &cara_vk.vki_8_2048_tex
       );
   if ( result != VK_SUCCESS ) {
@@ -2077,7 +2165,7 @@ void jf_kickstart( struct cara_worker_state * ws )
   malloc = infos_multi_al_get_elem( &cara_vk.vmm.mallocs, type_idx, 0 );
   SPALL_BEGIN("alloc_mem");
   result = vkAllocateMemory( cara_vk.log_dev,
-      &buf_malloc_info, &cara_vk.vk_alloc_callbacks, malloc
+      &buf_malloc_info, &vk_alloc_callbacks, malloc
       //&buf_malloc_info, nullptr, malloc
       );
   if( result != VK_SUCCESS ) {
@@ -2364,7 +2452,7 @@ void jf_kickstart( struct cara_worker_state * ws )
 
   SPALL_BEGIN("create_iv");
   result = vkCreateImageView( cara_vk.log_dev, &iv_create_info,
-      &cara_vk.vk_alloc_callbacks, &cara_vk.iv_8_2048_tex
+      &vk_alloc_callbacks, &cara_vk.iv_8_2048_tex
       //nullptr, &cara_vk.iv_8_2048_tex
       );
   if ( result != VK_SUCCESS ) {
@@ -2403,7 +2491,7 @@ void jf_kickstart( struct cara_worker_state * ws )
   sampler_create_info.unnormalizedCoordinates = VK_FALSE;
   SPALL_BEGIN("create_sampler");
   result = vkCreateSampler( cara_vk.log_dev, &sampler_create_info,
-      &cara_vk.vk_alloc_callbacks, &cara_vk.sampler_8_2048_tex
+      &vk_alloc_callbacks, &cara_vk.sampler_8_2048_tex
       //nullptr, &cara_vk.sampler_8_2048_tex
       );
   if ( result != VK_SUCCESS ) {
@@ -2508,7 +2596,7 @@ void jf_kickstart( struct cara_worker_state * ws )
 
   SPALL_BEGIN("create_dsls");
   result = vkCreateDescriptorSetLayout( cara_vk.log_dev, &dsl_create_info,
-      &cara_vk.vk_alloc_callbacks, &cara_vk.dsl_depth_only
+      &vk_alloc_callbacks, &cara_vk.dsl_depth_only
       //nullptr, &cara_vk.dsl_depth_only
       );
   if ( result != VK_SUCCESS ) {
@@ -2519,7 +2607,7 @@ void jf_kickstart( struct cara_worker_state * ws )
   dsl_create_info.bindingCount = _arr_elem_cnt( arr_bindings_main_render );
   dsl_create_info.pBindings = arr_bindings_main_render;
   result = vkCreateDescriptorSetLayout( cara_vk.log_dev, &dsl_create_info,
-      &cara_vk.vk_alloc_callbacks, &cara_vk.dsl_main_render
+      &vk_alloc_callbacks, &cara_vk.dsl_main_render
       //nullptr, &cara_vk.dsl_main_render
       );
   if ( result != VK_SUCCESS ) {
@@ -2530,7 +2618,7 @@ void jf_kickstart( struct cara_worker_state * ws )
   dsl_create_info.bindingCount = _arr_elem_cnt( arr_bindings_cp2sc );
   dsl_create_info.pBindings = arr_bindings_cp2sc;
   result = vkCreateDescriptorSetLayout( cara_vk.log_dev, &dsl_create_info,
-      &cara_vk.vk_alloc_callbacks, &cara_vk.dsl_copy2sc
+      &vk_alloc_callbacks, &cara_vk.dsl_copy2sc
       //nullptr, &cara_vk.dsl_copy2sc
       );
   if ( result != VK_SUCCESS ) {
@@ -2556,7 +2644,7 @@ void jf_kickstart( struct cara_worker_state * ws )
   dp_create_info.pPoolSizes = arr_pool_sizes;
   SPALL_BEGIN("create_dp");
   result = vkCreateDescriptorPool( cara_vk.log_dev, &dp_create_info,
-      &cara_vk.vk_alloc_callbacks, &cara_vk.dp_main_render
+      &vk_alloc_callbacks, &cara_vk.dp_main_render
       //nullptr, &cara_vk.dp_main_render
       );
   // When we have created a pool, we can allocate descriptor sets from it. But we must remember that
@@ -2630,7 +2718,7 @@ void jf_kickstart( struct cara_worker_state * ws )
   SPALL_BEGIN("create_shader_modules");
   // Shader compilation and linkage is performed during the pipeline object creation, not when a
   //  shader module is created.
-  result = vkCreateShaderModule( cara_vk.log_dev, &sm_create_info, &cara_vk.vk_alloc_callbacks,
+  result = vkCreateShaderModule( cara_vk.log_dev, &sm_create_info, &vk_alloc_callbacks,
       &cara_vk.sm_simple_vert );
   if( result != VK_SUCCESS ) {
     fprintf( stderr, "[Carbonara] Error occurred creating a shader module(V). '%s'\n",
@@ -2639,7 +2727,7 @@ void jf_kickstart( struct cara_worker_state * ws )
   }
   sm_create_info.codeSize = cara_vk.len_simple_frag;
   sm_create_info.pCode = cara_vk.spv_simple_frag;
-  result = vkCreateShaderModule( cara_vk.log_dev, &sm_create_info, &cara_vk.vk_alloc_callbacks,
+  result = vkCreateShaderModule( cara_vk.log_dev, &sm_create_info, &vk_alloc_callbacks,
       &cara_vk.sm_simple_frag );
   if( result != VK_SUCCESS ) {
     fprintf( stderr, "[Carbonara] Error occurred creating a shader module(F). '%s'\n",
@@ -2648,19 +2736,37 @@ void jf_kickstart( struct cara_worker_state * ws )
   }
   sm_create_info.codeSize = cara_vk.len_depth_only;
   sm_create_info.pCode = cara_vk.spv_depth_only;
-  result = vkCreateShaderModule( cara_vk.log_dev, &sm_create_info, &cara_vk.vk_alloc_callbacks,
+  result = vkCreateShaderModule( cara_vk.log_dev, &sm_create_info, &vk_alloc_callbacks,
       &cara_vk.sm_depth_only );
   if( result != VK_SUCCESS ) {
-    fprintf( stderr, "[Carbonara] Error occurred creating a shader module(D). '%s'\n",
+    fprintf( stderr, "[Carbonara] Error occurred creating a shader module(Dv). '%s'\n",
         string_VkResult(result) );
     goto stop_everything_after_failure;
   }
   sm_create_info.codeSize = cara_vk.len_depth_only_frag;
   sm_create_info.pCode = cara_vk.spv_depth_only_frag;
-  result = vkCreateShaderModule( cara_vk.log_dev, &sm_create_info, &cara_vk.vk_alloc_callbacks,
+  result = vkCreateShaderModule( cara_vk.log_dev, &sm_create_info, &vk_alloc_callbacks,
       &cara_vk.sm_depth_only_frag );
   if( result != VK_SUCCESS ) {
-    fprintf( stderr, "[Carbonara] Error occurred creating a shader module(D). '%s'\n",
+    fprintf( stderr, "[Carbonara] Error occurred creating a shader module(Df). '%s'\n",
+        string_VkResult(result) );
+    goto stop_everything_after_failure;
+  }
+  sm_create_info.codeSize = cara_vk.len_copy2sc_vert;
+  sm_create_info.pCode = cara_vk.spv_copy2sc_vert;
+  result = vkCreateShaderModule( cara_vk.log_dev, &sm_create_info, &vk_alloc_callbacks,
+      &cara_vk.sm_copy2sc_vert );
+  if( result != VK_SUCCESS ) {
+    fprintf( stderr, "[Carbonara] Error occurred creating a shader module(Cv). '%s'\n",
+        string_VkResult(result) );
+    goto stop_everything_after_failure;
+  }
+  sm_create_info.codeSize = cara_vk.len_copy2sc_frag;
+  sm_create_info.pCode = cara_vk.spv_copy2sc_frag;
+  result = vkCreateShaderModule( cara_vk.log_dev, &sm_create_info, &vk_alloc_callbacks,
+      &cara_vk.sm_copy2sc_frag );
+  if( result != VK_SUCCESS ) {
+    fprintf( stderr, "[Carbonara] Error occurred creating a shader module(Cf). '%s'\n",
         string_VkResult(result) );
     goto stop_everything_after_failure;
   }
@@ -2709,68 +2815,69 @@ void jf_kickstart( struct cara_worker_state * ws )
     copy2sc_plss_create_info[ss_idx].pSpecializationInfo = nullptr;
   }
   copy2sc_plss_create_info[vertex].stage = VK_SHADER_STAGE_VERTEX_BIT;
-  copy2sc_plss_create_info[vertex].module = cara_vk.sm_simple_vert;
+  copy2sc_plss_create_info[vertex].module = cara_vk.sm_copy2sc_vert;
   copy2sc_plss_create_info[vertex].pName = "vert_main";
   copy2sc_plss_create_info[fragment].stage = VK_SHADER_STAGE_FRAGMENT_BIT;
-  copy2sc_plss_create_info[fragment].module = cara_vk.sm_simple_frag;
+  copy2sc_plss_create_info[fragment].module = cara_vk.sm_copy2sc_frag;
   copy2sc_plss_create_info[fragment].pName = "frag_main";
 
   //
   // Vertex input binding description
   //
-  VkVertexInputBindingDescription main_render_vib_desc;
-  main_render_vib_desc.binding = 0;
-  main_render_vib_desc.stride = sizeof(float)*3 + sizeof(float)*3;  // position and color
-  main_render_vib_desc.inputRate = VK_VERTEX_INPUT_RATE_INSTANCE;
-  VkVertexInputAttributeDescription main_render_arr_via_desc[] = {
+  // Vertex input binding description for depth-only prepass
+  VkVertexInputBindingDescription vib_desc_depth_only;
+  vib_desc_depth_only.binding = 0;
+  vib_desc_depth_only.stride = sizeof(float)*3;  // position
+  vib_desc_depth_only.inputRate = VK_VERTEX_INPUT_RATE_INSTANCE;
+  VkVertexInputAttributeDescription arr_via_desc_depth_only[] = {
+    // location, binding, format, offset
+    { 0, 0, VK_FORMAT_R32G32B32_SFLOAT, 0 },
+  };
+  VkPipelineVertexInputStateCreateInfo plvis_create_info_depth_only;
+  plvis_create_info_depth_only.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+  plvis_create_info_depth_only.pNext = nullptr;
+  plvis_create_info_depth_only.flags = 0;
+  plvis_create_info_depth_only.vertexBindingDescriptionCount = 1;
+  plvis_create_info_depth_only.pVertexBindingDescriptions = &vib_desc_depth_only;
+  plvis_create_info_depth_only.vertexAttributeDescriptionCount =
+    _arr_elem_cnt( arr_via_desc_depth_only );
+  plvis_create_info_depth_only.pVertexAttributeDescriptions = arr_via_desc_depth_only;
+  // Vertex input binding description for cs_main_render
+  VkVertexInputBindingDescription vib_desc_main_render;
+  vib_desc_main_render.binding = 0;
+  vib_desc_main_render.stride = sizeof(float)*3 + sizeof(float)*3;  // position and color
+  vib_desc_main_render.inputRate = VK_VERTEX_INPUT_RATE_INSTANCE;
+  VkVertexInputAttributeDescription arr_via_desc_main_render[] = {
     // location, binding, format, offset
     { 0, 0, VK_FORMAT_R32G32B32_SFLOAT, 0 },
     { 1, 0, VK_FORMAT_R32G32B32_SFLOAT, sizeof(float)*3 },
   };
-  VkPipelineVertexInputStateCreateInfo main_render_plvis_create_info;
-  main_render_plvis_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-  main_render_plvis_create_info.pNext = nullptr;
-  main_render_plvis_create_info.flags = 0;
-  main_render_plvis_create_info.vertexBindingDescriptionCount = 1;
-  main_render_plvis_create_info.pVertexBindingDescriptions = &main_render_vib_desc;
-  main_render_plvis_create_info.vertexAttributeDescriptionCount = _arr_elem_cnt( main_render_arr_via_desc );
-  main_render_plvis_create_info.pVertexAttributeDescriptions = main_render_arr_via_desc;
-  // Vertex input binding description for depth-only prepass
-  VkVertexInputBindingDescription depth_only_vib_desc;
-  depth_only_vib_desc.binding = 0;
-  depth_only_vib_desc.stride = sizeof(float)*3;  // position
-  depth_only_vib_desc.inputRate = VK_VERTEX_INPUT_RATE_INSTANCE;
-  VkVertexInputAttributeDescription depth_only_arr_via_desc[] = {
-    // location, binding, format, offset
-    { 0, 0, VK_FORMAT_R32G32B32_SFLOAT, 0 },
-  };
-  VkPipelineVertexInputStateCreateInfo depth_only_plvis_create_info;
-  depth_only_plvis_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-  depth_only_plvis_create_info.pNext = nullptr;
-  depth_only_plvis_create_info.flags = 0;
-  depth_only_plvis_create_info.vertexBindingDescriptionCount = 1;
-  depth_only_plvis_create_info.pVertexBindingDescriptions = &depth_only_vib_desc;
-  depth_only_plvis_create_info.vertexAttributeDescriptionCount =
-    _arr_elem_cnt( depth_only_arr_via_desc );
-  depth_only_plvis_create_info.pVertexAttributeDescriptions = depth_only_arr_via_desc;
+  VkPipelineVertexInputStateCreateInfo plvis_create_info_main_render;
+  plvis_create_info_main_render.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+  plvis_create_info_main_render.pNext = nullptr;
+  plvis_create_info_main_render.flags = 0;
+  plvis_create_info_main_render.vertexBindingDescriptionCount = 1;
+  plvis_create_info_main_render.pVertexBindingDescriptions = &vib_desc_main_render;
+  plvis_create_info_main_render.vertexAttributeDescriptionCount = _arr_elem_cnt( arr_via_desc_main_render );
+  plvis_create_info_main_render.pVertexAttributeDescriptions = arr_via_desc_main_render;
   // Vertex input binding description for cs_copy_to_swapchain_img
-  VkVertexInputBindingDescription copy2sc_vib_desc;
-  copy2sc_vib_desc.binding = 0;
-  copy2sc_vib_desc.stride = sizeof(float)*3;  // position
-  copy2sc_vib_desc.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
-  VkVertexInputAttributeDescription copy2sc_arr_via_desc[] = {
+  VkVertexInputBindingDescription vib_desc_cp2sc;
+  vib_desc_cp2sc.binding = 0;
+  vib_desc_cp2sc.stride = sizeof(float)*3;  // position
+  vib_desc_cp2sc.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+  VkVertexInputAttributeDescription arr_via_desc_cp2sc[] = {
     // location, binding, format, offset
     { 0, 0, VK_FORMAT_R32G32B32_SFLOAT, 0 },
   };
-  VkPipelineVertexInputStateCreateInfo copy2sc_plvis_create_info;
-  copy2sc_plvis_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-  copy2sc_plvis_create_info.pNext = nullptr;
-  copy2sc_plvis_create_info.flags = 0;
-  copy2sc_plvis_create_info.vertexBindingDescriptionCount = 1;
-  copy2sc_plvis_create_info.pVertexBindingDescriptions = &copy2sc_vib_desc;
-  copy2sc_plvis_create_info.vertexAttributeDescriptionCount =
-    _arr_elem_cnt( copy2sc_arr_via_desc );
-  copy2sc_plvis_create_info.pVertexAttributeDescriptions = copy2sc_arr_via_desc;
+  VkPipelineVertexInputStateCreateInfo plvis_create_info_cp2sc;
+  plvis_create_info_cp2sc.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+  plvis_create_info_cp2sc.pNext = nullptr;
+  plvis_create_info_cp2sc.flags = 0;
+  plvis_create_info_cp2sc.vertexBindingDescriptionCount = 1;
+  plvis_create_info_cp2sc.pVertexBindingDescriptions = &vib_desc_cp2sc;
+  plvis_create_info_cp2sc.vertexAttributeDescriptionCount =
+    _arr_elem_cnt( arr_via_desc_cp2sc );
+  plvis_create_info_cp2sc.pVertexAttributeDescriptions = arr_via_desc_cp2sc;
 
   //
   // An input assembly state is required for the graphics pipeline creation.
@@ -2963,13 +3070,39 @@ void jf_kickstart( struct cara_worker_state * ws )
   // descriptor sets--those that are placed at greater indices (after the given index N). But one
   // additional condition must be met-- to be similar (or compatible), the pipeline layouts must use
   // the same push constant ranges.
-  SPALL_BEGIN("create_pipeline");
+  SPALL_BEGIN("create_plls");
   result = vkCreatePipelineLayout( cara_vk.log_dev, &pll_create_info,
-      &cara_vk.vk_alloc_callbacks, &cara_vk.pll_depth_only
-      //nullptr, &cara_vk.pipeline_layout
+      &vk_alloc_callbacks, &cara_vk.pll_depth_only
+      //nullptr, &cara_vk.pll_depth_only
       );
   if( result != VK_SUCCESS ) {
-    fprintf( stderr, "[Carbonara] Error occurred creating the pipeline layout. '%s'\n",
+    fprintf( stderr, "[Carbonara] Error occurred creating the pipeline layout.(D) '%s'\n",
+        string_VkResult(result) );
+    goto stop_everything_after_failure;
+  }
+  pll_create_info.setLayoutCount = 1;
+  pll_create_info.pSetLayouts = &cara_vk.dsl_main_render;
+  pll_create_info.pushConstantRangeCount = _arr_elem_cnt( arr_pc_ranges );
+  pll_create_info.pPushConstantRanges = arr_pc_ranges;
+  result = vkCreatePipelineLayout( cara_vk.log_dev, &pll_create_info,
+      &vk_alloc_callbacks, &cara_vk.pll_main_render
+      //nullptr, &cara_vk.pll_main_render
+      );
+  if( result != VK_SUCCESS ) {
+    fprintf( stderr, "[Carbonara] Error occurred creating the pipeline layout.(D) '%s'\n",
+        string_VkResult(result) );
+    goto stop_everything_after_failure;
+  }
+  pll_create_info.setLayoutCount = 1;
+  pll_create_info.pSetLayouts = &cara_vk.dsl_copy2sc;
+  pll_create_info.pushConstantRangeCount = _arr_elem_cnt( arr_pc_ranges );
+  pll_create_info.pPushConstantRanges = arr_pc_ranges;
+  result = vkCreatePipelineLayout( cara_vk.log_dev, &pll_create_info,
+      &vk_alloc_callbacks, &cara_vk.pll_copy2sc
+      //nullptr, &cara_vk.pll_copy2sc
+      );
+  if( result != VK_SUCCESS ) {
+    fprintf( stderr, "[Carbonara] Error occurred creating the pipeline layout.(D) '%s'\n",
         string_VkResult(result) );
     goto stop_everything_after_failure;
   }
@@ -3002,7 +3135,7 @@ void jf_kickstart( struct cara_worker_state * ws )
   // cs_depth_only pipeline
   arr_gpl_create_infos[cs_depth_only].stageCount = _arr_elem_cnt( depth_only_plss_create_info );
   arr_gpl_create_infos[cs_depth_only].pStages = depth_only_plss_create_info;
-  arr_gpl_create_infos[cs_depth_only].pVertexInputState = &depth_only_plvis_create_info;
+  arr_gpl_create_infos[cs_depth_only].pVertexInputState = &plvis_create_info_depth_only;
   arr_gpl_create_infos[cs_depth_only].pInputAssemblyState = &plias_create_info;
   arr_gpl_create_infos[cs_depth_only].pTessellationState = nullptr;
   arr_gpl_create_infos[cs_depth_only].pViewportState = &plvps_create_info;
@@ -3035,7 +3168,7 @@ void jf_kickstart( struct cara_worker_state * ws )
   // cs_main_render pipeline
   arr_gpl_create_infos[cs_main_render].stageCount = _arr_elem_cnt( main_render_plss_create_info );
   arr_gpl_create_infos[cs_main_render].pStages = main_render_plss_create_info;
-  arr_gpl_create_infos[cs_main_render].pVertexInputState = &main_render_plvis_create_info;
+  arr_gpl_create_infos[cs_main_render].pVertexInputState = &plvis_create_info_main_render;
   arr_gpl_create_infos[cs_main_render].pInputAssemblyState = &plias_create_info;
   arr_gpl_create_infos[cs_main_render].pTessellationState = nullptr;
   arr_gpl_create_infos[cs_main_render].pViewportState = &plvps_create_info;
@@ -3053,7 +3186,7 @@ void jf_kickstart( struct cara_worker_state * ws )
   arr_gpl_create_infos[cs_copy_to_swapchain_img].stageCount =
     _arr_elem_cnt( copy2sc_plss_create_info );
   arr_gpl_create_infos[cs_copy_to_swapchain_img].pStages = copy2sc_plss_create_info;
-  arr_gpl_create_infos[cs_copy_to_swapchain_img].pVertexInputState = &copy2sc_plvis_create_info;
+  arr_gpl_create_infos[cs_copy_to_swapchain_img].pVertexInputState = &plvis_create_info_cp2sc;
   arr_gpl_create_infos[cs_copy_to_swapchain_img].pInputAssemblyState = &plias_create_info;
   arr_gpl_create_infos[cs_copy_to_swapchain_img].pTessellationState = nullptr;
   arr_gpl_create_infos[cs_copy_to_swapchain_img].pViewportState = &plvps_create_info;
@@ -3066,10 +3199,11 @@ void jf_kickstart( struct cara_worker_state * ws )
   arr_gpl_create_infos[cs_copy_to_swapchain_img].renderPass = cara_vk.render_pass;
   arr_gpl_create_infos[cs_copy_to_swapchain_img].subpass = cs_copy_to_swapchain_img;
   arr_gpl_create_infos[cs_copy_to_swapchain_img].basePipelineIndex = cs_main_render;
-  // NOTE No pipeline cache utilized...
+  // NOTE You might want to utilized a pipeline cache if you have a lot of pipelines to create
   SPALL_BEGIN("create_G_pl");
   vkCreateGraphicsPipelines( cara_vk.log_dev,
-      VK_NULL_HANDLE,  // Creating a pipeline object is a complicated and time-consuming process
+      VK_NULL_HANDLE,  // Pipeline Cache Object
+                       // Creating a pipeline object is a complicated and time-consuming process
                        // from the driver's perspective. A pipeline object is not a simple wrapper
                        // for parameters set during the creation. It involves preparing the states
                        // of all programmable and fixed pipeline stages, setting an interface
@@ -3079,7 +3213,7 @@ void jf_kickstart( struct cara_worker_state * ws )
                        // This cache can then be reused to speed up the creation of pipeline objects
                        // with similar properties.
       _arr_elem_cnt(arr_gpl_create_infos), arr_gpl_create_infos,
-      &cara_vk.vk_alloc_callbacks,
+      &vk_alloc_callbacks,
       cara_vk.arr_pipelines
       );
   SPALL_END();
@@ -3091,10 +3225,16 @@ void jf_kickstart( struct cara_worker_state * ws )
   // Bind descriptor sets to the pipeline layout
   //
   SPALL_BEGIN("bind_ds");
-  vkCmdBindDescriptorSets( cmd_buf, VK_PIPELINE_BIND_POINT_GRAPHICS, cara_vk.pll_depth_only,
+  vkCmdBindDescriptorSets( cmd_buf, VK_PIPELINE_BIND_POINT_GRAPHICS, cara_vk.pll_main_render,
       0,  // The first set number
       1, &cara_vk.ds_main_render,  // Descriptor sets
       0, nullptr );  // Dynamic offsets
+                     // If any of the sets being bound include dynamic uniform or storage buffers,
+                     // then pDynamicOffsets includes one element for each array element in each
+                     // dynamic descriptor type binding in each set. Values are taken from
+                     // pDynamicOffsets in an order such that all entries for set N come before set
+                     // N+1; within a set, entries are ordered by the binding numbers in the
+                     // descriptor set layouts; and within a binding array, elements are in order
   SPALL_END();
 
 
@@ -3284,50 +3424,18 @@ void jf_kickstart( struct cara_worker_state * ws )
 
 
 
+  // NOTE call destroy_vulkan_objects() in SDK's main thread
+//#pragma GCC diagnostic push
+//#pragma GCC diagnostic ignored "-Wcast-function-type-strict"
+//  func_call_stack_element.func = (void(*)(void*))destroy_vulkan_objects;
+//#pragma GCC diagnostic pop
+//  func_call_stack_element.arg = ws->worker_info->idx_self;
+//  infos_stack_push( cara_single.foremans_quit_stack,
+//      1, (const void*) &func_call_stack_element,
+//      31 - _lzcnt_u32(sizeof(struct func_call_stack_element)) );
 
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wcast-function-type-strict"
-  func_call_stack_element.func = (void(*)(void*))destroy_vulkan_objects;
-#pragma GCC diagnostic pop
-  func_call_stack_element.arg = ws->worker_info;
-  infos_stack_push( cara_single.foremans_quit_stack,
-      1, (const void*) &func_call_stack_element,
-      31 - _lzcnt_u32(sizeof(struct func_call_stack_element)) );
 
-  //for ( uint_fast8_t worker_idx = 0;
-  //    worker_idx < cara_single.proc_map->nr_processors; worker_idx++ ) {
-  //  uint_fast16_t idx_job_func_arg_group = cara_get_unoccupied_job_func_args();
-  //  while ( idx_job_func_arg_group == UINT16_MAX ) {
-  //    idx_job_func_arg_group = cara_get_unoccupied_job_func_args();
-  //  }
-  //  struct cara_job_func_args_64 * arg_group =
-  //    infos_al_get_elem(cara_single.job_arg_pool, idx_job_func_arg_group);
-  //  arg_group->data[0] = cara_single.proc_map->nr_processors;
 
-  //  struct cara_job_batch_desc_64 * batch = cara_get_unoccupied_job_batch_desc();
-  //  while ( !batch ) {
-  //    batch = cara_get_unoccupied_job_batch_desc();
-  //  }
-  //  for ( uint_fast8_t job_idx = 1; job_idx < CARBONARA_MAX_NR_JOBS_IN_A_JOB_DESC_64;
-  //      job_idx++ ) {
-  //    batch->job_func_idx[job_idx] = 0;
-  //    batch->job_flags[job_idx] = 0;
-  //  }
-  //  batch->job_func_idx[0] = jf_idx_prepare_vulkan;
-  //  batch->job_flags[0] = 0;
-  //  batch->cache_location[0] = 0;
-  //  batch->cache_pattern[0] = 0;
-  //  batch->idx_job_func_arg_group[0] = idx_job_func_arg_group;
-  //  atomic_store_explicit(&batch->progress, 0, memory_order_release);
-  //  atomic_store_explicit(&batch->preferred_core, UINT8_MAX, memory_order_release);
-  //}
-
-  //VkSurfaceKHR presentation_surface;
-  //if ( !SDL_Vulkan_CreateSurface(vulkan_n_sdl.sdl_window, vk_instance, &presentation_surface) ) {
-  //  fprintf( stderr, "[Carbonara] SDL_Vulkan_CreateSurface failed to create a vulkan surface.\n" );
-  //  fprintf( stderr, "[Carbonara] SDL_Error: %s\n", SDL_GetError() );
-  //  goto lead_quit;
-  //}
 
   struct cara_job_batch_desc_64 * batch = cara_get_unoccupied_job_batch_desc();
   while ( !batch ) {
@@ -3359,31 +3467,51 @@ void jf_kickstart( struct cara_worker_state * ws )
 stop_everything_after_failure:
 
   if ( cara_vk.sm_simple_frag ) {
-    vkDestroyShaderModule( cara_vk.log_dev, cara_vk.sm_simple_frag, &cara_vk.vk_alloc_callbacks );
+    vkDestroyShaderModule( cara_vk.log_dev, cara_vk.sm_simple_frag, &vk_alloc_callbacks );
     cara_vk.sm_simple_frag = VK_NULL_HANDLE;
   }
   if ( cara_vk.sm_simple_vert ) {
-    vkDestroyShaderModule( cara_vk.log_dev, cara_vk.sm_simple_vert, &cara_vk.vk_alloc_callbacks );
+    vkDestroyShaderModule( cara_vk.log_dev, cara_vk.sm_simple_vert, &vk_alloc_callbacks );
     cara_vk.sm_simple_vert = VK_NULL_HANDLE;
   }
   if ( cara_vk.sm_depth_only ) {
-    vkDestroyShaderModule( cara_vk.log_dev, cara_vk.sm_depth_only, &cara_vk.vk_alloc_callbacks );
+    vkDestroyShaderModule( cara_vk.log_dev, cara_vk.sm_depth_only, &vk_alloc_callbacks );
     cara_vk.sm_depth_only = VK_NULL_HANDLE;
+  }
+  if ( cara_vk.sm_depth_only_frag ) {
+    vkDestroyShaderModule( cara_vk.log_dev, cara_vk.sm_depth_only_frag,
+        &vk_alloc_callbacks );
+    cara_vk.sm_depth_only_frag = VK_NULL_HANDLE;
+  }
+  if ( cara_vk.sm_copy2sc_vert ) {
+    vkDestroyShaderModule( cara_vk.log_dev, cara_vk.sm_copy2sc_vert, &vk_alloc_callbacks );
+    cara_vk.sm_copy2sc_vert = VK_NULL_HANDLE;
+  }
+  if ( cara_vk.sm_copy2sc_frag ) {
+    vkDestroyShaderModule( cara_vk.log_dev, cara_vk.sm_copy2sc_frag, &vk_alloc_callbacks );
+    cara_vk.sm_copy2sc_frag = VK_NULL_HANDLE;
   }
 
   if ( cara_vk.pll_depth_only ) {
     vkDestroyPipelineLayout( cara_vk.log_dev, cara_vk.pll_depth_only,
-        &cara_vk.vk_alloc_callbacks
+        &vk_alloc_callbacks
         //nullptr
         );
     cara_vk.pll_depth_only = VK_NULL_HANDLE;
   }
   if ( cara_vk.pll_main_render ) {
     vkDestroyPipelineLayout( cara_vk.log_dev, cara_vk.pll_main_render,
-        &cara_vk.vk_alloc_callbacks
+        &vk_alloc_callbacks
         //nullptr
         );
     cara_vk.pll_main_render = VK_NULL_HANDLE;
+  }
+  if ( cara_vk.pll_copy2sc ) {
+    vkDestroyPipelineLayout( cara_vk.log_dev, cara_vk.pll_copy2sc,
+        &vk_alloc_callbacks
+        //nullptr
+        );
+    cara_vk.pll_copy2sc = VK_NULL_HANDLE;
   }
 
   if ( cara_vk.ds_main_render ) {
@@ -3392,31 +3520,44 @@ stop_everything_after_failure:
   }
 
   if ( cara_vk.dp_main_render ) {
-    vkDestroyDescriptorPool( cara_vk.log_dev, cara_vk.dp_main_render, &cara_vk.vk_alloc_callbacks );
+    vkDestroyDescriptorPool( cara_vk.log_dev, cara_vk.dp_main_render, &vk_alloc_callbacks );
     //vkDestroyDescriptorPool( cara_vk.log_dev, cara_vk.dp_first, nullptr );
     cara_vk.dp_main_render = VK_NULL_HANDLE;
   }
 
   if ( cara_vk.dsl_depth_only ) {
-    vkDestroyDescriptorSetLayout( cara_vk.log_dev, cara_vk.dsl_depth_only, &cara_vk.vk_alloc_callbacks );
-    //vkDestroyDescriptorSetLayout( cara_vk.log_dev, cara_vk.dsl_depth_only, nullptr );
+    vkDestroyDescriptorSetLayout( cara_vk.log_dev, cara_vk.dsl_depth_only,
+        &vk_alloc_callbacks );
+        //nullptr );
     cara_vk.dsl_depth_only = VK_NULL_HANDLE;
+  }
+  if ( cara_vk.dsl_main_render ) {
+    vkDestroyDescriptorSetLayout( cara_vk.log_dev, cara_vk.dsl_main_render,
+        &vk_alloc_callbacks );
+        //nullptr );
+    cara_vk.dsl_main_render = VK_NULL_HANDLE;
+  }
+  if ( cara_vk.dsl_copy2sc ) {
+    vkDestroyDescriptorSetLayout( cara_vk.log_dev, cara_vk.dsl_copy2sc,
+        &vk_alloc_callbacks );
+        //nullptr );
+    cara_vk.dsl_copy2sc = VK_NULL_HANDLE;
   }
 
   if ( cara_vk.sampler_8_2048_tex ) {
-    vkDestroySampler( cara_vk.log_dev, cara_vk.sampler_8_2048_tex, &cara_vk.vk_alloc_callbacks );
+    vkDestroySampler( cara_vk.log_dev, cara_vk.sampler_8_2048_tex, &vk_alloc_callbacks );
     //vkDestroySampler( cara_vk.log_dev, cara_vk.sampler_8_2048_tex, nullptr );
     cara_vk.sampler_8_2048_tex = VK_NULL_HANDLE;
   }
 
   if ( cara_vk.iv_8_2048_tex ) {
-    vkDestroyImageView( cara_vk.log_dev, cara_vk.iv_8_2048_tex, &cara_vk.vk_alloc_callbacks );
+    vkDestroyImageView( cara_vk.log_dev, cara_vk.iv_8_2048_tex, &vk_alloc_callbacks );
     //vkDestroyImageView( cara_vk.log_dev, cara_vk.iv_8_2048_tex, nullptr );
     cara_vk.iv_8_2048_tex = VK_NULL_HANDLE;
   }
 
   if ( malloc ) {
-    vkFreeMemory( cara_vk.log_dev, *malloc, &cara_vk.vk_alloc_callbacks );
+    vkFreeMemory( cara_vk.log_dev, *malloc, &vk_alloc_callbacks );
     //vkFreeMemory( cara_vk.log_dev, *malloc, nullptr );
     *malloc = 0;
     cara_vk.vmm.arr_usages[cara_vk.vmm.arr_best_mtype_idx[vk_buf_type_image_arr_8_2048]] -=
@@ -3424,7 +3565,7 @@ stop_everything_after_failure:
   }
 
   if ( cara_vk.sampler_8_2048_tex ) {
-    vkDestroyImage( cara_vk.log_dev, cara_vk.vki_8_2048_tex, &cara_vk.vk_alloc_callbacks );
+    vkDestroyImage( cara_vk.log_dev, cara_vk.vki_8_2048_tex, &vk_alloc_callbacks );
     //vkDestroyImage( cara_vk.log_dev, cara_vk.vki_8_2048_tex, nullptr );
     cara_vk.vki_8_2048_tex = VK_NULL_HANDLE;
   }

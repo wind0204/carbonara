@@ -73,15 +73,17 @@ void cara_free( void * idx_proc, void * ptr );
 void * cara_realloc( void * cara_malloc_helper, void * orig_ptr, size_t size, size_t alignment );
 
 //-------------------------------------------------------------------------------------------------
-void * cara_malloc_vk( void * cara_malloc_helper, size_t alignment, size_t size,
+void * cara_malloc_vk( void * cara_malloc_helper,
+    size_t size, size_t alignment,
     VkSystemAllocationScope alloc_scope );
 
 //-------------------------------------------------------------------------------------------------
 void cara_free_vk( void * cara_malloc_helper, void * ptr );
 
 //-------------------------------------------------------------------------------------------------
-void * cara_realloc_vk( void * cara_malloc_helper, void * orig_ptr,
-    size_t size, size_t alignment, VkSystemAllocationScope alloc_scope );
+void * cara_realloc_vk( void * cara_malloc_helper,
+    void * orig_ptr, size_t size, size_t alignment,
+    VkSystemAllocationScope alloc_scope );
 
 
 

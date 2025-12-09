@@ -1,4 +1,4 @@
-struct VertexShaderInput {
+struct VertexShaderInput_cp2sc {
   [[vk::location(0)]] float3 pos : POSITION0;
   //[[vk::location(1)]] float3 col : COLOR0;
 };
@@ -8,7 +8,7 @@ struct VertexShaderInput {
 //};
 //cbuffer ubo : register(b0, space0) { UBO ubo; }
 
-struct VertexShaderOutput {
+struct VertexShaderOutput_cp2sc {
   float4 pos : SV_POSITION;
   //[[vk::location(0)]] float3 col : COLOR0;
 };
@@ -17,11 +17,11 @@ struct VertexShaderOutput {
 //-------------------------------------------------------------------------------------------------
 
 [shader("vertex")]
-VertexShaderOutput vert_main(
-    VertexShaderInput input,
+VertexShaderOutput_cp2sc vert_main(
+    VertexShaderInput_cp2sc input,
     uint vert_idx : SV_VertexID )
 {
-  VertexShaderOutput output;
+  VertexShaderOutput_cp2sc output;
   //output.pos = mul( ubo.model_to_clip, float4(input.position.xyz, 1.0) );
   output.pos = float4(input.pos.xyz, 1.0);
   //output.col = input.col;
@@ -29,8 +29,7 @@ VertexShaderOutput vert_main(
 }
 
 [shader("pixel")]
-float4 frag_main( VertexShaderOutput input ) : SV_TARGET
+float4 frag_main( VertexShaderOutput_cp2sc input ) : SV_TARGET
 {
-  //output.pos = mul( ubo.model_to_clip, float4(input.position.xyz, 1.0) );
-  return float4(input.col, 1);
+  return float4(0.1, 0.8, 0.1, 1);
 }

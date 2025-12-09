@@ -7,6 +7,8 @@
 
 #include <SDL3/SDL_video.h>
 
+#include "util-c_lang-basic.h"
+#include "appdev_support-processor_map.h"
 #include "carbonara.h"
 //#include "appdev_support-shared_library.h"
 #include "memorable_arena.h"
@@ -41,6 +43,7 @@ enum cara_framebuffers : unsigned char {
   fb_depth = 0,
   fb_color,
   fb_swapchain,
+  cara_nr_famebuffers,
 };
 
 constexpr size_t cara_vk_page_len = 512 * 1024;
@@ -96,14 +99,16 @@ struct vk_trans_buf {
 
 
 /*
- * \brief A singleton data storage for Vulkan
+ * \brief A data storage for Vulkan rendering
  */
-struct cara_vk_single {
+struct cara_vk_renderer {
   int64_t asset_size;  // const unsigned int len_mipmapped_2048 = 16 + 16 + (4*4)*4/4 + (8*8)*4/4 + (16*16)*4/4 + (32*32)*4/4 + (64*64)*4/4 + (128*128)*4/4 + (256*256)*4/4 + (512*512)*4/4 + (1024*1024)*4/4 + (2048*2048)*4/4; ..Plus header size for now
   int64_t len_depth_only;
   int64_t len_depth_only_frag;
   int64_t len_simple_vert;
   int64_t len_simple_frag;
+  int64_t len_copy2sc_vert;
+  int64_t len_copy2sc_frag;
   static_assert( alignof(int64_t) >= alignof(void*), "Sort the struct members!" );
   char * stone_texture;
   char * sand_texture;
@@ -111,6 +116,8 @@ struct cara_vk_single {
   void * spv_depth_only_frag;
   void * spv_simple_vert;
   void * spv_simple_frag;
+  void * spv_copy2sc_vert;
+  void * spv_copy2sc_frag;
   SDL_Window * window;
   VkImage * arr_swapchain_imgs;
   VkSemaphore * arr_wsi_present_semaphores;  // One binary semaphore per swapchain img
@@ -176,10 +183,7 @@ struct cara_vk_single {
   //static_assert( alignof(VkInstance) >= alignof(shared_lib), "Sort the struct members!" );
   //shared_lib vk_library;
   //static_assert( alignof(shared_lib) >= alignof(VkAllocationCallbacks),
-  static_assert( alignof(VkInstance) >= alignof(VkAllocationCallbacks),
-      "Sort the struct members!" );
-  VkAllocationCallbacks vk_alloc_callbacks;  // XXX Keep it here instead of in cara_engine?
-  static_assert( alignof(VkAllocationCallbacks) >= alignof(VkFormat), "Sort the struct members!" );
+  static_assert( alignof(VkInstance) >= alignof(VkFormat), "Sort the struct members!" );
   VkFormat color_att_fmt;  // 32-bit aligned
   VkFormat zbuf_fmt;  // 32-bit aligned
   static_assert( alignof(VkFormat) >= alignof(VkExtent2D), "Sort the struct members!" );
@@ -194,8 +198,8 @@ struct cara_vk_single {
   uint8_t texture_format_chosen; // either texture_format_astc or texture_format_s3tc
 };
 
-// In carbonara-vulkan.c
-extern struct cara_vk_single cara_vk;
+extern struct cara_vk_renderer cara_vk;
+extern thread_local VkAllocationCallbacks vk_alloc_callbacks;
 
 
 //-------------------------------------------------------------------------------------------------
@@ -234,7 +238,10 @@ static inline VkCommandBuffer * cara_get_arr_cmd_bufs_for_transfer(
 }
 
 //-------------------------------------------------------------------------------------------------
-enum err_msg create_renderpass_and_framebuffer( struct cara_vk_single * cara_vk );
+/*
+ * \brief Create a VkRenderPass and a VkFramebuffer
+ */
+enum err_msg create_renderpass_and_framebuffer( struct cara_vk_renderer * cara_vk );
 
 //-------------------------------------------------------------------------------------------------
 /*
@@ -251,7 +258,7 @@ uint8_t init_vulkan( uint32_t vendor_id_pref, uint32_t device_id_pref,
     struct cara_worker_state * restrict worker_state );
 
 //-------------------------------------------------------------------------------------------------
-void destroy_vulkan_objects( struct ms_worker_info * worker_info );
+void destroy_vulkan_objects( _typeof_member(struct ms_worker_info, idx_self) worker_idx );
 //void acquire_swapchain_image();
 //void present_image();
 //void prepare_thread_local_vulkan_objects();

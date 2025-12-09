@@ -574,6 +574,7 @@ include_directories( "${CMAKE_CURRENT_SOURCE_DIR}/src/util" )
 include_directories( SYSTEM "${CMAKE_CURRENT_SOURCE_DIR}/extern/tclib" )
 
 include_directories( SYSTEM "$ENV{VULKAN_SDK}/include" )
+include_directories( SYSTEM "${CMAKE_CURRENT_SOURCE_DIR}/extern/hwloc/include" )
 
 #include_directories( "${CMAKE_CURRENT_SOURCE_DIR}/src/err_msg" )
 target_include_directories( Err_msg PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src/err_msg" )
@@ -624,10 +625,10 @@ target_include_directories( carbonara PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/exter
 target_include_directories( Info_struct PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/extern/util" )
 target_include_directories( Memorable_arena PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/extern/util" )
 
-target_include_directories( Util-hwloc SYSTEM PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/extern/hwloc/include" )
-target_include_directories( Hwloc SYSTEM INTERFACE "${CMAKE_CURRENT_SOURCE_DIR}/extern/hwloc/include" )
-target_include_directories( carbonara SYSTEM PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/extern/hwloc/include" )
-target_include_directories( Info_struct SYSTEM PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/extern/hwloc/include" )
+#target_include_directories( Util-hwloc SYSTEM PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/extern/hwloc/include" )
+#target_include_directories( Hwloc SYSTEM INTERFACE "${CMAKE_CURRENT_SOURCE_DIR}/extern/hwloc/include" )
+#target_include_directories( carbonara SYSTEM PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/extern/hwloc/include" )
+#target_include_directories( Info_struct SYSTEM PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/extern/hwloc/include" )
 
 
 ##include_directories( "${CMAKE_CURRENT_SOURCE_DIR}/extern/sdl/include" )

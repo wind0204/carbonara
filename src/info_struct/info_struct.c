@@ -1,6 +1,7 @@
 #include <stddef.h>
 #include <stdlib.h>
 #include <sys/mman.h>
+#include <vulkan/vulkan_core.h>
 
 #include "info_struct.h"
 #include "util-c_lang-basic.h"
@@ -35,6 +36,17 @@ void * default_malloc( [[maybe_unused]] void * userdata, size_t alignment, size_
 }
 
 //-------------------------------------------------------------------------------------------------
+void * default_malloc_vk( [[maybe_unused]] void * userdata, size_t size, size_t alignment,
+    [[maybe_unused]] VkSystemAllocationScope alloc_scope )
+{
+  assume( _is_power_of_two(alignment) );
+  size = _align_to_power_of_two( size, alignment );
+
+  void * ret = aligned_alloc( alignment, size );
+  return ret;
+}
+
+//-------------------------------------------------------------------------------------------------
 void * default_realloc(
     [[maybe_unused]] void * userdata,
     void * orig_ptr, size_t size, [[maybe_unused]] size_t alignment )
@@ -43,7 +55,22 @@ void * default_realloc(
 }
 
 //-------------------------------------------------------------------------------------------------
+void * default_realloc_vk(
+    [[maybe_unused]] void * userdata,
+    void * orig_ptr, size_t size, [[maybe_unused]] size_t alignment,
+    [[maybe_unused]] VkSystemAllocationScope alloc_scope )
+{
+  return realloc( orig_ptr, size );
+}
+
+//-------------------------------------------------------------------------------------------------
 void default_free( [[maybe_unused]] void * restrict userdata, void * restrict ptr )
+{
+  free( ptr );
+}
+
+//-------------------------------------------------------------------------------------------------
+void default_free_vk( [[maybe_unused]] void * restrict userdata, void * restrict ptr )
 {
   free( ptr );
 }

@@ -6,6 +6,7 @@
 #include <stddef.h>
 #include <string.h>
 #include <math.h>
+#include <vulkan/vulkan_core.h>
 
 #include "func_overloading_and_def_args_and_named_args.h"
 #include "util-c_lang-bits.h"
@@ -269,13 +270,21 @@ struct range_u32 {
 //-------------------------------------------------------------------------------------------------
 
 extern void * default_malloc( void * userdata, size_t alignment, size_t size );
+void * default_malloc_vk( [[maybe_unused]] void * userdata,
+    size_t size, size_t alignment,
+    [[maybe_unused]] VkSystemAllocationScope alloc_scope );
 
 /**
  * \warning \a alignment is ignored
  */
 extern void * default_realloc( void * userdata, void * orig_ptr, size_t size, size_t alignment );
+void * default_realloc_vk(
+    [[maybe_unused]] void * userdata,
+    void * orig_ptr, size_t size, [[maybe_unused]] size_t alignment,
+    [[maybe_unused]] VkSystemAllocationScope alloc_scope );
 
 extern void default_free( void * restrict userdata, void * restrict ptr );
+void default_free_vk( [[maybe_unused]] void * restrict userdata, void * restrict ptr );
 
 
 

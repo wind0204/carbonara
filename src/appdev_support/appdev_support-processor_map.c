@@ -21,35 +21,8 @@
 //-------------------------------------------------------------------------------------------------
 constexpr size_t default_max_nr_threads = 20;
 
-
-//-------------------------------------------------------------------------------------------------
-struct ms_worker_info unbound_worker;
-
-
 //-------------------------------------------------------------------------------------------------
 static uint_fast16_t is_there_an_ascendant_with_less_sets( hwloc_obj_t cache_obj );
-
-
-//-------------------------------------------------------------------------------------------------
-#if defined(__clang__)
-__attribute__ ((minsize))
-#elif defined(__GNUC__) || defined(__GNUG__)
-__attribute__ ((optimize("s")))
-#endif
-uint_fast8_t init_appdev_support_processor_map(void)
-{
-  unbound_worker.idx_one_sibling = 0;
-  unbound_worker.idx_missing_sibling = 0;
-  unbound_worker.cpuset = 0;
-  unbound_worker.deployment_flags = worker_deployment_flag_yielder;
-  /*
-  unbound_worker.cache_location = 0;
-  unbound_worker.cache_pattern = 0xff;
-  unbound_worker.len_cache_stride = 0;
-  unbound_worker.len_pattern = 8;
-  */
-  return 0;
-}
 
 //-------------------------------------------------------------------------------------------------
 uint_fast8_t clear_processor_map( struct processor_map * processor_map )

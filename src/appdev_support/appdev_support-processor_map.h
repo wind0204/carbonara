@@ -8,7 +8,6 @@
 
 
 //-------------------------------------------------------------------------------------------------
-extern struct ms_worker_info unbound_worker;
 //#define MS_MAX_NR_CACHE_SETS __sizeof_member(struct ms_worker_info, cache_pattern)*8
 
 enum worker_deployment_flags : unsigned char {
@@ -48,6 +47,12 @@ struct ms_worker_info {
 
   uint8_t idx_core;  ///< The CPU core index
 };
+//constexpr struct ms_worker_info unbound_worker = {
+//  .idx_one_sibling = 0,
+//  .idx_missing_sibling = 0,
+//  .cpuset = 0,
+//  .deployment_flags = worker_deployment_flag_yielder,
+//};
 
 struct processor_map {
   struct ms_worker_info * processors;
@@ -87,14 +92,16 @@ struct processor_map {
 
 };
 
+
 //-------------------------------------------------------------------------------------------------
-/**
- * \brief You must call this function before using the global struct unbound_worker
- *
- * \return 0 if it was successful, an enum err_msg otherwise.
- */
-uint_fast8_t init_appdev_support_processor_map(void);
-//void remove_appdev_support_processor_map(void);
+constexpr struct ms_worker_info dummy_worker_info = {
+  .cpuset = (hwloc_bitmap_t){0},
+  .idx_one_sibling = 1,
+};
+
+
+
+
 
 //-------------------------------------------------------------------------------------------------
 /**

@@ -112,9 +112,9 @@ void ma_destroy_vk_mem_mgr(
 
   if ( vmm->p_staging_buf ) {
     vkUnmapMemory( logical_dev, vmm->staging_buf_malloc );
-    vkFreeMemory( logical_dev, vmm->staging_buf_malloc, &cara_vk.vk_alloc_callbacks ); 
+    vkFreeMemory( logical_dev, vmm->staging_buf_malloc, &vk_alloc_callbacks ); 
     //vkFreeMemory( logical_dev, vmm->staging_buf_malloc, nullptr ); 
-    vkDestroyBuffer( logical_dev, vmm->staging_buf, &cara_vk.vk_alloc_callbacks );
+    vkDestroyBuffer( logical_dev, vmm->staging_buf, &vk_alloc_callbacks );
     //vkDestroyBuffer( logical_dev, vmm->staging_buf, nullptr );
     vmm->p_staging_buf = nullptr;
     vmm->staging_buf = 0;
@@ -174,7 +174,7 @@ enum err_msg ma_create_staging_buf(
   buf_create_info.queueFamilyIndexCount = 0;
   buf_create_info.pQueueFamilyIndices = nullptr;
   VkResult result = vkCreateBuffer(
-      logical_dev, &buf_create_info, &cara_vk.vk_alloc_callbacks, &vmm->staging_buf
+      logical_dev, &buf_create_info, &vk_alloc_callbacks, &vmm->staging_buf
       //logical_dev, &buf_create_info, nullptr, &vmm->staging_buf
       );
   if( result != VK_SUCCESS ) {
@@ -209,10 +209,10 @@ enum err_msg ma_create_staging_buf(
   buf_malloc_info.memoryTypeIndex = type_idx;
 
   result = vkAllocateMemory( logical_dev,
-      &buf_malloc_info, &cara_vk.vk_alloc_callbacks, &vmm->staging_buf_malloc );
+      &buf_malloc_info, &vk_alloc_callbacks, &vmm->staging_buf_malloc );
       //&buf_malloc_info, nullptr, &vmm->staging_buf_malloc );
   if( result != VK_SUCCESS ) {
-    vkDestroyBuffer( logical_dev, vmm->staging_buf, &cara_vk.vk_alloc_callbacks );
+    vkDestroyBuffer( logical_dev, vmm->staging_buf, &vk_alloc_callbacks );
     //vkDestroyBuffer( logical_dev, vmm->staging_buf, nullptr );
     vmm->staging_buf = 0;
     return err_msg_out_of_memory;
@@ -222,9 +222,9 @@ enum err_msg ma_create_staging_buf(
   // Bind the buffer to the memory allocation
   result = vkBindBufferMemory( logical_dev, vmm->staging_buf, vmm->staging_buf_malloc, 0 );
   if( result != VK_SUCCESS ) {
-    vkFreeMemory( logical_dev, vmm->staging_buf_malloc, &cara_vk.vk_alloc_callbacks );
+    vkFreeMemory( logical_dev, vmm->staging_buf_malloc, &vk_alloc_callbacks );
     //vkFreeMemory( logical_dev, vmm->staging_buf_malloc, nullptr );
-    vkDestroyBuffer( logical_dev, vmm->staging_buf, &cara_vk.vk_alloc_callbacks );
+    vkDestroyBuffer( logical_dev, vmm->staging_buf, &vk_alloc_callbacks );
     //vkDestroyBuffer( logical_dev, vmm->staging_buf, nullptr );
     vmm->staging_buf = 0;
     vmm->staging_buf_malloc = 0;
@@ -235,9 +235,9 @@ enum err_msg ma_create_staging_buf(
   // Map the memory region
   result = vkMapMemory( logical_dev, vmm->staging_buf_malloc, 0, buf_len, 0, &vmm->p_staging_buf );
   if( result != VK_SUCCESS ) {
-    vkFreeMemory( logical_dev, vmm->staging_buf_malloc, &cara_vk.vk_alloc_callbacks );
+    vkFreeMemory( logical_dev, vmm->staging_buf_malloc, &vk_alloc_callbacks );
     //vkFreeMemory( logical_dev, vmm->staging_buf_malloc, nullptr );
-    vkDestroyBuffer( logical_dev, vmm->staging_buf, &cara_vk.vk_alloc_callbacks );
+    vkDestroyBuffer( logical_dev, vmm->staging_buf, &vk_alloc_callbacks );
     //vkDestroyBuffer( logical_dev, vmm->staging_buf, nullptr );
     vmm->staging_buf = 0;
     vmm->staging_buf_malloc = 0;

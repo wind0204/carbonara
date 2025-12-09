@@ -23,7 +23,7 @@
   typedef union ieee754_binary32_be union_ieee754_binary32;
   typedef union ieee754_binary64_be union_ieee754_binary64;
 #else
-  #error TARGET_ENDIANNESS PDP Endian is not supported!
+  #error TARGET_ENDIANNESS PDP Endian is not supported by __FILE__.
 #endif
 
 /*
