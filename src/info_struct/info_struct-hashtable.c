@@ -73,7 +73,7 @@ struct infos_hashtable * infos_hashtable_create(
       );
 
   if ( !ptr ) {
-    return 0;
+    return nullptr;
   }
   struct infos_hashtable * new_table = ptr + ofs_itself;
   new_table->arr_idx_next_unoccupied_elem = ptr + ofs_arr_sm;
@@ -85,10 +85,10 @@ struct infos_hashtable * infos_hashtable_create(
       get_log2( key_arr_len ),
       31 - _lzcnt_u32( sizeof(uint32_t) ),
       log2_nr_buckets,
-      -7 );
+      true );
   if ( ret ) {  // Failed to prepare a struct infos_multi_arr_list
     local_free( userdata, ptr );
-    return 0;
+    return nullptr;
   }
 
   infos_mal_simple_mgr_init( new_table->arr_idx_next_unoccupied_elem, &new_table->keys );
@@ -101,12 +101,12 @@ struct infos_hashtable * infos_hashtable_create(
       new_table->keys.log2_nr_elems + ( 31 - _lzcnt_u32(item_size) ),
       31 - _lzcnt_u32(item_size),
       log2_nr_buckets,
-      0 );
+      false );
   if ( ret ) {  // Failed to prepare a struct infos_multi_arr_list
     infos_multi_al_destroy_except_preallocated_struct( &new_table->keys,
         userdata, local_free );
     local_free( userdata, ptr );
-    return 0;
+    return nullptr;
   }
 
   return new_table;
@@ -160,7 +160,7 @@ enum err_msg infos_hashtable_insert(
     idx_first_empty_element -= UINT64_C(1) << table->keys.log2_nr_elems;
     if ( !node->next ) {
       // Make another node.
-      uint16_t indices_buckets[] = { bucket_idx };
+      uint32_t indices_buckets[] = { bucket_idx };
       if ( infos_multi_al_grow(&table->keys, 0, 0, 1, indices_buckets, -7) ) {
         return err_msg_out_of_memory;
       }
@@ -196,7 +196,7 @@ enum err_msg infos_hashtable_insert_u32_4(
     idx_first_empty_element -= UINT64_C(1) << table->keys.log2_nr_elems;
     if ( !node->next ) {
       // Make another node.
-      uint16_t indices_buckets[] = { bucket_idx };
+      uint32_t indices_buckets[] = { bucket_idx };
       if ( infos_multi_al_grow(&table->keys, 0, 0, 1, indices_buckets, -7) ) {
         return err_msg_out_of_memory;
       }
@@ -232,7 +232,7 @@ enum err_msg infos_hashtable_insert_u64_4(
     idx_first_empty_element -= UINT64_C(1) << table->keys.log2_nr_elems;
     if ( !node->next ) {
       // Make another node.
-      uint16_t indices_buckets[] = { bucket_idx };
+      uint32_t indices_buckets[] = { bucket_idx };
       if ( infos_multi_al_grow(&table->keys, 0, 0, 1, indices_buckets, -7) ) {
         return err_msg_out_of_memory;
       }
@@ -263,13 +263,13 @@ enum err_msg infos_hashtable_remove_3(struct infos_hashtable * table,
   //uint_fast8_t node_idx = 0;
   uint64_t idx_next_empty_elem = table->arr_idx_next_unoccupied_elem[bucket_idx];
   while (-7) {
-    const uint64_t last_idx = (idx_next_empty_elem < UINT64_C(1) << table->log2_nr_keys) ?
-      idx_next_empty_elem : UINT64_C(1) << table->log2_nr_keys;
     typeof(&key) const restrict p_key = __builtin_assume_aligned( node->data, ALIGN_FOR_AVX512 );
     constexpr uint64_t stride = ALIGN_FOR_AVX * 2 / sizeof(key);
     simde__m256i pack1, pack2, res1, res2;
     const simde__m256i key_pack = simde_mm256_set1_epi32( key );
     void * const restrict p_value = __builtin_assume_aligned( value_arr->data, ALIGN_FOR_AVX512 );
+    const uint64_t last_idx = (idx_next_empty_elem < UINT64_C(1) << table->log2_nr_keys) ?
+      idx_next_empty_elem : UINT64_C(1) << table->log2_nr_keys;
     for ( uint64_t idx = 0; idx < last_idx; idx += stride ) {
       pack1 = simde_mm256_load_si256( (void*)(p_key + idx) );
       pack2 = simde_mm256_load_si256( (void*)(p_key + idx) + ALIGN_FOR_AVX );
@@ -291,9 +291,6 @@ found_the_key_to_remove:
         while (-7) {
           if ( last_elem_idx < UINT64_C(1) << table->log2_nr_keys ) {
             p_key[idx] = ((typeof(&key)) cur_node->data) [last_elem_idx];
-#if !defined( NDEBUG )
-            ((typeof(&key)) cur_node->data) [last_elem_idx] = 0;
-#endif
             memcpy( p_value + (idx << table->values.log2_elem_size),
                 cur_value_arr + (last_elem_idx << table->values.log2_elem_size),
                 UINT64_C(1) << table->values.log2_elem_size );
@@ -331,14 +328,14 @@ void * infos_hashtable_search_3( const struct infos_hashtable * table,
   // uint_fast8_t node_idx = 0;
   uint64_t idx_next_empty_elem = table->arr_idx_next_unoccupied_elem[bucket_idx];
   while (-7) {
-    const uint64_t last_idx = (idx_next_empty_elem < UINT64_C(1) << table->log2_nr_keys) ?
-      idx_next_empty_elem : UINT64_C(1) << table->log2_nr_keys;
     constexpr uint64_t stride = ALIGN_FOR_AVX * 2 / sizeof(key);
     simde__m256i pack1, pack2, res1, res2;
     const simde__m256i key_pack = simde_mm256_set1_epi32( key );
     const typeof(&key) restrict p_key =
       __builtin_assume_aligned( node->data, ALIGN_FOR_AVX512 );
     void * restrict const p_value = __builtin_assume_aligned( value_arr->data, ALIGN_FOR_AVX512 );
+    const uint64_t last_idx = (idx_next_empty_elem < UINT64_C(1) << table->log2_nr_keys) ?
+      idx_next_empty_elem : UINT64_C(1) << table->log2_nr_keys;
     for ( uint64_t idx = 0; idx < last_idx; idx += stride ) {
       pack1 = simde_mm256_load_si256( (void*)(p_key + idx) );
       pack2 = simde_mm256_load_si256( (void*)(p_key + idx) + ALIGN_FOR_AVX );
@@ -362,7 +359,7 @@ void * infos_hashtable_search_3( const struct infos_hashtable * table,
     }
 
     if ( !node->next ) {
-      return 0;
+      return nullptr;
     }
     node = node->next;
     // node_idx++;

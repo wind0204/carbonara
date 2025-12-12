@@ -47,6 +47,17 @@ void * default_malloc_vk( [[maybe_unused]] void * userdata, size_t size, size_t 
 }
 
 //-------------------------------------------------------------------------------------------------
+void * vk_malloc_wrapper( void * p_VkAllocationCallbacks, size_t alignment, size_t size )
+{
+  assume( _is_power_of_two(alignment) );
+  size = _align_to_power_of_two( size, alignment );
+
+  VkAllocationCallbacks * p_vk_alloc_cb = p_VkAllocationCallbacks;
+  void * ret = p_vk_alloc_cb->pfnAllocation( p_vk_alloc_cb->pUserData, size, alignment, 0 );
+  return ret;
+}
+
+//-------------------------------------------------------------------------------------------------
 void * default_realloc(
     [[maybe_unused]] void * userdata,
     void * orig_ptr, size_t size, [[maybe_unused]] size_t alignment )

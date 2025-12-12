@@ -3,6 +3,7 @@
 
 #include "err_msg.h"
 #include "info_struct.h"
+#include "util-spall.h"
 
 
 //-------------------------------------------------------------------------------------------------
@@ -13,6 +14,7 @@ enum err_msg infos_pm_init_prealloc(
     void * (*custom_malloc)(void * userdata, size_t alignment, size_t size)
     )
 {
+  SPALL_BEGIN("pm_init");
   assume( nr_pages >= 2 );
 
   p_pm->nr_unused_pages = nr_pages;
@@ -29,6 +31,7 @@ enum err_msg infos_pm_init_prealloc(
   void * alloc = local_malloc( userdata, ALIGN_FOR_AVX,
       rental_info_node_size + available_ranges_node_size );
   if ( !alloc ) {
+    SPALL_END();
     return err_msg_out_of_memory;
   }
 
@@ -65,6 +68,7 @@ enum err_msg infos_pm_init_prealloc(
   first_available_range->start = 0;
   first_available_range->stop = nr_pages - 1;
 
+  SPALL_END();
   return 0;
 }
 
@@ -88,6 +92,7 @@ struct range_u32 * infos_pm_rent( struct infos_page_mgr * restrict pm,
     bool take_from_left
     )
 {
+  SPALL_BEGIN("pm_rent");
   uint64_t nr_elems = UINT64_C(1) << pm->al_vacancies.log2_nr_elems;
   uint64_t base_vidx = 0;
   struct infos_singly_linked_list_node * restrict v_node = &pm->al_vacancies.list.head;
@@ -96,6 +101,7 @@ struct range_u32 * infos_pm_rent( struct infos_page_mgr * restrict pm,
       if ( base_vidx + vacancy_idx > pm->idx_last_vacancy ) {
         // Couldn't find a vacancy
         errno = ENOBUFS;
+        SPALL_END();
         return nullptr;
       }
 
@@ -148,6 +154,7 @@ take_and_return:
                 }
               }
 
+              SPALL_END();
               return rental;
             }
           }
@@ -165,6 +172,7 @@ take_and_return:
               break;
             default:
           }
+          SPALL_END();
           return nullptr;
         }
         r_node = infos_ll_get_last_node(&pm->al_rental_info.list.head);
@@ -196,6 +204,7 @@ take_and_return:
           }
         }
 
+        SPALL_END();
         return rental;
       }
     }
@@ -206,6 +215,7 @@ take_and_return:
 
   // Couldn't find a vacancy.
   errno = ENOBUFS;
+  SPALL_END();
   return nullptr;
 }
 
@@ -217,6 +227,7 @@ enum err_msg infos_pm_return( struct infos_page_mgr * restrict pm,
     uint32_t head_idx
     )
 {
+  SPALL_BEGIN("pm_return");
   struct infos_singly_linked_list_node * restrict r_node = &pm->al_rental_info.list.head;
   uint64_t nr_elems = UINT64_C(1) << pm->al_rental_info.log2_nr_elems;
   uint64_t base_ridx = 0;
@@ -225,6 +236,7 @@ enum err_msg infos_pm_return( struct infos_page_mgr * restrict pm,
       struct range_u32 * restrict rental_info;
       rental_info = r_node->data + rent_idx * sizeof(*rental_info);
       if ( base_ridx + rent_idx > pm->idx_last_rental_info ) {
+        SPALL_END();
         return err_msg_no_such_entry;
       }
 
@@ -283,6 +295,7 @@ mark_empty_and_return:
                     pm->idx_last_rental_info > 0 ) {
                   pm->idx_last_rental_info--;
                 }
+                SPALL_END();
                 return 0;
               }
             }
@@ -328,6 +341,7 @@ no_existing_range_to_merge:
                   pm->idx_last_rental_info > 0 ) {
                 pm->idx_last_rental_info--;
               }
+              SPALL_END();
               return 0;
             }
           }
@@ -352,6 +366,7 @@ populate_new_vacancy:
                 pm->idx_last_rental_info > 0 ) {
               pm->idx_last_rental_info--;
             }
+            SPALL_END();
             return 0;
           }
         } while ( v_node );
@@ -359,6 +374,7 @@ populate_new_vacancy:
         // Grow the linked array
         uint_fast8_t err = infos_al_grow( &pm->al_vacancies, userdata, custom_malloc, 1, 0 );
         if ( err ) {
+          SPALL_END();
           return err_msg_out_of_memory;
         }
         pm->nr_unused_pages -= UINT64_C(1) <<  pm->al_vacancies.log2_node_size;
@@ -377,6 +393,7 @@ populate_new_vacancy:
             pm->idx_last_rental_info > 0 ) {
           pm->idx_last_rental_info--;
         }
+        SPALL_END();
         return 0;
       }
 
@@ -387,5 +404,6 @@ populate_new_vacancy:
 
   } while ( r_node );
 
+  SPALL_END();
   return err_msg_no_such_entry;
 }

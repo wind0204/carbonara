@@ -273,7 +273,7 @@ void ma_free_amap( memorable_arena_t * arena, uint8_t idx_user );
 enum vk_buf_types : unsigned int {
   vk_buf_type_unknown = 0,
   vk_buf_type_transfer,
-  vk_buf_type_image_arr_8_2048,
+  vk_buf_type_tex8_2048,
   vk_buf_type_cnt,
 };
 struct vk_upload {
@@ -288,7 +288,7 @@ struct ma_vk_mem_mgr {
   void * p_staging_buf;         // ptr to a mapped memory region for the staging buffer
   VkDeviceSize * arr_usages;    // array of heap_cnt VkDeviceSize
   VkDeviceSize * arr_sizes;     // array of heap_cnt VkDeviceSize
-  uint32_t * arr_idx_next_unoccupied_elem;          // array of heap_cnt uint32_t for managing mal
+  //uint32_t * arr_idx_next_unoccupied_elem;          // array of heap_cnt uint32_t for managing mal
   uint32_t * arr_heap_indices;  // array of type_cnt uint32_t
   VkMemoryPropertyFlags * arr_mem_property_flags;   // array of type_cnt VkMemoryPropertyFlags
   static_assert( alignof(void*) >= alignof(VkDeviceMemory), "Sort the struct members!" );
@@ -299,7 +299,11 @@ struct ma_vk_mem_mgr {
   VkBuffer staging_buf;
   static_assert( alignof(VkBuffer) >= alignof(struct infos_multi_arr_list),
       "Sort the struct members!" );
-  struct infos_multi_arr_list mallocs;  // One array list per heap for VkDeviceMemory objects
+  struct infos_multi_arr_list page_mgrs;  ///< One array list per memory type. It stores
+                                          ///< infos_page_mgr_p2 objects for each "chunk of pages"
+  struct infos_multi_arr_list mallocs;  ///< One array list per memory type. It stores
+                                        ///< VkDeviceMemory objects for paging, each VkDeviceMemory
+                                        ///< object is one single "chunk of pages"
   struct infos_page_mgr uploads;        // Bookkeeper of staging buffer allocations
   uint32_t heap_cnt;
   uint32_t type_cnt;
@@ -307,13 +311,18 @@ struct ma_vk_mem_mgr {
   uint16_t len_non_coherent_atom;
   uint8_t arr_best_mtype_idx[vk_buf_type_cnt];
 };
+constexpr size_t len_chunk_of_pages = 1024ul * 1024 * 64;
+constexpr size_t mallocs_node_size = 1024ul * 1024 * 1024 * 8 / len_chunk_of_pages *
+  sizeof(VkDeviceMemory);
+constexpr size_t page_mgrs_node_size = mallocs_node_size / sizeof(VkDeviceMemory) *
+  sizeof(struct infos_page_mgr_p2);
 
 //-------------------------------------------------------------------------------------------------
 /**
  * \brief Start managing VkDeviceMemory objects
  */
 enum err_msg ma_init_vk_mem_mgr(
-    struct ma_vk_mem_mgr * vmm,
+    struct ma_vk_mem_mgr * p_vmm,
     VkPhysicalDeviceMemoryProperties2 * ptr_mem_properties,
     VkPhysicalDeviceLimits * limits,
     void * restrict userdata,
@@ -322,7 +331,7 @@ enum err_msg ma_init_vk_mem_mgr(
 
 //-------------------------------------------------------------------------------------------------
 void ma_destroy_vk_mem_mgr(
-    struct ma_vk_mem_mgr * vmm,
+    struct ma_vk_mem_mgr * p_vmm,
     VkDevice logical_dev,
     void * restrict userdata,
     void (*custom_free)(void * restrict userdata, void * restrict ptr)
@@ -330,14 +339,14 @@ void ma_destroy_vk_mem_mgr(
 
 //-------------------------------------------------------------------------------------------------
 enum err_msg ma_create_staging_buf(
-    struct ma_vk_mem_mgr * vmm,
+    struct ma_vk_mem_mgr * p_vmm,
     VkDevice logical_dev,
     unsigned int buf_len
     );
 
 //-------------------------------------------------------------------------------------------------
 enum err_msg prototype_create_vk_trans_bufs(
-    struct ma_vk_mem_mgr * vmm,
+    struct ma_vk_mem_mgr * p_vmm,
     VkDevice logical_device,
     unsigned int max_nr_pages,
     void * restrict userdata,
@@ -347,9 +356,20 @@ enum err_msg prototype_create_vk_trans_bufs(
 
 //-------------------------------------------------------------------------------------------------
 enum err_msg ma_prepare_upload_mgr(
-    struct ma_vk_mem_mgr * vmm,
+    struct ma_vk_mem_mgr * p_vmm,
     void * restrict userdata,
     void * (*custom_malloc)(void * userdata, size_t alignment, size_t size)
+    );
+
+//-------------------------------------------------------------------------------------------------
+enum err_msg ma_bind_img_to_malloc(
+    struct ma_vk_mem_mgr * p_vmm,
+    void * restrict userdata,
+    void * (*custom_malloc)(void * userdata, size_t alignment, size_t size),
+    VkDevice log_dev,
+    VkImage vk_img,
+    uint32_t type_idx,
+    VkDeviceSize size
     );
 
 //-------------------------------------------------------------------------------------------------

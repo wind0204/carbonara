@@ -1,3 +1,4 @@
+#include <SDL3/SDL_init.h>
 #if defined(__i386) || defined(__i386__) || defined(_M_IX86) || defined(__x86_64) \
     || defined(__x86_64__) || defined(__amd64) || defined(_M_X64)
   #ifdef _MSC_VER
@@ -27,6 +28,7 @@
 
 #include <SDL3/SDL_video.h>
 #include <SDL3/SDL_asyncio.h>
+#include <SDL3/SDL_events.h>
 #include <SDL3/SDL.h>
 
 #define SDL_MAIN_USE_CALLBACKS
@@ -90,8 +92,6 @@ static char * asset_buf8;
 // The maximum number of periodically executed jobs
 constexpr size_t max_nr_pjobs = 512 - 1;
 
-static constexpr unsigned int test_width = 1600;
-static constexpr unsigned int test_height = 900;
 
 
 //-------------------------------------------------------------------------------------------------
@@ -187,6 +187,32 @@ SDL_AppResult SDL_AppEvent( [[maybe_unused]] void *appstate, [[maybe_unused]] SD
   // reports success to the platform.
 
   // TODO a kind of "swapchain" buffers or a circular buffer?
+#if defined( DEBUG_MODE )
+  fprintf( stdout, "event->type = %u\n", event->type );
+  switch ( event->type ) {
+    case SDL_EVENT_WINDOW_EXPOSED:
+      fprintf( stdout, "  event->window.data1 = %d\n", event->window.data1 );
+      break;
+    case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED:
+      // TODO Use the information(1600 * 900)
+      fprintf( stdout, "  event->window.data1*data2 = %d*%d\n",
+          event->window.data1, event->window.data2 );
+break;
+  }
+#endif
+  switch ( event->type ) {
+    case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED:
+      union win_dims new_size = {
+        .parts.width = event->window.data1,
+        .parts.height = event->window.data2,
+      };
+      cara_vk.win_size.whole = new_size.whole;
+#if defined( DEBUG_MODE )
+      fprintf( stdout, "  cara_vk.win_size.parts.width and height = %u*%u\n",
+          cara_vk.win_size.parts.width, cara_vk.win_size.parts.height );
+#endif
+      break;
+  }
 
   return SDL_APP_CONTINUE;
 }
@@ -204,14 +230,7 @@ SDL_AppResult SDL_AppIterate( [[maybe_unused]] void *appstate )
     return SDL_APP_SUCCESS;
   }
 
-  /*
-
   static uint_fast8_t is_frame_id_even = 0;
-
-  //if ( atomic_load_explicit(&cara_vulkan.tmp_var_ready, memory_order_acquire) == 0 ) {
-  //  hold_up_thread( 1000 * 100 );
-  //  return SDL_APP_CONTINUE;
-  //}
 
 
   //
@@ -220,7 +239,7 @@ SDL_AppResult SDL_AppIterate( [[maybe_unused]] void *appstate )
 
 
 //-------------------------------------------------------------------------------------------------
-  // TODO Write code here for now but move them out of SDL_AppIterate later.
+  // TODO Write renderer here for now but move them out of SDL_AppIterate later.
   VkResult result;
 
   //
@@ -256,7 +275,7 @@ SDL_AppResult SDL_AppIterate( [[maybe_unused]] void *appstate )
   //
 
   // Begin recording on the primary buffer
-  VkCommandBuffer pri_trans_buf = cara_vk.trans_bufs.primary_cmd_buf;
+  VkCommandBuffer pri_trans_buf = cara_vk.trans_buf.primary_cmd_buf;
   // TODO synchronization needed
   result = vkBeginCommandBuffer( pri_trans_buf, &cmd_buf_begin_info );
   if( result != VK_SUCCESS ) {
@@ -265,8 +284,8 @@ SDL_AppResult SDL_AppIterate( [[maybe_unused]] void *appstate )
     return SDL_APP_FAILURE;
   }
 
+  // TODO Do memcpy in more than one thread
   // TODO Record a transfer command or execute a secondary command buffer
-
 
   //
   // Acquire a swapchain image
@@ -275,13 +294,14 @@ SDL_AppResult SDL_AppIterate( [[maybe_unused]] void *appstate )
     // Host access to `swapchain` must be externally synchronized
     // Host access to `semaphore` must be externally synchronized
     // Host access to `fence` must be externally synchronized
-  // TODO synchronization needed
+acquire_img:
   result = vkAcquireNextImageKHR( cara_vk.log_dev,
       cara_vk.swapchain,
       100000000,        // It specifies how long the function waits, in nanoseconds, if no image is
                         // available.
-      cara_vk.wsi_semaphore_acquire, // VK_NULL_HANDLE or a semaphore to signal.
-      VK_NULL_HANDLE,                         // VK_NULL_HANDLE or a fence to signal.
+      cara_vk.arr_acquire_semaphores[is_frame_id_even],  // VK_NULL_HANDLE or a semaphore to
+                                                         //  signal.
+      VK_NULL_HANDLE,                 // VK_NULL_HANDLE or a fence to signal.
                         // WARNING semaphore and fence must not both be equal to VK_NULL_HANDLE
       &img_idx );
   // When we acquire an image, we still may not use it immediately for our purposes. We need to
@@ -290,24 +310,55 @@ SDL_AppResult SDL_AppIterate( [[maybe_unused]] void *appstate )
   // an image. But we can also tell the driver that it should wait before it starts processing new
   // commands that use a given image. For this purpose, a semaphore is used, which, in general, is
   // a better option.
+
+  // If the window is resized to a smaller size, the display engine may not force you to change your
+  // swapchain image sizes. It may inform you of this through the VK_SUBOPTIMAL_KHR error code
+  // (though it may not give you even that if performance of presenting is not affected). However,
+  // if the window is resized to be larger, the display engine may throw VK_ERROR_OUT_OF_DATE_KHR.
+  // That is not something you can ignore. Nor is it something a display engine can promise to never
+  // give you.
   switch ( result ) {
     default:
+#if defined( DEBUG_MODE )
+      fprintf( stdout, "[Renderer-Debug] vkAcquireNextImageKHR=%d\n", result );
+      fprintf( stdout, "  cara_vk.win_size.parts.width and height = %u*%u\n",
+          cara_vk.win_size.parts.width, cara_vk.win_size.parts.height );
+      fprintf( stdout, "  cara_vk.max_win_size.parts.width and height = %u*%u\n",
+          cara_vk.max_win_size.parts.width, cara_vk.max_win_size.parts.height );
+#endif
       //
-      // TODO Recreate the swapchain? ( VK_ERROR_OUT_OF_DATE_KHR )
+      // Recreate the swapchain ( VK_ERROR_OUT_OF_DATE_KHR )
       //
-      // images used by the presentation engine must have a VK_IMAGE_LAYOUT_PRESENT_SRC_KHR
-      // layout. But if we want to render into an image, it must have a
-      // VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL layout. The operation of changing the layout is
-      // called a transition (refer to the Setting an image memory barrier recipe from Chapter 4,
-      // Resources and Memory).
-      //
-      break;
-    case VK_SUCCESS:
+
+      enum err_msg err;
+      err = expand_swapchain_and_framebuffer( &cara_vk );
+      if ( err ) {
+        return SDL_APP_FAILURE;
+      }
+      //VkViewport viewport;
+      //viewport.x = 0;
+      //viewport.y = 0;
+      //viewport.width = cara_vk.win_size.parts.width;
+      //viewport.height = cara_vk.win_size.parts.height;
+      //viewport.minDepth = .0f;
+      //viewport.maxDepth = 1.0f;
+      //vkCmdSetViewport( pri_cmd_buf, 0, 1, &viewport );
+
+      //VkRect2D scissor;
+      //scissor.offset = (VkOffset2D) { 0, 0 };
+      //scissor.extent = (VkExtent2D) { cara_vk.win_size.parts.width, cara_vk.win_size.parts.height };
+      //vkCmdSetScissor( pri_cmd_buf, 0, 1, &scissor );
+      goto acquire_img;
     case VK_SUBOPTIMAL_KHR:
-      // You might want to change the viewport and scissor
-      // TODO vkCmdSetViewport()
-      // TODO vkCmdSetScissor()
-      break;
+#if defined( DEBUG_MODE )
+      fprintf( stdout, "[Renderer-Debug] vkAcquireNextImageKHR=VK_SUBOPTIMAL_KHR\n" );
+      fprintf( stdout, "  cara_vk.win_size.parts.width and height = %u*%u\n",
+          cara_vk.win_size.parts.width, cara_vk.win_size.parts.height );
+      fprintf( stdout, "  cara_vk.max_win_size.parts.width and height = %u*%u\n",
+          cara_vk.max_win_size.parts.width, cara_vk.max_win_size.parts.height );
+#endif
+      [[fallthrough]];
+    case VK_SUCCESS:
   }
 
 
@@ -320,10 +371,6 @@ SDL_AppResult SDL_AppIterate( [[maybe_unused]] void *appstate )
   }
 
 
-  //
-  // TODO Create a VkImageView for the swapchain image
-  //
-
 
   //
   // Render the scene
@@ -334,7 +381,7 @@ SDL_AppResult SDL_AppIterate( [[maybe_unused]] void *appstate )
 
   // The commented lines below are about getting a secondary command buffer:
   //constexpr uint_fast8_t worker_idx = foobar;
-  //VkCommandBuffer cmd_buf = cara_get_arr_command_buffers_for_graphics(
+  //VkCommandBuffer pri_cmd_buf = cara_get_arr_command_buffers_for_graphics(
   //    cara_single.proc_map->nr_processors, is_frame_id_even )[
   //  worker_idx * cara_max_nr_subpasses];
   VkCommandBuffer pri_cmd_buf =
@@ -343,13 +390,201 @@ fprintf( stderr, "[DEBUG] cmd_buf=%lu; cara_vk.arr_framebuffers[%u].primary_comm
   ptr2ui(pri_cmd_buf),
   is_frame_id_even,
   ptr2ui(cara_vk.arr_frame_infos[is_frame_id_even].primary_cmd_buf) );
+
+  // TODO synchronization needed
+  // Begin recording on the primary command buffer for graphics
+#ifdef DEBUG_MODE
+  fprintf( stderr, "[Vulkan-Debug] GP cmd_buf=%#018lx\n", ptr2ui(pri_cmd_buf) );
+#endif
+  SPALL_BEGIN("begin_cmd_buf");
   // TODO synchronization needed
   result = vkBeginCommandBuffer( pri_cmd_buf, &cmd_buf_begin_info );
   if( result != VK_SUCCESS ) {
-    fprintf( stderr, "[Carbonara] Could not begin command buffer recording operation. '%s'\n",
+    fprintf( stderr, "[Carbonara] Could not begin command(graphics) buffer recording operation. "
+        "'%s'\n", string_VkResult(result) );
+    return SDL_APP_FAILURE;
+  }
+  SPALL_END();
+
+  //
+  // Bind descriptor sets to the pipeline layout
+  //
+  SPALL_BEGIN("bind_ds");
+  vkCmdBindDescriptorSets( pri_cmd_buf, VK_PIPELINE_BIND_POINT_GRAPHICS, cara_vk.pll_main_render,
+      0,  // The first set number
+      1, &cara_vk.ds_main_render,  // Descriptor sets
+      0, nullptr );  // Dynamic offsets
+                     // If any of the sets being bound include dynamic uniform or storage buffers,
+                     // then pDynamicOffsets includes one element for each array element in each
+                     // dynamic descriptor type binding in each set. Values are taken from
+                     // pDynamicOffsets in an order such that all entries for set N come before set
+                     // N+1; within a set, entries are ordered by the binding numbers in the
+                     // descriptor set layouts; and within a binding array, elements are in order
+  SPALL_END();
+
+
+  //
+  // Begin a renderpass
+  //
+  VkImageView arr_ivs[3];
+  arr_ivs[fb_depth] = cara_vk.zbuf_iv;
+  arr_ivs[fb_color] = cara_vk.cbuf_iv;
+  arr_ivs[fb_swapchain] = cara_vk.arr_swapchain_iv[img_idx];
+  VkRenderPassAttachmentBeginInfo rp_att_begin_info;
+  rp_att_begin_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_ATTACHMENT_BEGIN_INFO;
+  rp_att_begin_info.pNext = nullptr;
+  rp_att_begin_info.attachmentCount = _arr_elem_cnt( arr_ivs );
+  rp_att_begin_info.pAttachments = arr_ivs;
+  constexpr VkClearValue clear_val = (VkClearValue) { .depthStencil.depth = 1.0f };
+  VkRenderPassBeginInfo rp_begin_info;
+  rp_begin_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+  rp_begin_info.pNext = &rp_att_begin_info;
+  rp_begin_info.renderPass = cara_vk.render_pass;
+  rp_begin_info.pNext = nullptr;
+  rp_begin_info.framebuffer = cara_vk.framebuffer;
+  rp_begin_info.renderArea = (VkRect2D) { {0, 0},
+    {cara_vk.win_size.parts.width, cara_vk.win_size.parts.height} };
+  rp_begin_info.clearValueCount = 1;  // clearValueCount must be greater than the largest attachment
+                                      //  index in renderPass specifying a loadOp (or stencilLoadOp,
+                                      //  if the attachment has a depth/stencil format) of
+                                      //  VK_ATTACHMENT_LOAD_OP_CLEAR.
+  rp_begin_info.pClearValues = &clear_val;
+
+
+  // TODO acquire one swapchain img
+
+
+  // VK_SUBPASS_CONTENTS_INLINE  specifies that the contents of the subpass will be recorded inline
+  //  in the primary command buffer, and secondary command buffers must not be executed within the
+  //  subpass.
+  vkCmdBeginRenderPass( pri_cmd_buf, &rp_begin_info, VK_SUBPASS_CONTENTS_INLINE );
+
+  // TODO cs_depth_only
+
+  vkCmdNextSubpass( pri_cmd_buf, VK_SUBPASS_CONTENTS_INLINE );
+
+  // TODO cs_main_render
+
+
+  //
+  // Make barriers between cs_main_render and cs_copy_to_swapchain_img
+  //
+  VkImageMemoryBarrier2KHR img_bar;
+  img_bar.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2_KHR;
+  img_bar.pNext = nullptr;
+  img_bar.srcStageMask = VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT_KHR;
+  img_bar.dstStageMask = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT_KHR;
+  img_bar.srcAccessMask = VK_ACCESS_2_NONE_KHR;
+  img_bar.dstAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT_KHR;
+  img_bar.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+  img_bar.newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+  img_bar.srcQueueFamilyIndex = cara_vk.graphics_q_fam_idx;
+  img_bar.dstQueueFamilyIndex = cara_vk.graphics_q_fam_idx;
+  // If the values of srcQueueFamilyIndex and dstQueueFamilyIndex are equal, no ownership transfer
+  //  is performed, and the barrier operates as if they were both set to VK_QUEUE_FAMILY_IGNORED.
+  img_bar.image = cara_vk.arr_swapchain_imgs[img_idx];
+  img_bar.subresourceRange = (VkImageSubresourceRange) {
+    .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+      .baseMipLevel = 0,
+      .levelCount = 1,
+      .baseArrayLayer = 0,
+      .layerCount = 1,
+  };
+
+  VkDependencyInfoKHR dependency_info;
+  dependency_info.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO_KHR;
+  dependency_info.pNext = nullptr;
+  dependency_info.dependencyFlags =
+    VK_DEPENDENCY_QUEUE_FAMILY_OWNERSHIP_TRANSFER_USE_ALL_STAGES_BIT_KHR |
+    0;
+  dependency_info.memoryBarrierCount = 0;
+  dependency_info.pMemoryBarriers = nullptr;
+  //dependency_info.bufferMemoryBarrierCount = _arr_elem_cnt( buf_bar );
+  //dependency_info.pBufferMemoryBarriers = buf_bar;
+  dependency_info.bufferMemoryBarrierCount = 0;
+  dependency_info.pBufferMemoryBarriers = nullptr;
+  dependency_info.imageMemoryBarrierCount = 1;
+  dependency_info.pImageMemoryBarriers = &img_bar;
+  vkCmdNextSubpass( pri_cmd_buf, VK_SUBPASS_CONTENTS_INLINE );
+
+  // TODO cs_copy_to_swapchain_img
+
+  // End the render pass
+  vkCmdEndRenderPass( pri_cmd_buf );  // Recording this function in a command buffer performs multiple
+                                  // operations. Execution and memory dependencies are introduced
+                                  // (like the ones in memory barriers) and image layout transitions
+                                  // are performed—images are transitioned from layouts specified
+                                  // for the last subpass to the value of a final layout (refer to
+                                  // the Specifying attachment descriptions recipe). Also
+                                  // multisample resolving is performed on color attachments for
+                                  // which resolving was specified in the last subpass. Additionally
+                                  // for attachments whose contents should be preserved after the
+                                  // render pass, attachment data may be transferred from the cache
+                                  // to the image's memory.
+
+
+
+
+
+
+  //
+  // Prepare to submit the command buffer
+  //
+  VkSemaphoreSubmitInfoKHR semaphore_wait_info;
+  semaphore_wait_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO_KHR;
+  semaphore_wait_info.pNext = nullptr;
+  semaphore_wait_info.semaphore = cara_vk.arr_semaphore_before_A[is_frame_id_even];
+  semaphore_wait_info.value = csb_data_transfer_done;
+  semaphore_wait_info.stageMask = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT_KHR;
+  semaphore_wait_info.deviceIndex = 0;
+
+  VkSemaphoreSubmitInfoKHR semaphore_sgnl_info;
+  semaphore_sgnl_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO_KHR;
+  semaphore_sgnl_info.pNext = nullptr;
+  semaphore_sgnl_info.semaphore = cara_vk.arr_semaphore_after_A[is_frame_id_even];
+  semaphore_sgnl_info.value = csb_present_swapchain_img;
+  semaphore_sgnl_info.stageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT_KHR;
+  semaphore_sgnl_info.deviceIndex = 0;
+
+
+  VkCommandBufferSubmitInfoKHR cmd_buf_submit_info;
+  cmd_buf_submit_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO_KHR;
+  cmd_buf_submit_info.pNext = nullptr;
+  cmd_buf_submit_info.commandBuffer = pri_cmd_buf;
+  cmd_buf_submit_info.deviceMask = 0;
+
+
+  VkSubmitInfo2 submit_info;
+  submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2_KHR;
+  submit_info.pNext = nullptr;
+  submit_info.flags = 0;
+
+  submit_info.waitSemaphoreInfoCount = 1;
+  submit_info.pWaitSemaphoreInfos = &semaphore_wait_info;
+  submit_info.commandBufferInfoCount = 1;
+  submit_info.pCommandBufferInfos = &cmd_buf_submit_info;
+  submit_info.signalSemaphoreInfoCount = 1;
+  submit_info.pSignalSemaphoreInfos = &semaphore_sgnl_info;
+
+  // End recording
+  SPALL_BEGIN("end_cmd_buf");
+  result = vkEndCommandBuffer( pri_cmd_buf );
+  if( result != VK_SUCCESS ) {
+    fprintf( stderr, "[Carbonara] Error occurred ending command buffer recording.(1c) '%s'\n",
         string_VkResult(result) );
     return SDL_APP_FAILURE;
   }
+  SPALL_END();
+
+  // Submit
+  SPALL_BEGIN("submit_cmd_buf");
+  result = vkQueueSubmit2KHR( cara_vk.graphics_q, 1, &submit_info, VK_NULL_HANDLE );
+  if ( result != VK_SUCCESS ) {
+    fprintf( stderr, "[Carbonara-Debug] vkQueueSubmit2KHR failed.. (result=%s)\n",
+        string_VkResult(result) );
+    return SDL_APP_FAILURE;
+  }
+  SPALL_END();
 
   // TODO Draw background
   // TODO Draw a triangle
@@ -363,91 +598,52 @@ fprintf( stderr, "[DEBUG] cmd_buf=%lu; cara_vk.arr_framebuffers[%u].primary_comm
   // TODO Move the light sources
 
 
-  VkSemaphoreSubmitInfoKHR wait_semaphores[1];
-  for ( unsigned int i = 0; i < _arr_elem_cnt(wait_semaphores); i++ ) {
-    wait_semaphores[i].sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO_KHR;
-    wait_semaphores[i].pNext = nullptr;
-    wait_semaphores[i].stageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT_KHR;
-    wait_semaphores[i].deviceIndex = 0;
-  }
-  wait_semaphores[0].semaphore = cara_vk.main_semaphore_before_A[is_frame_id_even];
-  wait_semaphores[0].value = csb_rast_done;
-
-  VkSemaphoreSubmitInfoKHR signal_semaphores[2];
-  for ( unsigned int i = 0; i < _arr_elem_cnt(signal_semaphores); i++ ) {
-    signal_semaphores[i].sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO_KHR;
-    signal_semaphores[i].pNext = nullptr;
-    signal_semaphores[i].stageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT_KHR;
-    signal_semaphores[i].deviceIndex = 0;
-  }
-  signal_semaphores[0].semaphore = cara_vk.main_semaphore_after_A[is_frame_id_even];
-  signal_semaphores[0].value = csb_rast_done;
-  signal_semaphores[1].semaphore = cara_vk.arr_wsi_semaphore_present[img_idx];
-  signal_semaphores[1].value = 0;  // Ignored when it's a binary semaphore
-
-  VkCommandBufferSubmitInfoKHR cmd_buf_submit_info;
-  cmd_buf_submit_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO_KHR;
-  cmd_buf_submit_info.pNext = nullptr;
-  cmd_buf_submit_info.commandBuffer = pri_cmd_buf;
-  cmd_buf_submit_info.deviceMask = 0;
-
-  VkSubmitInfo2 submit_info;
-  submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2_KHR;
-  submit_info.pNext = nullptr;
-  submit_info.flags = 0;
-  submit_info.waitSemaphoreInfoCount = _arr_elem_cnt( wait_semaphores );
-  submit_info.pWaitSemaphoreInfos = wait_semaphores;
-  submit_info.commandBufferInfoCount = 1;
-  submit_info.pCommandBufferInfos = &cmd_buf_submit_info;
-  submit_info.signalSemaphoreInfoCount = _arr_elem_cnt( signal_semaphores );
-  submit_info.pSignalSemaphoreInfos = signal_semaphores;
-
-  // End recording
-  // TODO synchronization needed
-  result = vkEndCommandBuffer( pri_cmd_buf );
-  if( result != VK_SUCCESS ) {
-    fprintf( stderr, "[Carbonara] Error occurred ending command buffer recording.(c) '%s'\n",
-        string_VkResult(result) );
-    return SDL_APP_FAILURE;
-  }
-
-  // TODO synchronization needed
-  result = vkQueueSubmit2KHR( cara_vk.graphics_q, 1, &submit_info, VK_NULL_HANDLE );
-  if ( result != VK_SUCCESS ) {
-    fprintf( stderr, "[Carbonara-Debug] vkQueueSubmit2KHR failed.. (result=%s)\n",
-        string_VkResult(result) );
-    //infos_pm_destroy( &cara_vk.vmm.uploads, &ws->worker_info->idx_self, cara_free );
-    return SDL_APP_FAILURE;
-  }
-
-
+  uint64_t wait_val = csb_data_transfer_done;
+  VkSemaphoreWaitInfo wait_info;
+  wait_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO;
+  wait_info.pNext = nullptr;
+  wait_info.flags = 0;
+  wait_info.semaphoreCount = 1;
+  wait_info.pSemaphores = &cara_vk.arr_semaphore_before_A[is_frame_id_even];
+  wait_info.pValues = &wait_val;
+  SPALL_BEGIN("wait_transfer");
+  vkWaitSemaphores( cara_vk.log_dev, &wait_info, 1000*1000*UINT64_C(20) );
+  SPALL_END();
 
   // Explicitly reset the command buffers instead of implicitly resetting by beginning to record
   constexpr bool release_resources = false;  // XXX what is this?
   // For transfer commands
   // TODO Host access to `commandPool` must be externally synchronized
+  SPALL_BEGIN("reset_transfer_cmd_pool");
   result = vkResetCommandPool(
       cara_vk.log_dev,
-      cara_vk.trans_bufs.arr_cmd_pools[
+      cara_vk.trans_buf.arr_cmd_pools[
         cara_single.proc_map->nr_processors ],
       release_resources ? VK_COMMAND_POOL_RESET_RELEASE_RESOURCES_BIT : 0 );
   if( result != VK_SUCCESS ) {
-    fprintf( stderr, "[Carbonara] Error occurred during command buffer reset. '%s'\n",
+    fprintf( stderr, "[Carbonara] Error occurred during command buffer reset.(t) '%s'\n",
         string_VkResult(result) );
     return SDL_APP_FAILURE;
   }
-  // For graphics commands
-  // TODO Host access to `commandPool` must be externally synchronized
+  SPALL_END();
+
+  wait_val = csb_present_swapchain_img;
+  wait_info.pSemaphores = &cara_vk.arr_semaphore_after_A[is_frame_id_even];
+  SPALL_BEGIN("wait_graphics");
+  vkWaitSemaphores( cara_vk.log_dev, &wait_info, 1000*1000*UINT64_C(20) );
+  SPALL_END();
+  SPALL_BEGIN("reset_graphics_cmd_pool");
   result = vkResetCommandPool(
       cara_vk.log_dev,
       cara_vk.arr_frame_infos[is_frame_id_even].arr_cmd_pools[
         cara_single.proc_map->nr_processors ],
       release_resources ? VK_COMMAND_POOL_RESET_RELEASE_RESOURCES_BIT : 0 );
   if( result != VK_SUCCESS ) {
-    fprintf( stderr, "[Carbonara] Error occurred during command buffer reset. '%s'\n",
+    fprintf( stderr, "[Carbonara] Error occurred during command buffer reset.(g) '%s'\n",
         string_VkResult(result) );
     return SDL_APP_FAILURE;
   }
+  SPALL_END();  // reset_graphics_cmd_pool
 
 
 
@@ -455,24 +651,23 @@ fprintf( stderr, "[DEBUG] cmd_buf=%lu; cara_vk.arr_framebuffers[%u].primary_comm
   // This part stays in SDL_AppIterate or the graphics leader
 
   //
-  // TODO Present the rendered image
+  // Present the rendered image
   //
 
   // TODO Before we can submit an image, we need to change its layout to a VK_IMAGE_LAYOUT_PRESENT_SRC_KHR or the presentation engine may be not able to correctly display such an image.
 
-  // TODO Present one image per swapchain
   VkPresentInfoKHR present_info;
   present_info.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
   present_info.pNext = nullptr;
   present_info.waitSemaphoreCount = 1;
-  present_info.pWaitSemaphores = &cara_vk.arr_wsi_semaphore_present[img_idx];
+  present_info.pWaitSemaphores = &cara_vk.arr_wsi_present_semaphores[img_idx];
   present_info.swapchainCount = 1;
   present_info.pSwapchains = &cara_vk.swapchain;
   present_info.pImageIndices = &img_idx;
   present_info.pResults = nullptr;  // Applications that do not need per-swapchain results can
                                     // use NULL for pResults.
 
-  */
+
   if ( a % 1000000 == 0 ) {
     fprintf( stdout, "[TEST] a = %lu\n", a );
     if ( a > 1000000 ) {
@@ -480,21 +675,18 @@ fprintf( stderr, "[DEBUG] cmd_buf=%lu; cara_vk.arr_framebuffers[%u].primary_comm
     }
   }
   a++;
-  return SDL_APP_CONTINUE;
-  /*
 
   // TODO Host access to queue must be externally synchronized
   result = vkQueuePresentKHR( cara_vk.graphics_q, &present_info );
   switch( result ) {
-  case VK_SUCCESS:
-    return SDL_APP_CONTINUE;
+    case VK_SUCCESS:
+      return SDL_APP_CONTINUE;
   default:
-    fprintf( stderr, "[Carbonara] Error presenting an image. '%s'\n",
-        string_VkResult(result) );
+    fprintf( stderr, "[Carbonara] Error presenting an image. '%s'\n", string_VkResult(result) );
     return SDL_APP_FAILURE;
   }
-  */
 
+  //return SDL_APP_CONTINUE;
 }
 
 
@@ -2049,16 +2241,16 @@ static enum err_msg verbosee_integrity_check_bc7_2048( const char * data )
   return 0;
 }
 
+
 //-------------------------------------------------------------------------------------------------
 __attribute__ ((target ("lzcnt")))
 void jf_kickstart( struct cara_worker_state * ws )
 {
-  VkDeviceMemory * malloc = nullptr;
+  uint32_t heap_idx = UINT_MAX_(heap_idx);
   //struct func_call_stack_element func_call_stack_element;
 
   atomic_init( &cara_single.is_frame_id_even, 0 );
   uint_fast8_t is_frame_id_even = 0;
-
 
 
   // TODO move the code below away!
@@ -2073,7 +2265,7 @@ void jf_kickstart( struct cara_worker_state * ws )
     goto stop_everything_after_failure;
   }
 
-  SPALL_BEGIN("check_out_vulkan");
+  SPALL_BEGIN("vulkan_renderer_setup");
   if ( ma_create_staging_buf(&cara_vk.vmm, cara_vk.log_dev, 0) ) {
     fprintf( stderr, "[Carbonara-Debug] ma_create_vk_trans_bufs failed..\n" );
     goto stop_everything_after_failure;
@@ -2131,7 +2323,7 @@ void jf_kickstart( struct cara_worker_state * ws )
   img_create_info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
   SPALL_BEGIN("create_img");
   VkResult result = vkCreateImage( cara_vk.log_dev,
-      &img_create_info, &vk_alloc_callbacks, &cara_vk.vki_8_2048_tex
+      &img_create_info, &vk_alloc_callbacks, &cara_vk.tex8_2048
       //&img_create_info, nullptr, &cara_vk.vki_8_2048_tex
       );
   if ( result != VK_SUCCESS ) {
@@ -2143,7 +2335,7 @@ void jf_kickstart( struct cara_worker_state * ws )
 
   // Obtain the requirements
   VkMemoryRequirements req;
-  vkGetImageMemoryRequirements( cara_vk.log_dev, cara_vk.vki_8_2048_tex, &req );
+  vkGetImageMemoryRequirements( cara_vk.log_dev, cara_vk.tex8_2048, &req );
 
   // Choose the best memory type
   VkMemoryPropertyFlags preferred_props, required_props, tolerable_props;
@@ -2152,35 +2344,18 @@ void jf_kickstart( struct cara_worker_state * ws )
   tolerable_props = 0;
   const uint32_t type_idx = ma_pick_best_mtype(
       &cara_vk.vmm, &req, required_props, preferred_props, tolerable_props );
+  heap_idx = cara_vk.vmm.arr_heap_indices[type_idx];
   // Save the best type for later?
-  cara_vk.vmm.arr_best_mtype_idx[vk_buf_type_image_arr_8_2048] = type_idx;
+  cara_vk.vmm.arr_best_mtype_idx[vk_buf_type_tex8_2048] = type_idx;
 
-  // Allocate memory
-  VkMemoryAllocateInfo buf_malloc_info;
-  buf_malloc_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-  buf_malloc_info.pNext = nullptr;
-  buf_malloc_info.allocationSize = req.size;
-  buf_malloc_info.memoryTypeIndex = type_idx;
-
-  malloc = infos_multi_al_get_elem( &cara_vk.vmm.mallocs, type_idx, 0 );
-  SPALL_BEGIN("alloc_mem");
-  result = vkAllocateMemory( cara_vk.log_dev,
-      &buf_malloc_info, &vk_alloc_callbacks, malloc
-      //&buf_malloc_info, nullptr, malloc
-      );
-  if( result != VK_SUCCESS ) {
+  err = ma_bind_img_to_malloc( &cara_vk.vmm, &ws->malloc_helper, cara_malloc,
+      cara_vk.log_dev, cara_vk.tex8_2048, type_idx, req.size );
+  if ( err ) {
+    fprintf( stderr, "Error occured in ma_bind_img_to_malloc. (%s)\n", err_msg_text[err] );
     goto stop_everything_after_failure;
   }
-  SPALL_END();
-  cara_vk.vmm.arr_usages[type_idx] += req.size;
 
-  // Bind the image to the first allocation of type_idx type
-  SPALL_BEGIN("bind_img_mem");
-  result = vkBindImageMemory( cara_vk.log_dev, cara_vk.vki_8_2048_tex, *malloc, 0 );
-  if( result != VK_SUCCESS ) {
-    goto stop_everything_after_failure;
-  }
-  SPALL_END();
+
 
   VkCommandBufferBeginInfo cmd_buf_begin_info;
   cmd_buf_begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
@@ -2212,13 +2387,7 @@ void jf_kickstart( struct cara_worker_state * ws )
   }
   SPALL_END();
 
-  VkImageSubresourceRange img_subres_range;
-  img_subres_range.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-  img_subres_range.baseMipLevel = 0;    // 2048(0)
-  img_subres_range.levelCount = nr_miplevels;
-  img_subres_range.baseArrayLayer = 0;  // Stone-
-  img_subres_range.layerCount = 2;      // Stone and sand
-  
+
 
   //
   // Make barriers between zero and transfer
@@ -2249,12 +2418,18 @@ void jf_kickstart( struct cara_worker_state * ws )
   img_bar.dstAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT_KHR;
   img_bar.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
   img_bar.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-  //img_bar.srcQueueFamilyIndex = cara_vk.trans_q_fam_idx;
-  //img_bar.dstQueueFamilyIndex = cara_vk.trans_q_fam_idx;
-  img_bar.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-  img_bar.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-  img_bar.image = cara_vk.vki_8_2048_tex;
-  img_bar.subresourceRange = img_subres_range;
+  img_bar.srcQueueFamilyIndex = cara_vk.trans_q_fam_idx;
+  img_bar.dstQueueFamilyIndex = cara_vk.trans_q_fam_idx;
+  // If the values of srcQueueFamilyIndex and dstQueueFamilyIndex are equal, no ownership transfer
+  //  is performed, and the barrier operates as if they were both set to VK_QUEUE_FAMILY_IGNORED.
+  img_bar.image = cara_vk.tex8_2048;
+  img_bar.subresourceRange = (VkImageSubresourceRange) {
+    .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+      .baseMipLevel = 0,
+      .levelCount = nr_miplevels,
+      .baseArrayLayer = 0,
+      .layerCount = 2,
+  };
 
   VkDependencyInfoKHR dependency_info;
   dependency_info.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO_KHR;
@@ -2307,7 +2482,7 @@ void jf_kickstart( struct cara_worker_state * ws )
   vkCmdCopyBufferToImage(
       trans_buf,
       cara_vk.vmm.staging_buf,
-      cara_vk.vki_8_2048_tex,
+      cara_vk.tex8_2048,
       VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
       _arr_elem_cnt( arr_regions ),
       arr_regions
@@ -2333,21 +2508,30 @@ void jf_kickstart( struct cara_worker_state * ws )
 
   //img_bar.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2_KHR;
   //img_bar.pNext = nullptr;
-  img_bar.srcStageMask = VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT_KHR;
-  img_bar.dstStageMask = VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT_KHR;
+  img_bar.srcStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT_KHR;
+  img_bar.dstStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT_KHR;
+  // Prior to the intro. of VK_DEPENDENCY_QUEUE_FAMILY_OWNERSHIP_TRANSFER_USE_ALL_STAGES_BIT_KHR,
+  //  VK_PIPELINE_STAGE_ALL_COMMANDS_BIT is the only valid stage to wait on or wait for these
+  //  operations, as the acquire and release operations do not occur in a defined stage.
   img_bar.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT_KHR;
   img_bar.dstAccessMask = VK_ACCESS_2_SHADER_SAMPLED_READ_BIT_KHR;
   img_bar.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
   img_bar.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-  //img_bar.srcQueueFamilyIndex = cara_vk.trans_q_fam_idx;
-  //img_bar.dstQueueFamilyIndex = cara_vk.graphics_q_fam_idx;
   img_bar.srcQueueFamilyIndex = cara_vk.trans_q_fam_idx;
   img_bar.dstQueueFamilyIndex = cara_vk.graphics_q_fam_idx;
-  img_bar.image = cara_vk.vki_8_2048_tex;
-  img_bar.subresourceRange = img_subres_range;
+  img_bar.image = cara_vk.tex8_2048;
+  img_bar.subresourceRange = (VkImageSubresourceRange) {
+    .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+      .baseMipLevel = 0,
+      .levelCount = nr_miplevels,
+      .baseArrayLayer = 0,
+      .layerCount = 2,
+  };
 
   dependency_info.dependencyFlags =
-    VK_DEPENDENCY_QUEUE_FAMILY_OWNERSHIP_TRANSFER_USE_ALL_STAGES_BIT_KHR;
+    //VK_DEPENDENCY_QUEUE_FAMILY_OWNERSHIP_TRANSFER_USE_ALL_STAGES_BIT_KHR |  // Can't use this when
+                //the queue associated with srcQueueFamilyIndex doesn't have access to dstStageMask
+    0;
   dependency_info.memoryBarrierCount = 0;
   dependency_info.pMemoryBarriers = nullptr;
   dependency_info.bufferMemoryBarrierCount = 0;
@@ -2409,37 +2593,24 @@ void jf_kickstart( struct cara_worker_state * ws )
   SPALL_END();
 
 
-  // Begin recording on the primary command buffer for graphics
-  VkCommandBuffer cmd_buf = cara_vk.arr_frame_infos[is_frame_id_even].primary_cmd_buf;
-#ifdef DEBUG_MODE
-  fprintf( stderr, "[Vulkan-Debug] GP cmd_buf=%#018lx\n", ptr2ui(cmd_buf) );
-#endif
-  SPALL_BEGIN("begin_cmd_buf");
-  // TODO synchronization needed
-  result = vkBeginCommandBuffer( cmd_buf, &cmd_buf_begin_info );
-  if( result != VK_SUCCESS ) {
-    fprintf( stderr, "[Carbonara] Could not begin command(graphics) buffer recording operation. "
-        "'%s'\n", string_VkResult(result) );
-    goto stop_everything_after_failure;
-  }
-  SPALL_END();
 
-  //
-  // Make barriers between transfer and sampling
-  //
-  img_bar.srcStageMask = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT_KHR;
-  img_bar.dstStageMask = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT_KHR;
-  SPALL_BEGIN("barrier_2");
-  vkCmdPipelineBarrier2KHR( cmd_buf, &dependency_info );
-  SPALL_END();
+  // result = vkBeginCommandBuffer( cmd_buf, &cmd_buf_begin_info );
+  ////
+  //// Make barriers between transfer and sampling
+  ////
+  //img_bar.srcStageMask = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT_KHR;
+  //img_bar.dstStageMask = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT_KHR;
+  //SPALL_BEGIN("barrier_2");
+  //vkCmdPipelineBarrier2KHR( cmd_buf, &dependency_info );
+  //SPALL_END();
 
 
-  // Create a VkImageView
+  // Create a VkImageView for the texture array
   VkImageViewCreateInfo iv_create_info;
   iv_create_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
   iv_create_info.pNext = nullptr;
   iv_create_info.flags = 0;
-  iv_create_info.image = cara_vk.vki_8_2048_tex;
+  iv_create_info.image = cara_vk.tex8_2048;
   iv_create_info.viewType = VK_IMAGE_VIEW_TYPE_2D_ARRAY;
   iv_create_info.format = VK_FORMAT_BC7_UNORM_BLOCK;
   iv_create_info.components = (VkComponentMapping) {
@@ -2448,11 +2619,17 @@ void jf_kickstart( struct cara_worker_state * ws )
     VK_COMPONENT_SWIZZLE_IDENTITY,
     VK_COMPONENT_SWIZZLE_IDENTITY  // What about VK_COMPONENT_SWIZZLE_ONE
   };
-  iv_create_info.subresourceRange = img_subres_range;
+  img_bar.subresourceRange = (VkImageSubresourceRange) {
+    .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+      .baseMipLevel = 0,
+      .levelCount = nr_miplevels,
+      .baseArrayLayer = 0,
+      .layerCount = 2,
+  };
 
   SPALL_BEGIN("create_iv");
   result = vkCreateImageView( cara_vk.log_dev, &iv_create_info,
-      &vk_alloc_callbacks, &cara_vk.iv_8_2048_tex
+      &vk_alloc_callbacks, &cara_vk.tex8_2048_iv
       //nullptr, &cara_vk.iv_8_2048_tex
       );
   if ( result != VK_SUCCESS ) {
@@ -2461,6 +2638,7 @@ void jf_kickstart( struct cara_worker_state * ws )
     goto stop_everything_after_failure;
   }
   SPALL_END();
+
 
   //
   // Prepare a descriptor set layout
@@ -2491,7 +2669,7 @@ void jf_kickstart( struct cara_worker_state * ws )
   sampler_create_info.unnormalizedCoordinates = VK_FALSE;
   SPALL_BEGIN("create_sampler");
   result = vkCreateSampler( cara_vk.log_dev, &sampler_create_info,
-      &vk_alloc_callbacks, &cara_vk.sampler_8_2048_tex
+      &vk_alloc_callbacks, &cara_vk.sampler8_2048
       //nullptr, &cara_vk.sampler_8_2048_tex
       );
   if ( result != VK_SUCCESS ) {
@@ -2581,7 +2759,7 @@ void jf_kickstart( struct cara_worker_state * ws )
     arr_bindings_main_render[i].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     arr_bindings_main_render[i].descriptorCount = 1;
     arr_bindings_main_render[i].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-    arr_bindings_main_render[i].pImmutableSamplers = &cara_vk.sampler_8_2048_tex;
+    arr_bindings_main_render[i].pImmutableSamplers = &cara_vk.sampler8_2048;
   }
 
   // Bindings for cs_copy_to_swapchain_img
@@ -2627,6 +2805,7 @@ void jf_kickstart( struct cara_worker_state * ws )
     goto stop_everything_after_failure;
   }
   SPALL_END();
+
 
   //
   // Create a descriptor pool
@@ -2676,12 +2855,13 @@ void jf_kickstart( struct cara_worker_state * ws )
   }
   SPALL_END();
 
+
   //
   // Write on the descriptor
   //
   VkDescriptorImageInfo desc_img_info;
-  desc_img_info.sampler = cara_vk.sampler_8_2048_tex;
-  desc_img_info.imageView = cara_vk.iv_8_2048_tex;
+  desc_img_info.sampler = cara_vk.sampler8_2048;
+  desc_img_info.imageView = cara_vk.tex8_2048_iv;
   desc_img_info.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
   VkWriteDescriptorSet arr_desc_writes[1];
   arr_desc_writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
@@ -2772,6 +2952,7 @@ void jf_kickstart( struct cara_worker_state * ws )
   }
   SPALL_END();
 
+
   //
   // Shader stages
   //
@@ -2821,9 +3002,11 @@ void jf_kickstart( struct cara_worker_state * ws )
   copy2sc_plss_create_info[fragment].module = cara_vk.sm_copy2sc_frag;
   copy2sc_plss_create_info[fragment].pName = "frag_main";
 
+
   //
   // Vertex input binding description
   //
+
   // Vertex input binding description for depth-only prepass
   VkVertexInputBindingDescription vib_desc_depth_only;
   vib_desc_depth_only.binding = 0;
@@ -2889,9 +3072,11 @@ void jf_kickstart( struct cara_worker_state * ws )
   plias_create_info.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
   plias_create_info.primitiveRestartEnable = VK_FALSE;
 
+
   //
   // Viewport ans scissor test
   //
+
   // The viewport and scissor test state is optional, though commonly used—we don't need to provide
   //  it when rasterization is disabled.
   VkViewport viewport;
@@ -2899,12 +3084,12 @@ void jf_kickstart( struct cara_worker_state * ws )
   VkRect2D scissor;
   viewport.x = 0;
   viewport.y = 0;
-  viewport.width = test_width;
-  viewport.height = test_height;
+  viewport.width = small_win_width;
+  viewport.height = small_win_height;
   viewport.minDepth = .0f;
   viewport.maxDepth = 1.0f;
   scissor.offset = (VkOffset2D) {0};
-  scissor.extent = (VkExtent2D) { test_width, test_height };
+  scissor.extent = (VkExtent2D) { small_win_width, small_win_height };
   // If we want to change some of the viewport or scissor test parameters, we need to recreate a
   //  pipeline. But during the pipeline creation, we can specify that the viewport and scissor test
   //  parameters are dynamic. This way, we don't need to recreate a pipeline to change these
@@ -2920,9 +3105,11 @@ void jf_kickstart( struct cara_worker_state * ws )
   plvps_create_info.scissorCount = 1;
   plvps_create_info.pScissors = &scissor;
 
+
   //
   // VkPipelineRasterizationStateCreateInfo
   //
+
   // A rasterization state is always required during the graphics pipeline creation.
   // In OpenGL, by default, counterclockwise faces were considered front and culling was disabled.
   //  In Vulkan, there is no default state so how we define these parameters is up to us.
@@ -2950,6 +3137,7 @@ void jf_kickstart( struct cara_worker_state * ws )
   plrs_create_info.depthBiasSlopeFactor = .0f;
   plrs_create_info.lineWidth = 1.0f;
 
+
   //
   // MSAA
   //
@@ -2963,6 +3151,7 @@ void jf_kickstart( struct cara_worker_state * ws )
   plmss_create_info.pSampleMask = nullptr;
   plmss_create_info.alphaToCoverageEnable = VK_FALSE;
   plmss_create_info.alphaToOneEnable = VK_FALSE;
+
 
   //
   // Depth/Stencil
@@ -2997,9 +3186,11 @@ void jf_kickstart( struct cara_worker_state * ws )
   pldss_create_info.minDepthBounds = .0f;
   pldss_create_info.maxDepthBounds = 1.0f;
 
+
   //
   // VkPipelineColorBlendAttachmentState
   //
+
   // The blending state is optional and is not required if rasterization is disabled or when there
   //  are no color attachments in a subpass, in which a given graphics pipeline is used.
   VkPipelineColorBlendAttachmentState plcbas;
@@ -3031,6 +3222,7 @@ void jf_kickstart( struct cara_worker_state * ws )
   //
   // Dynamic states
   //
+
   // Define the dynamic parts of the pipeline
   VkDynamicState dynamic_states[] = {
     VK_DYNAMIC_STATE_VIEWPORT,  // vkCmdSetViewport()
@@ -3042,6 +3234,7 @@ void jf_kickstart( struct cara_worker_state * ws )
   plds_create_info.flags = 0;
   plds_create_info.dynamicStateCount = _arr_elem_cnt( dynamic_states );
   plds_create_info.pDynamicStates = dynamic_states;
+
 
   //
   // Create a pipeline layout
@@ -3108,6 +3301,7 @@ void jf_kickstart( struct cara_worker_state * ws )
   }
   SPALL_END();
 
+
   //
   // Create a graphics pipeline
   //
@@ -3125,8 +3319,8 @@ void jf_kickstart( struct cara_worker_state * ws )
                         // to create a pipeline, we can use basePipelineHandle or basePipelineIndex
   }
 
-  SPALL_BEGIN("rp_n_fb");
-  err = create_renderpass_and_framebuffer( &cara_vk );
+  SPALL_BEGIN("1st_fb");
+  err = create_1st_renderpass_and_framebuffer( &cara_vk );
   SPALL_END();
   if ( err ) {
     goto stop_everything_after_failure;
@@ -3220,132 +3414,6 @@ void jf_kickstart( struct cara_worker_state * ws )
 
 
 
-
-  //
-  // Bind descriptor sets to the pipeline layout
-  //
-  SPALL_BEGIN("bind_ds");
-  vkCmdBindDescriptorSets( cmd_buf, VK_PIPELINE_BIND_POINT_GRAPHICS, cara_vk.pll_main_render,
-      0,  // The first set number
-      1, &cara_vk.ds_main_render,  // Descriptor sets
-      0, nullptr );  // Dynamic offsets
-                     // If any of the sets being bound include dynamic uniform or storage buffers,
-                     // then pDynamicOffsets includes one element for each array element in each
-                     // dynamic descriptor type binding in each set. Values are taken from
-                     // pDynamicOffsets in an order such that all entries for set N come before set
-                     // N+1; within a set, entries are ordered by the binding numbers in the
-                     // descriptor set layouts; and within a binding array, elements are in order
-  SPALL_END();
-
-
-  //
-  // Begin a renderpass
-  //
-  VkImageView arr_ivs[3];
-  arr_ivs[fb_depth] = cara_vk.iv_depth;
-  arr_ivs[fb_color] = cara_vk.iv_main_render_tgt;
-  arr_ivs[fb_swapchain] = cara_vk.iv_swapchain_img;
-  VkRenderPassAttachmentBeginInfoKHR rp_att_begin_info;
-  rp_att_begin_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_ATTACHMENT_BEGIN_INFO_KHR;
-  rp_att_begin_info.pNext = nullptr;
-  rp_att_begin_info.attachmentCount = _arr_elem_cnt( arr_ivs );
-  rp_att_begin_info.pAttachments = arr_ivs;
-  constexpr VkClearValue clear_val = (VkClearValue) { .depthStencil.depth = 1.0f };
-  VkRenderPassBeginInfo rp_begin_info;
-  rp_begin_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-  rp_begin_info.pNext = &rp_att_begin_info;
-  rp_begin_info.renderPass = cara_vk.render_pass;
-  rp_begin_info.pNext = nullptr;
-  rp_begin_info.framebuffer = cara_vk.framebuffer;
-  rp_begin_info.renderArea = (VkRect2D) { {0, 0}, {test_width, test_height} };
-  rp_begin_info.clearValueCount = 1;  // clearValueCount must be greater than the largest attachment
-                                      //  index in renderPass specifying a loadOp (or stencilLoadOp,
-                                      //  if the attachment has a depth/stencil format) of
-                                      //  VK_ATTACHMENT_LOAD_OP_CLEAR.
-  rp_begin_info.pClearValues = &clear_val;
-
-
-  // TODO acquire one swapchain img
-
-
-  // VK_SUBPASS_CONTENTS_INLINE  specifies that the contents of the subpass will be recorded inline
-  //  in the primary command buffer, and secondary command buffers must not be executed within the
-  //  subpass.
-  //vkCmdBeginRenderPass( cmd_buf, &rp_begin_info, VK_SUBPASS_CONTENTS_INLINE );
-
-  // TODO cs_depth_only
-
-  //vkCmdNextSubpass( cmd_buf, VK_SUBPASS_CONTENTS_INLINE );
-
-  // TODO cs_main_render_pass
-
-  //vkCmdNextSubpass( cmd_buf, VK_SUBPASS_CONTENTS_INLINE );
-
-  // TODO cs_copy_to_swapchain_img
-
-  // End the render pass
-  //vkCmdEndRenderPass( cmd_buf );  // Recording this function in a command buffer performs multiple
-                                  // operations. Execution and memory dependencies are introduced
-                                  // (like the ones in memory barriers) and image layout transitions
-                                  // are performed—images are transitioned from layouts specified
-                                  // for the last subpass to the value of a final layout (refer to
-                                  // the Specifying attachment descriptions recipe). Also
-                                  // multisample resolving is performed on color attachments for
-                                  // which resolving was specified in the last subpass. Additionally
-                                  // for attachments whose contents should be preserved after the
-                                  // render pass, attachment data may be transferred from the cache
-                                  // to the image's memory.
-
-
-
-
-
-
-  //
-  // Prepare to submit the command buffer
-  //
-  VkSemaphoreSubmitInfoKHR semaphore_wait_info;
-  semaphore_wait_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO_KHR;
-  semaphore_wait_info.pNext = nullptr;
-  semaphore_wait_info.semaphore = cara_vk.arr_semaphore_before_A[is_frame_id_even];
-  semaphore_wait_info.value = csb_data_transfer_done;
-  semaphore_wait_info.stageMask = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT_KHR;
-  semaphore_wait_info.deviceIndex = 0;
-
-  semaphore_sgnl_info.semaphore = cara_vk.arr_semaphore_after_A[is_frame_id_even];
-  semaphore_sgnl_info.value = csb_present_swapchain_img;
-  semaphore_sgnl_info.stageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT_KHR;
-  semaphore_sgnl_info.deviceIndex = 0;
-
-  cmd_buf_submit_info.commandBuffer = cmd_buf;;
-
-  submit_info.waitSemaphoreInfoCount = 1;
-  submit_info.pWaitSemaphoreInfos = &semaphore_wait_info;
-  submit_info.commandBufferInfoCount = 1;
-  submit_info.pCommandBufferInfos = &cmd_buf_submit_info;
-  submit_info.signalSemaphoreInfoCount = 1;
-  submit_info.pSignalSemaphoreInfos = &semaphore_sgnl_info;
-
-  // End recording
-  SPALL_BEGIN("end_cmd_buf");
-  result = vkEndCommandBuffer( cmd_buf );
-  if( result != VK_SUCCESS ) {
-    fprintf( stderr, "[Carbonara] Error occurred ending command buffer recording.(1c) '%s'\n",
-        string_VkResult(result) );
-    goto stop_everything_after_failure;
-  }
-  SPALL_END();
-
-  // Submit
-  SPALL_BEGIN("submit_cmd_buf");
-  result = vkQueueSubmit2KHR( cara_vk.graphics_q, 1, &submit_info, VK_NULL_HANDLE );
-  if ( result != VK_SUCCESS ) {
-    fprintf( stderr, "[Carbonara-Debug] vkQueueSubmit2KHR failed.. (result=%s)\n",
-        string_VkResult(result) );
-    goto stop_everything_after_failure;
-  }
-  SPALL_END();
-
   SPALL_BEGIN("infos_pm_return");
   // FIXME Actually, return them at the next even/odd frame id.
   err = infos_pm_return( &cara_vk.vmm.uploads,
@@ -3391,27 +3459,10 @@ void jf_kickstart( struct cara_worker_state * ws )
         string_VkResult(result) );
     goto stop_everything_after_failure;
   }
-  SPALL_END();
+  SPALL_END();  // reset_transfer_cmd_pool
 
-  wait_val = csb_present_swapchain_img;
-  wait_info.pSemaphores = &cara_vk.arr_semaphore_after_A[is_frame_id_even];
-  SPALL_BEGIN("wait_graphics");
-  vkWaitSemaphores( cara_vk.log_dev, &wait_info, 1000*1000*UINT64_C(20) );
-  SPALL_END();
 
-  SPALL_BEGIN("reset_graphics_cmd_pool");
-  result = vkResetCommandPool(
-      cara_vk.log_dev,
-      cara_vk.arr_frame_infos[is_frame_id_even].arr_cmd_pools[
-        cara_single.proc_map->nr_processors ],
-      release_resources ? VK_COMMAND_POOL_RESET_RELEASE_RESOURCES_BIT : 0 );
-  if( result != VK_SUCCESS ) {
-    fprintf( stderr, "[Carbonara] Error occurred during command buffer reset.(g) '%s'\n",
-        string_VkResult(result) );
-    goto stop_everything_after_failure;
-  }
-  SPALL_END();  // reset_graphics_cmd_pool
-  SPALL_END();  // check_out_vulkan
+  SPALL_END();  // vulkan_renderer_setup
 
 
 
@@ -3544,30 +3595,32 @@ stop_everything_after_failure:
     cara_vk.dsl_copy2sc = VK_NULL_HANDLE;
   }
 
-  if ( cara_vk.sampler_8_2048_tex ) {
-    vkDestroySampler( cara_vk.log_dev, cara_vk.sampler_8_2048_tex, &vk_alloc_callbacks );
+  if ( cara_vk.sampler8_2048 ) {
+    vkDestroySampler( cara_vk.log_dev, cara_vk.sampler8_2048, &vk_alloc_callbacks );
     //vkDestroySampler( cara_vk.log_dev, cara_vk.sampler_8_2048_tex, nullptr );
-    cara_vk.sampler_8_2048_tex = VK_NULL_HANDLE;
+    cara_vk.sampler8_2048 = VK_NULL_HANDLE;
   }
 
-  if ( cara_vk.iv_8_2048_tex ) {
-    vkDestroyImageView( cara_vk.log_dev, cara_vk.iv_8_2048_tex, &vk_alloc_callbacks );
+  if ( cara_vk.tex8_2048_iv ) {
+    vkDestroyImageView( cara_vk.log_dev, cara_vk.tex8_2048_iv, &vk_alloc_callbacks );
     //vkDestroyImageView( cara_vk.log_dev, cara_vk.iv_8_2048_tex, nullptr );
-    cara_vk.iv_8_2048_tex = VK_NULL_HANDLE;
+    cara_vk.tex8_2048_iv = VK_NULL_HANDLE;
   }
 
-  if ( malloc ) {
-    vkFreeMemory( cara_vk.log_dev, *malloc, &vk_alloc_callbacks );
-    //vkFreeMemory( cara_vk.log_dev, *malloc, nullptr );
-    *malloc = 0;
-    cara_vk.vmm.arr_usages[cara_vk.vmm.arr_best_mtype_idx[vk_buf_type_image_arr_8_2048]] -=
-      req.size;
-  }
+  // TODO p_malloc -> p_rent
+  //if ( p_malloc ) {
+  //  if ( *p_malloc ) {
+  //    vkFreeMemory( cara_vk.log_dev, *p_malloc, &vk_alloc_callbacks );
+  //    *p_malloc = 0;
+  //    cara_vk.vmm.arr_usages[heap_idx] -= req.size;
+  //  }
+  //  //TODO cara_vk.vmm.arr_idx_next_unoccupied_elem[heap_idx]--;
+  //}
 
-  if ( cara_vk.sampler_8_2048_tex ) {
-    vkDestroyImage( cara_vk.log_dev, cara_vk.vki_8_2048_tex, &vk_alloc_callbacks );
+  if ( cara_vk.sampler8_2048 ) {
+    vkDestroyImage( cara_vk.log_dev, cara_vk.tex8_2048, &vk_alloc_callbacks );
     //vkDestroyImage( cara_vk.log_dev, cara_vk.vki_8_2048_tex, nullptr );
-    cara_vk.vki_8_2048_tex = VK_NULL_HANDLE;
+    cara_vk.tex8_2048 = VK_NULL_HANDLE;
   }
 
   batch = 0;

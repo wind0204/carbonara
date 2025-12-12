@@ -598,7 +598,7 @@ uint_fast8_t count_nr_consec_0bits(
 }
 
 //-------------------------------------------------------------------------------------------------
-//uint_fast8_t log2_u32( uint32_t number )
+//uint_fast8_t a_way_to_get_log2_u32( uint32_t number )
 //{
 //  constexpr uint8_t piece_of_a_de_Bruijn_sequence[32] =
 //  {

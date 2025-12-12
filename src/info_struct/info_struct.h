@@ -9,6 +9,7 @@
 #include <vulkan/vulkan_core.h>
 
 #include "func_overloading_and_def_args_and_named_args.h"
+#include "util-c_lang-basic.h"
 #include "util-c_lang-bits.h"
 #include "err_msg.h"
 
@@ -270,21 +271,22 @@ struct range_u32 {
 //-------------------------------------------------------------------------------------------------
 
 extern void * default_malloc( void * userdata, size_t alignment, size_t size );
-void * default_malloc_vk( [[maybe_unused]] void * userdata,
+extern void * default_malloc_vk( [[maybe_unused]] void * userdata,
     size_t size, size_t alignment,
     [[maybe_unused]] VkSystemAllocationScope alloc_scope );
+extern void * vk_malloc_wrapper( void * p_VkAllocationCallbacks, size_t alignment, size_t size );
 
 /**
  * \warning \a alignment is ignored
  */
 extern void * default_realloc( void * userdata, void * orig_ptr, size_t size, size_t alignment );
-void * default_realloc_vk(
+extern void * default_realloc_vk(
     [[maybe_unused]] void * userdata,
     void * orig_ptr, size_t size, [[maybe_unused]] size_t alignment,
     [[maybe_unused]] VkSystemAllocationScope alloc_scope );
 
 extern void default_free( void * restrict userdata, void * restrict ptr );
-void default_free_vk( [[maybe_unused]] void * restrict userdata, void * restrict ptr );
+extern void default_free_vk( [[maybe_unused]] void * restrict userdata, void * restrict ptr );
 
 
 
@@ -321,7 +323,8 @@ struct infos_arr_list * infos_al_create(
 /**
  * \brief no docstring for macro :(
  */
-#define infos_al_create_(...) CWDV(infos_al_create, V(0, 0, 4096, sizeof(int), 0), __VA_ARGS__)
+#define infos_al_create_(...) CWDV(infos_al_create, V(nullptr, nullptr, get_log2(4096), \
+      get_log2(sizeof(int)), false), __VA_ARGS__)
 
 //-------------------------------------------------------------------------------------------------
 /**
@@ -335,8 +338,9 @@ struct infos_arr_list * infos_al_create_prealloc(
     void * (*custom_malloc)(void * userdata, size_t alignment, size_t size),
     uint32_t node_size, uint_fast16_t elem_size, bool zero_all
     );
-#define infos_al_create_prealloc_(...) \
-  CWDV(infos_al_create_prealloc, V(0, 0, 0, 4096, sizeof(int), 0), __VA_ARGS__)
+#define infos_al_create_prealloc_(...)                                                          \
+  CWDV(infos_al_create_prealloc, V(0, nullptr, nullptr, get_log2(4096), get_log2(sizeof(int)),  \
+        false), __VA_ARGS__)
 
 //-------------------------------------------------------------------------------------------------
 /**
@@ -354,8 +358,9 @@ struct infos_multi_arr_list * infos_multi_al_create(
 /**
  * \brief no docstring for macro :(
  */
-#define infos_multi_al_create_(...) \
-  CWDV(infos_multi_al_create, V(0, 0, 4096, sizeof(int), 32, 0), __VA_ARGS__)
+#define infos_multi_al_create_(...)                                                       \
+  CWDV(infos_multi_al_create, V(nullptr, nullptr, get_log2(4096), get_log2(sizeof(int)),  \
+        get_log2(32), false), __VA_ARGS__)
 
 //-------------------------------------------------------------------------------------------------
 /**
@@ -374,15 +379,40 @@ uint_fast8_t infos_multi_al_init_prealloc(
 /**
  * \brief no docstring for macro :(
  */
-#define infos_multi_al_init_prealloc_(...) \
-  CWDV(infos_multi_al_init_prealloc, V(0, 0, 0, 4096, sizeof(int), 32, 0), __VA_ARGS__)
+#define infos_multi_al_init_prealloc_(...)                                                         \
+  CWDV(infos_multi_al_init_prealloc, V(0, nullptr, nullptr, get_log2(4096), get_log2(sizeof(int)), \
+        get_log2(32), false), __VA_ARGS__)
 
 //-------------------------------------------------------------------------------------------------
 void * infos_al_get_elem( const struct infos_arr_list * al, uint32_t idx );
+/**
+ * \brief Find an element whose value equals \a cond
+ * \warning .+al_get_elem_cond.. functions never tested but only implemented
+ */
+void * infos_al_get_elem_cond32( const struct infos_arr_list * al,
+    uint32_t first_slot_to_check, uint32_t cond );
+/**
+ * \brief Find an element whose value equals \a cond
+ * \warning .+al_get_elem_cond.. functions never tested but only implemented
+ */
+void * infos_al_get_elem_cond64( const struct infos_arr_list * al,
+    uint32_t first_slot_to_check, uint64_t cond );
 
 //-------------------------------------------------------------------------------------------------
 void * infos_multi_al_get_elem( const struct infos_multi_arr_list * al,
     uint_fast16_t idx_al, uint32_t idx_elem );
+/**
+ * \brief Find an element whose value equals \a cond
+ * \warning .+al_get_elem_cond.. functions never tested but only implemented
+ */
+void * infos_multi_al_get_elem_cond32( const struct infos_multi_arr_list * al,
+    uint_fast16_t idx_al, uint32_t first_slot_to_check, uint32_t cond );
+/**
+ * \brief Find an element whose value equals \a cond
+ * \warning .+al_get_elem_cond.. functions never tested but only implemented
+ */
+void * infos_multi_al_get_elem_cond64( const struct infos_multi_arr_list * al,
+    uint_fast16_t idx_al, uint32_t first_slot_to_check, uint64_t cond );
 
 //-------------------------------------------------------------------------------------------------
 /**
@@ -422,8 +452,8 @@ void infos_al_destroy_except_preallocated_struct( struct infos_arr_list * restri
 enum err_msg infos_multi_al_grow( struct infos_multi_arr_list * restrict mal,
     void * restrict userdata,
     void * (*custom_malloc)(void * userdata, size_t alignment, size_t size),
-    uint_fast16_t arr_len,
-    const uint16_t idx_al[arr_len],
+    uint32_t arr_len,
+    const uint32_t idx_al[arr_len],
     bool zero_all
     );
 
@@ -1715,10 +1745,24 @@ static inline void * infos_hashtable_search_2( const struct infos_hashtable * ta
 struct infos_page_mgr {
   struct infos_arr_list al_rental_info;
   struct infos_arr_list al_vacancies;
-  static_assert( sizeof(struct infos_arr_list) >= alignof(uint32_t), "Sort the struct members!" );
+  static_assert( sizeof(struct infos_arr_list) >= alignof(uint32_t) );
   uint32_t nr_unused_pages;
   uint32_t idx_last_rental_info;
   uint32_t idx_last_vacancy;
+};
+
+constexpr size_t p2_sizeof_page_mgr = _ct_align_to_the_close_power_of_two(
+    sizeof(struct infos_page_mgr) );
+struct infos_page_mgr_p2 {
+  alignas( p2_sizeof_page_mgr )
+    struct infos_arr_list al_rental_info;
+  struct infos_arr_list al_vacancies;
+  static_assert( sizeof(struct infos_arr_list) >= alignof(uint32_t) );
+  uint32_t nr_unused_pages;
+  uint32_t idx_last_rental_info;
+  uint32_t idx_last_vacancy;
+  float s1;
+  double d1, d2, d3, d4, d5, d6;
 };
 
 //-------------------------------------------------------------------------------------------------

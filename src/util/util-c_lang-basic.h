@@ -383,6 +383,25 @@ uint64_t init_util_c_lang(void);
 
 //-------------------------------------------------------------------------------------------------
 /**
+ * \brief https://graphics.stanford.edu/~seander/bithacks.html#IntegerLogDeBruijn
+ */
+static constexpr uint8_t piece_of_a_de_Bruijn_sequence[32] = {
+  0, 9, 1, 10, 13, 21, 2, 29, 11, 14, 16, 18, 22, 25, 3, 30,
+  8, 12, 20, 28, 15, 17, 24, 7, 19, 27, 23, 6, 26, 5, 4, 31
+};
+#define ct_log2(number) piece_of_a_de_Bruijn_sequence[(                         \
+    ( (uint32_t)(number) | ((uint32_t)(number) >> 1) |                          \
+    ((uint32_t)(number) | (uint32_t)(number) >> 1) >> 2 |                       \
+    ( (uint32_t)(number) | ((uint32_t)(number) >> 1) |                          \
+    (((uint32_t)(number) | (uint32_t)(number) >> 1) >> 2) ) >> 4 |              \
+    (( (uint32_t)(number) | ((uint32_t)(number) >> 1) |                         \
+    (((uint32_t)(number) | (uint32_t)(number) >> 1) >> 2) ) >> 4) >> 8 |        \
+    ((( (uint32_t)(number) | ((uint32_t)(number) >> 1) |                        \
+    (((uint32_t)(number) | (uint32_t)(number) >> 1) >> 2) ) >> 4) >> 8) >> 16 ) \
+    * 0x07c4acddu) >> 27]
+
+//-------------------------------------------------------------------------------------------------
+/**
  * \brief Align to the closest power of two that is bigger than \a number
  * \a number must be greater than 0
  */
@@ -393,6 +412,8 @@ uint64_t init_util_c_lang(void);
 #define _align_to_the_close_power_of_two(number)                                                  \
   ( sizeof((number)) > 4 ?                                                                        \
     _align_to_the_close_power_of_two_64((number)) : _align_to_the_close_power_of_two_32((number)) )
+#define _ct_align_to_the_close_power_of_two(number) \
+  ( _is_power_of_two((number)) ? (number) : 1 << (ct_log2((number)) + 1) )
 
 //-------------------------------------------------------------------------------------------------
 /**

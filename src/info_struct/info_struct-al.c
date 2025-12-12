@@ -8,6 +8,8 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <simde/x86/avx.h>
+#include <simde/x86/avx2.h>
 
 #include "err_msg.h"
 #include "info_struct.h"
@@ -121,12 +123,13 @@ enum err_msg infos_al_grow(
   uint_fast8_t out_of_align_diff1 = 0;
   uint_fast8_t sum_ooa_diff = 0;
   uint_fast32_t sum_new_nodes_len = nr_nodes * (1 << al->log2_node_size);
-  if ( sum_new_nodes_len % alignof(struct infos_singly_linked_list_node) ) {
-    out_of_align_diff1 = _align_to_power_of_two(
-        sum_new_nodes_len, alignof(struct infos_singly_linked_list_node) )
-      - sum_new_nodes_len;
-    sum_ooa_diff += out_of_align_diff1;
-  }
+  assume( 1 << al->log2_node_size >= alignof(struct infos_singly_linked_list_node) );
+  //if ( sum_new_nodes_len % alignof(struct infos_singly_linked_list_node) ) {
+  //  out_of_align_diff1 = _align_to_power_of_two(
+  //      sum_new_nodes_len, alignof(struct infos_singly_linked_list_node) )
+  //    - sum_new_nodes_len;
+  //  sum_ooa_diff += out_of_align_diff1;
+  //}
 
   void * (*local_malloc)(void * userdata, size_t alignment, size_t size);
   local_malloc = custom_malloc ? custom_malloc : default_malloc;
@@ -362,8 +365,8 @@ uint_fast8_t infos_multi_al_init_prealloc(
 enum err_msg infos_multi_al_grow( struct infos_multi_arr_list * restrict mal,
     void * restrict userdata,
     void * (*custom_malloc)(void * userdata, size_t alignment, size_t size),
-    uint_fast16_t arr_len,
-    const uint16_t idx_al[arr_len],
+    uint32_t arr_len,
+    const uint32_t idx_al[arr_len],
     bool zero_all
     )
 {
@@ -371,10 +374,11 @@ enum err_msg infos_multi_al_grow( struct infos_multi_arr_list * restrict mal,
   local_malloc = custom_malloc ? custom_malloc : default_malloc;
 
   uint_fast8_t out_of_align_diff1 = 0;
-  if ( (1 << mal->log2_node_size) % alignof(struct infos_singly_linked_list_node) ) {
-    out_of_align_diff1 = _align_to_power_of_two( (1 << mal->log2_node_size),
-        alignof(struct infos_singly_linked_list_node) ) - (1 << mal->log2_node_size);
-  }
+  assume( 1 << mal->log2_node_size >= alignof(struct infos_singly_linked_list_node) );
+  //if ( (1 << mal->log2_node_size) % alignof(struct infos_singly_linked_list_node) ) {
+  //  out_of_align_diff1 = _align_to_power_of_two( (1 << mal->log2_node_size),
+  //      alignof(struct infos_singly_linked_list_node) ) - (1 << mal->log2_node_size);
+  //}
 
   // Just in case custom_malloc allocates an aligned string for SSE/AVX or
   // a 64-byte aligned string for cache line separation
@@ -531,6 +535,312 @@ void * infos_multi_al_get_elem( const struct infos_multi_arr_list * mal,
   }
 
   return node->data + (idx_elem << mal->log2_elem_size);
+}
+
+
+//-------------------------------------------------------------------------------------------------
+void * infos_al_get_elem_cond32( const struct infos_arr_list * al,
+    uint32_t first_slot_to_check, uint32_t cond )
+{
+  typeof(first_slot_to_check) idx_elem = first_slot_to_check;
+  const struct infos_singly_linked_list_node * restrict node = &al->list.head;
+  uint64_t node_idx = idx_elem << al->log2_elem_size >> al->log2_node_size;
+  idx_elem = idx_elem - (node_idx << al->log2_node_size >> al->log2_elem_size);
+  for ( uint32_t i = 0; i < node_idx; i++ ) {
+    if ( !node->next ) {
+      return 0;
+    }
+    node = node->next;
+  }
+
+  const typeof(&cond) restrict p_key =
+    __builtin_assume_aligned( node->data, ALIGN_FOR_AVX512 );
+  // A quick return is possible thanks to first_slot_to_check
+  if ( p_key[idx_elem] == cond ) {
+    return p_key + idx_elem;
+  }
+  uint32_t cur_vec_idx = sizeof(cond) * idx_elem / ALIGN_FOR_AVX;
+  simde__m256i pack1, pack2, res1, res2;
+  const simde__m256i key_pack = simde_mm256_set1_epi32( cond );
+  pack1 = simde_mm256_load_si256( (void*)(p_key + cur_vec_idx * ALIGN_FOR_AVX / sizeof(cond)) );
+  res1 = simde_mm256_cmpeq_epi32( pack1, key_pack );
+  unsigned int mask = simde_mm256_movemask_ps( (simde__m256) res1 );
+  if ( mask ) {
+    return p_key +
+      ( cur_vec_idx * ALIGN_FOR_AVX / sizeof(cond) + __tzcnt_u32(mask) );
+  }
+  void * p_sibling = (void*)( p_key + cur_vec_idx * ALIGN_FOR_AVX / sizeof(cond) +
+      (cur_vec_idx & 1 ? -1 : 1) * ALIGN_FOR_AVX / sizeof(cond) );
+  pack2 = simde_mm256_load_si256( p_sibling );
+  res2 = simde_mm256_cmpeq_epi32( pack2, key_pack );
+  unsigned int mask2 = simde_mm256_movemask_ps( (simde__m256) res2 );
+  if ( mask2 ) {
+    return p_key +
+      ( cur_vec_idx * ALIGN_FOR_AVX / sizeof(cond) + __tzcnt_u32(mask2) );
+  }
+  const uint64_t last_idx = UINT64_C(1) << al->log2_nr_elems;
+  constexpr uint64_t stride = ALIGN_FOR_AVX * 2 / sizeof(cond);
+  uint32_t cur_batch_idx = sizeof(cond) * idx_elem / ALIGN_FOR_AVX512;
+  for ( uint64_t idx = cur_batch_idx * stride; idx < last_idx; idx += stride ) {
+    pack1 = simde_mm256_load_si256( (void*)(p_key + idx) );
+    pack2 = simde_mm256_load_si256( (void*)(p_key + idx) + ALIGN_FOR_AVX );
+    res1 = simde_mm256_cmpeq_epi32( pack1, key_pack );
+    res2 = simde_mm256_cmpeq_epi32( pack2, key_pack );
+    mask = simde_mm256_movemask_ps( (simde__m256) res1 );
+    mask2 = simde_mm256_movemask_ps( (simde__m256) res2 );
+    if ( mask ) {
+      return p_key + ( idx + __tzcnt_u32(mask) ); }
+    if ( mask2 ) {
+      return p_key + ( idx + ALIGN_FOR_AVX / sizeof(cond) + __tzcnt_u32(mask2) );
+    }
+  }
+
+  if ( cur_batch_idx ) {
+    for ( uint64_t idx = 0; idx < cur_batch_idx * stride; idx += stride ) {
+      pack1 = simde_mm256_load_si256( (void*)(p_key + idx) );
+      pack2 = simde_mm256_load_si256( (void*)(p_key + idx) + ALIGN_FOR_AVX );
+      res1 = simde_mm256_cmpeq_epi32( pack1, key_pack );
+      res2 = simde_mm256_cmpeq_epi32( pack2, key_pack );
+      mask = simde_mm256_movemask_ps( (simde__m256) res1 );
+      mask2 = simde_mm256_movemask_ps( (simde__m256) res2 );
+      if ( mask ) {
+        return p_key + ( idx + __tzcnt_u32(mask) ); }
+      if ( mask2 ) {
+        return p_key + ( idx + ALIGN_FOR_AVX / sizeof(cond) + __tzcnt_u32(mask2) );
+      }
+    }
+  }
+
+  return nullptr;
+}
+
+//-------------------------------------------------------------------------------------------------
+void * infos_al_get_elem_cond64( const struct infos_arr_list * al,
+    uint32_t first_slot_to_check, uint64_t cond )
+{
+  typeof(first_slot_to_check) idx_elem = first_slot_to_check;
+  const struct infos_singly_linked_list_node * restrict node = &al->list.head;
+  uint64_t node_idx = idx_elem << al->log2_elem_size >> al->log2_node_size;
+  idx_elem = idx_elem - (node_idx << al->log2_node_size >> al->log2_elem_size);
+  for ( uint32_t i = 0; i < node_idx; i++ ) {
+    if ( !node->next ) {
+      return 0;
+    }
+    node = node->next;
+  }
+
+  const typeof(&cond) restrict p_key =
+    __builtin_assume_aligned( node->data, ALIGN_FOR_AVX512 );
+  // A quick return is possible thanks to first_slot_to_check
+  if ( p_key[idx_elem] == cond ) {
+    return p_key + idx_elem;
+  }
+  uint32_t cur_vec_idx = sizeof(cond) * idx_elem / ALIGN_FOR_AVX;
+  simde__m256i pack1, pack2, res1, res2;
+  const simde__m256i key_pack = simde_mm256_set1_epi64x( cond );
+  pack1 = simde_mm256_load_si256( (void*)(p_key + cur_vec_idx * ALIGN_FOR_AVX / sizeof(cond)) );
+  res1 = simde_mm256_cmpeq_epi64( pack1, key_pack );
+  unsigned int mask = simde_mm256_movemask_pd( (simde__m256d) res1 );
+  if ( mask ) {
+    return p_key +
+      ( cur_vec_idx * ALIGN_FOR_AVX / sizeof(cond) + __tzcnt_u32(mask) );
+  }
+  void * p_sibling = (void*)( p_key + cur_vec_idx * ALIGN_FOR_AVX / sizeof(cond) +
+      (cur_vec_idx & 1 ? -1 : 1) * ALIGN_FOR_AVX / sizeof(cond) );
+  pack2 = simde_mm256_load_si256( p_sibling );
+  res2 = simde_mm256_cmpeq_epi64( pack2, key_pack );
+  unsigned int mask2 = simde_mm256_movemask_pd( (simde__m256d) res2 );
+  if ( mask2 ) {
+    return p_key +
+      ( cur_vec_idx * ALIGN_FOR_AVX / sizeof(cond) + __tzcnt_u32(mask2) );
+  }
+
+  const uint64_t last_idx = UINT64_C(1) << al->log2_nr_elems;
+  constexpr uint64_t stride = ALIGN_FOR_AVX * 2 / sizeof(cond);
+  uint32_t cur_batch_idx = sizeof(cond) * idx_elem / ALIGN_FOR_AVX512;
+  for ( uint64_t idx = cur_batch_idx * stride + stride; idx < last_idx; idx += stride ) {
+    pack1 = simde_mm256_load_si256( (void*)(p_key + idx) );
+    pack2 = simde_mm256_load_si256( (void*)(p_key + idx) + ALIGN_FOR_AVX );
+    res1 = simde_mm256_cmpeq_epi64( pack1, key_pack );
+    res2 = simde_mm256_cmpeq_epi64( pack2, key_pack );
+    mask = simde_mm256_movemask_pd( (simde__m256d) res1 );
+    mask2 = simde_mm256_movemask_pd( (simde__m256d) res2 );
+    if ( mask ) {
+      return p_key + ( idx + __tzcnt_u32(mask) ); }
+    if ( mask2 ) {
+      return p_key + ( idx + ALIGN_FOR_AVX / sizeof(cond) + __tzcnt_u32(mask2) );
+    }
+  }
+  if ( cur_batch_idx ) {
+    for ( uint64_t idx = 0; idx < cur_batch_idx * stride; idx += stride ) {
+      pack1 = simde_mm256_load_si256( (void*)(p_key + idx) );
+      pack2 = simde_mm256_load_si256( (void*)(p_key + idx) + ALIGN_FOR_AVX );
+      res1 = simde_mm256_cmpeq_epi64( pack1, key_pack );
+      res2 = simde_mm256_cmpeq_epi64( pack2, key_pack );
+      mask = simde_mm256_movemask_pd( (simde__m256d) res1 );
+      mask2 = simde_mm256_movemask_pd( (simde__m256d) res2 );
+      if ( mask ) {
+        return p_key + ( idx + __tzcnt_u32(mask) ); }
+      if ( mask2 ) {
+        return p_key + ( idx + ALIGN_FOR_AVX / sizeof(cond) + __tzcnt_u32(mask2) );
+      }
+    }
+  }
+
+  return nullptr;
+}
+
+
+//-------------------------------------------------------------------------------------------------
+void * infos_multi_al_get_elem_cond32( const struct infos_multi_arr_list * mal,
+    uint_fast16_t idx_al, uint32_t first_slot_to_check, uint32_t cond )
+{
+  typeof(first_slot_to_check) idx_elem = first_slot_to_check;
+  const struct infos_singly_linked_list_node * restrict node = &mal->lists[idx_al].head;
+  uint64_t node_idx = idx_elem << mal->log2_elem_size >> mal->log2_node_size;
+  idx_elem = idx_elem - (node_idx << mal->log2_node_size >> mal->log2_elem_size);
+  for ( uint32_t i = 0; i < node_idx; i++ ) {
+    if ( !node->next ) {
+      return 0;
+    }
+    node = node->next;
+  }
+
+  const typeof(&cond) restrict p_key =
+    __builtin_assume_aligned( node->data, ALIGN_FOR_AVX512 );
+  // A quick return is possible thanks to first_slot_to_check
+  if ( p_key[idx_elem] == cond ) {
+    return p_key + idx_elem;
+  }
+  uint32_t cur_vec_idx = sizeof(cond) * idx_elem / ALIGN_FOR_AVX;
+  simde__m256i pack1, pack2, res1, res2;
+  const simde__m256i key_pack = simde_mm256_set1_epi32( cond );
+  pack1 = simde_mm256_load_si256( (void*)(p_key + cur_vec_idx * ALIGN_FOR_AVX / sizeof(cond)) );
+  res1 = simde_mm256_cmpeq_epi32( pack1, key_pack );
+  unsigned int mask = simde_mm256_movemask_ps( (simde__m256) res1 );
+  if ( mask ) {
+    return p_key +
+      ( cur_vec_idx * ALIGN_FOR_AVX / sizeof(cond) + __tzcnt_u32(mask) );
+  }
+  void * p_sibling = (void*)( p_key + cur_vec_idx * ALIGN_FOR_AVX / sizeof(cond) +
+      (cur_vec_idx & 1 ? -1 : 1) * ALIGN_FOR_AVX / sizeof(cond) );
+  pack2 = simde_mm256_load_si256( p_sibling );
+  res2 = simde_mm256_cmpeq_epi32( pack2, key_pack );
+  unsigned int mask2 = simde_mm256_movemask_ps( (simde__m256) res2 );
+  if ( mask2 ) {
+    return p_key +
+      ( cur_vec_idx * ALIGN_FOR_AVX / sizeof(cond) + __tzcnt_u32(mask2) );
+  }
+  const uint64_t last_idx = UINT64_C(1) << mal->log2_nr_elems;
+  constexpr uint64_t stride = ALIGN_FOR_AVX * 2 / sizeof(cond);
+  uint32_t cur_batch_idx = sizeof(cond) * idx_elem / ALIGN_FOR_AVX512;
+  for ( uint64_t idx = cur_batch_idx * stride; idx < last_idx; idx += stride ) {
+    pack1 = simde_mm256_load_si256( (void*)(p_key + idx) );
+    pack2 = simde_mm256_load_si256( (void*)(p_key + idx) + ALIGN_FOR_AVX );
+    res1 = simde_mm256_cmpeq_epi32( pack1, key_pack );
+    res2 = simde_mm256_cmpeq_epi32( pack2, key_pack );
+    mask = simde_mm256_movemask_ps( (simde__m256) res1 );
+    mask2 = simde_mm256_movemask_ps( (simde__m256) res2 );
+    if ( mask ) {
+      return p_key + ( idx + __tzcnt_u32(mask) ); }
+    if ( mask2 ) {
+      return p_key + ( idx + ALIGN_FOR_AVX / sizeof(cond) + __tzcnt_u32(mask2) );
+    }
+  }
+
+  if ( cur_batch_idx ) {
+    for ( uint64_t idx = 0; idx < cur_batch_idx * stride; idx += stride ) {
+      pack1 = simde_mm256_load_si256( (void*)(p_key + idx) );
+      pack2 = simde_mm256_load_si256( (void*)(p_key + idx) + ALIGN_FOR_AVX );
+      res1 = simde_mm256_cmpeq_epi32( pack1, key_pack );
+      res2 = simde_mm256_cmpeq_epi32( pack2, key_pack );
+      mask = simde_mm256_movemask_ps( (simde__m256) res1 );
+      mask2 = simde_mm256_movemask_ps( (simde__m256) res2 );
+      if ( mask ) {
+        return p_key + ( idx + __tzcnt_u32(mask) ); }
+      if ( mask2 ) {
+        return p_key + ( idx + ALIGN_FOR_AVX / sizeof(cond) + __tzcnt_u32(mask2) );
+      }
+    }
+  }
+
+  return nullptr;
+}
+
+//-------------------------------------------------------------------------------------------------
+void * infos_multi_al_get_elem_cond64( const struct infos_multi_arr_list * mal,
+    uint_fast16_t idx_al, uint32_t first_slot_to_check, uint64_t cond )
+{
+  typeof(first_slot_to_check) idx_elem = first_slot_to_check;
+  const struct infos_singly_linked_list_node * restrict node = &mal->lists[idx_al].head;
+  uint64_t node_idx = idx_elem << mal->log2_elem_size >> mal->log2_node_size;
+  idx_elem = idx_elem - (node_idx << mal->log2_node_size >> mal->log2_elem_size);
+  for ( uint32_t i = 0; i < node_idx; i++ ) {
+    if ( !node->next ) {
+      return 0;
+    }
+    node = node->next;
+  }
+
+  const typeof(&cond) restrict p_key =
+    __builtin_assume_aligned( node->data, ALIGN_FOR_AVX512 );
+  // A quick return is possible thanks to first_slot_to_check
+  if ( p_key[idx_elem] == cond ) {
+    return p_key + idx_elem;
+  }
+  uint32_t cur_vec_idx = sizeof(cond) * idx_elem / ALIGN_FOR_AVX;
+  simde__m256i pack1, pack2, res1, res2;
+  const simde__m256i key_pack = simde_mm256_set1_epi64x( cond );
+  pack1 = simde_mm256_load_si256( (void*)(p_key + cur_vec_idx * ALIGN_FOR_AVX / sizeof(cond)) );
+  res1 = simde_mm256_cmpeq_epi64( pack1, key_pack );
+  unsigned int mask = simde_mm256_movemask_pd( (simde__m256d) res1 );
+  if ( mask ) {
+    return p_key +
+      ( cur_vec_idx * ALIGN_FOR_AVX / sizeof(cond) + __tzcnt_u32(mask) );
+  }
+  void * p_sibling = (void*)( p_key + cur_vec_idx * ALIGN_FOR_AVX / sizeof(cond) +
+      (cur_vec_idx & 1 ? -1 : 1) * ALIGN_FOR_AVX / sizeof(cond) );
+  pack2 = simde_mm256_load_si256( p_sibling );
+  res2 = simde_mm256_cmpeq_epi64( pack2, key_pack );
+  unsigned int mask2 = simde_mm256_movemask_pd( (simde__m256d) res2 );
+  if ( mask2 ) {
+    return p_key +
+      ( cur_vec_idx * ALIGN_FOR_AVX / sizeof(cond) + __tzcnt_u32(mask2) );
+  }
+
+  const uint64_t last_idx = UINT64_C(1) << mal->log2_nr_elems;
+  constexpr uint64_t stride = ALIGN_FOR_AVX * 2 / sizeof(cond);
+  uint32_t cur_batch_idx = sizeof(cond) * idx_elem / ALIGN_FOR_AVX512;
+  for ( uint64_t idx = cur_batch_idx * stride + stride; idx < last_idx; idx += stride ) {
+    pack1 = simde_mm256_load_si256( (void*)(p_key + idx) );
+    pack2 = simde_mm256_load_si256( (void*)(p_key + idx) + ALIGN_FOR_AVX );
+    res1 = simde_mm256_cmpeq_epi64( pack1, key_pack );
+    res2 = simde_mm256_cmpeq_epi64( pack2, key_pack );
+    mask = simde_mm256_movemask_pd( (simde__m256d) res1 );
+    mask2 = simde_mm256_movemask_pd( (simde__m256d) res2 );
+    if ( mask ) {
+      return p_key + ( idx + __tzcnt_u32(mask) ); }
+    if ( mask2 ) {
+      return p_key + ( idx + ALIGN_FOR_AVX / sizeof(cond) + __tzcnt_u32(mask2) );
+    }
+  }
+  if ( cur_batch_idx ) {
+    for ( uint64_t idx = 0; idx < cur_batch_idx * stride; idx += stride ) {
+      pack1 = simde_mm256_load_si256( (void*)(p_key + idx) );
+      pack2 = simde_mm256_load_si256( (void*)(p_key + idx) + ALIGN_FOR_AVX );
+      res1 = simde_mm256_cmpeq_epi64( pack1, key_pack );
+      res2 = simde_mm256_cmpeq_epi64( pack2, key_pack );
+      mask = simde_mm256_movemask_pd( (simde__m256d) res1 );
+      mask2 = simde_mm256_movemask_pd( (simde__m256d) res2 );
+      if ( mask ) {
+        return p_key + ( idx + __tzcnt_u32(mask) ); }
+      if ( mask2 ) {
+        return p_key + ( idx + ALIGN_FOR_AVX / sizeof(cond) + __tzcnt_u32(mask2) );
+      }
+    }
+  }
+
+  return nullptr;
 }
 
 

@@ -334,9 +334,9 @@ uint_fast8_t count_nr_consec_0bits(
 /**
  * \brief Why not just use _lzcnt_u..? instead of this heavier procedure?
  *
- * consider deleting this code; There are so few CPU's that won't support lzcnt.
+ * consider deleting this code; There are so few CPU's that won't support leading zero counting.
  */
-//uint_fast8_t log2_u32( uint32_t number );
+//uint_fast8_t a_way_to_get_log2_u32( uint32_t number );
 
 #define get_log2( number )                                                        \
   ( is_signed((number)) ? 1/(true^is_signed((number))) :                          \

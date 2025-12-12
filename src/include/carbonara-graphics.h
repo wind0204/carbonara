@@ -1,3 +1,5 @@
+#include "info_struct.h"
+#include <assert.h>
 #if !defined SALAMI_GRAPHICS_H_
 #define SALAMI_GRAPHICS_H_
 
@@ -16,13 +18,21 @@
 
 //-------------------------------------------------------------------------------------------------
 
-/**
- * \brief 1 meter
- */
-constexpr float cara_1m = 1.0 / 2;
+// WSVGA
+constexpr unsigned int small_win_width = 1024;
+constexpr unsigned int small_win_height = 576;  // WSVGA
 
-// I guess two sets of command pools is okay? two frames in flight.
+// One meter in game coordinates
+constexpr float cara_1m = 1.0 / 2;
+// The length of the side of each square tile
+constexpr float cara_tilesize = cara_1m * 8;
+
+// Two frames in flight, two sets of command pools?
 constexpr unsigned int cara_max_nr_fif = 2;
+
+// Granularity of the length of framebuffers' sides and swapchain images' sides used when expanding
+constexpr unsigned int framebuf_dims_granularity = 16;
+static_assert( _is_power_of_two(framebuf_dims_granularity) );
 
 enum cara_signs_born : uint64_t {
   csb_origin = 0,
@@ -46,21 +56,23 @@ enum cara_framebuffers : unsigned char {
   cara_nr_famebuffers,
 };
 
-constexpr size_t cara_vk_page_len = 512 * 1024;
-struct vk_buf_512kb {
-  alignas(cara_vk_page_len) unsigned char bytes[cara_vk_page_len];
-};
-union vk_page {  // TODO Do we really need a union here?
-  struct vk_buf_512kb page;  // cara_vk_page_len bytes
-  float floats[cara_vk_page_len / sizeof(float)];    // 131072 floats
-  double doubles[cara_vk_page_len / sizeof(double)]; // 65536 doubles
-};
+//constexpr size_t cara_vk_page_len = 512 * 1024;
+//struct vk_buf_512kb {
+//  alignas(cara_vk_page_len) unsigned char bytes[cara_vk_page_len];
+//};
+//union vk_page {  // TODO Do we really need a union here?
+//  struct vk_buf_512kb page;  // cara_vk_page_len bytes
+//  float floats[cara_vk_page_len / sizeof(float)];    // 131072 floats
+//  double doubles[cara_vk_page_len / sizeof(double)]; // 65536 doubles
+//};
 
+
+//-------------------------------------------------------------------------------------------------
 
 /**
  * \brief VkCommandPool, VkCommandBuffer, VkFramebuffer, VkImageView, VkImage
  */
-struct vk_frame_info {
+struct graphics_cmd_bufs {
   VkCommandPool * arr_cmd_pools;  ///< The number of the entries in the array is equal to
                                       ///<  1+[the number of workers]
                                       ///< Command pools cannot be accessed at the same time from
@@ -73,16 +85,12 @@ struct vk_frame_info {
   static_assert( alignof(void*) >= alignof(VkCommandBuffer), "Sort the struct members!" );
   VkCommandBuffer primary_cmd_buf; ///< A primary cmd buffer coming from the last entry
                                           ///< in arr_cmd_pools
-  static_assert( alignof(VkCommandBuffer) >= alignof(VkImageView), "Sort the struct members!" );
-  VkImageView iv_z_buf;
-  static_assert( alignof(VkImageView) >= alignof(VkImage), "Sort the struct members!" );
-  VkImage z_buf;
 };
 
 /**
  * \brief VkCommandPool, VkCommandBuffer for transferring data
  */
-struct vk_trans_buf {
+struct trans_cmd_bufs {
   VkCommandPool * arr_cmd_pools;  ///< The number of the entries in the array is equal to
                                   ///< 1+[the number of workers] Command pools cannot be accessed
                                   ///< at the same time from multiple threads (command buffers from
@@ -97,6 +105,14 @@ struct vk_trans_buf {
                                           ///< in arr_cmd_pools
 };
 
+
+union win_dims {
+  struct {
+    uint16_t width;
+    uint16_t height;
+  } parts;
+  uint32_t whole;
+};
 
 /*
  * \brief A data storage for Vulkan rendering
@@ -120,12 +136,13 @@ struct cara_vk_renderer {
   void * spv_copy2sc_frag;
   SDL_Window * window;
   VkImage * arr_swapchain_imgs;
+  VkImageView * arr_swapchain_iv;
   VkSemaphore * arr_wsi_present_semaphores;  // One binary semaphore per swapchain img
-  static_assert( alignof(void*) >= alignof(struct ma_vk_mem_mgr),
-      "Sort the struct members!" );
+  static_assert( alignof(void*) >= alignof(struct ma_vk_mem_mgr) );
   struct ma_vk_mem_mgr vmm;
-  static_assert( alignof(struct ma_vk_mem_mgr) >= alignof(VkSwapchainKHR),
-      "Sort the struct members!" );
+  static_assert( alignof(struct ma_vk_mem_mgr) >= alignof(struct infos_arr_list) );
+  struct infos_arr_list old_swapchains;
+  static_assert( alignof(struct infos_arr_list) >= alignof(VkSwapchainKHR) );
   VkSwapchainKHR swapchain;
   // Images represent data that can have one, two, or three dimensions, and can have additional
   // mipmap levels and layers. Each element of an image's data (a texel) can also have one or more samples.
@@ -134,14 +151,13 @@ struct cara_vk_renderer {
   // (similarly to OpenGL). We can render into images, in which case we use images as color or depth
   // attachments (render targets).
 
-  VkImage vki_8_2048_tex;  // 8-layer image of 2048*2048
-  VkImage vki_main_render_tgt;  // TODO
-  VkImage vki_depth;  // TODO
-  VkImageView iv_8_2048_tex;
-  VkImageView iv_main_render_tgt;  // TODO
-  VkImageView iv_depth;  // TODO
-  VkImageView iv_swapchain_img;  // TODO
-  VkSampler sampler_8_2048_tex;
+  VkImage cbuf;
+  VkImage zbuf;
+  VkImage tex8_2048;  // 8-layer image of 2048*2048
+  VkImageView tex8_2048_iv;
+  VkImageView cbuf_iv;
+  VkImageView zbuf_iv;
+  VkSampler sampler8_2048;
   VkDescriptorSetLayout dsl_depth_only;
   VkDescriptorSetLayout dsl_main_render;
   VkDescriptorSetLayout dsl_copy2sc;
@@ -170,21 +186,18 @@ struct cara_vk_renderer {
                        ///< pointing to.
   VkQueue compute_q;   ///< WARNING It can point to the same queue transfer_q or graphics_q is
                        ///< pointing to.
-  static_assert( alignof(VkQueue) >= alignof(struct vk_frame_info),
-      "Sort the struct members!" );
-  struct vk_frame_info arr_frame_infos[cara_max_nr_fif];
-  static_assert( alignof(struct vk_frame_info) >= alignof(struct vk_trans_buf),
-      "Sort the struct members!" );
-  struct vk_trans_buf trans_buf;
-  static_assert( alignof(struct vk_trans_buf) >= alignof(VkDevice),
-      "Sort the struct members!" );
+  static_assert( alignof(VkQueue) >= alignof(struct graphics_cmd_bufs) );
+  struct graphics_cmd_bufs arr_frame_infos[cara_max_nr_fif];
+  static_assert( alignof(struct graphics_cmd_bufs) >= alignof(struct trans_cmd_bufs) );
+  struct trans_cmd_bufs trans_buf;
+  static_assert( alignof(struct trans_cmd_bufs) >= alignof(VkDevice) );
   VkDevice log_dev;  // A logical device. #pointer-size-aligned
   VkInstance vk_instance;  // #pointer-size-aligned
   //static_assert( alignof(VkInstance) >= alignof(shared_lib), "Sort the struct members!" );
   //shared_lib vk_library;
   //static_assert( alignof(shared_lib) >= alignof(VkAllocationCallbacks),
   static_assert( alignof(VkInstance) >= alignof(VkFormat), "Sort the struct members!" );
-  VkFormat color_att_fmt;  // 32-bit aligned
+  VkFormat swapchain_img_fmt;  // 32-bit aligned
   VkFormat zbuf_fmt;  // 32-bit aligned
   static_assert( alignof(VkFormat) >= alignof(VkExtent2D), "Sort the struct members!" );
   VkExtent2D dims_swapchain_imgs;  // VkExtent2D is 32-bit aligned
@@ -192,9 +205,20 @@ struct cara_vk_renderer {
   uint32_t graphics_q_fam_idx;  // I guess I need this for memory barriers
   uint32_t trans_q_fam_idx;
   uint32_t compute_q_fam_idx;
+  uint32_t nr_old_swapchains;
   float max_anisotropy;
-  //atomic_uint_least8_t tmp_var_ready;
+  union win_dims win_size;  // The current dimensions of the window
+  union win_dims max_win_size;  // The width and height of the framebuffers and swapchain images
+  union win_dims max_win_size_avail;  // The maximum size available on the presentation surface
+  static_assert( alignof(int32_t) == alignof(float) && alignof(float) >= alignof(union win_dims) &&
+      alignof(union win_dims) >= alignof(VkSurfaceTransformFlagBitsKHR));
+  VkSurfaceTransformFlagBitsKHR vk_surface_transform_flags;  // Can I assume it's always .*identity?
+  static_assert( alignof(VkSurfaceTransformFlagBitsKHR) >= alignof(VkPresentModeKHR) );
+  VkPresentModeKHR vk_present_mode;
+  static_assert( alignof(VkPresentModeKHR) >= alignof(VkColorSpaceKHR) );
+  VkColorSpaceKHR vk_color_space;
   uint8_t nr_swapchain_imgs;
+  uint8_t nr_swapchain_imgs_we_request;
   uint8_t texture_format_chosen; // either texture_format_astc or texture_format_s3tc
 };
 
@@ -241,7 +265,13 @@ static inline VkCommandBuffer * cara_get_arr_cmd_bufs_for_transfer(
 /*
  * \brief Create a VkRenderPass and a VkFramebuffer
  */
-enum err_msg create_renderpass_and_framebuffer( struct cara_vk_renderer * cara_vk );
+enum err_msg create_1st_renderpass_and_framebuffer( struct cara_vk_renderer * renderer );
+
+//-------------------------------------------------------------------------------------------------
+/*
+ * \brief Create a VkRenderPass and a VkFramebuffer
+ */
+enum err_msg expand_swapchain_and_framebuffer( struct cara_vk_renderer * renderer );
 
 //-------------------------------------------------------------------------------------------------
 /*

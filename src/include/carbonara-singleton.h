@@ -34,7 +34,6 @@ struct carbonara {
   struct infos_bst * tree_of_times_to_act;
   uint32_t * periodic_jobs_periods_5us;
   uint16_t * periodic_jobs;
-  SDL_Window * window;
   static_assert( alignof(void*) >= alignof(uint64_t), "Sort the struct members!" );
   uint64_t proc_info;
   uint64_t nr_pc_in_5us;
