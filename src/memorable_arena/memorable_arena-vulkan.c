@@ -13,20 +13,20 @@
 
 //-------------------------------------------------------------------------------------------------
 enum err_msg ma_init_vk_mem_mgr(
-    struct ma_vk_mem_mgr * p_vmm,
-    VkPhysicalDeviceMemoryProperties2 * ptr_mem_properties,
-    VkPhysicalDeviceLimits * limits,
+    struct ma_vk_mem_mgr * restrict p_vmm,
+    VkPhysicalDeviceMemoryProperties2 * restrict p_mem_properties,
+    VkPhysicalDeviceLimits * restrict p_limits,
     void * restrict userdata,
     void * (*custom_malloc)(void * userdata, size_t alignment, size_t size)
     )
 {
   // Save numbers.
-  p_vmm->heap_cnt = ptr_mem_properties->memoryProperties.memoryHeapCount;
-  p_vmm->type_cnt = ptr_mem_properties->memoryProperties.memoryTypeCount;
-  p_vmm->len_non_coherent_atom = limits->nonCoherentAtomSize;
-  p_vmm->buf_granularity = limits->bufferImageGranularity;
-  assume( _is_power_of_two( limits->bufferImageGranularity) );
-  assume( _is_power_of_two( limits->nonCoherentAtomSize) );
+  p_vmm->heap_cnt = p_mem_properties->memoryProperties.memoryHeapCount;
+  p_vmm->type_cnt = p_mem_properties->memoryProperties.memoryTypeCount;
+  p_vmm->len_non_coherent_atom = p_limits->nonCoherentAtomSize;
+  p_vmm->buf_granularity = p_limits->bufferImageGranularity;
+  assume( _is_power_of_two( p_limits->bufferImageGranularity) );
+  assume( _is_power_of_two( p_limits->nonCoherentAtomSize) );
 
   // Get memory allocation for the arrays
   void * (*local_malloc)(void * userdata, size_t alignment, size_t size);
@@ -55,13 +55,13 @@ enum err_msg ma_init_vk_mem_mgr(
   // Cache some properties.
   for ( unsigned int heap_idx = 0; heap_idx < p_vmm->heap_cnt; heap_idx++ ) {
     p_vmm->arr_sizes[heap_idx] =
-      ptr_mem_properties->memoryProperties.memoryHeaps[heap_idx].size;
+      p_mem_properties->memoryProperties.memoryHeaps[heap_idx].size;
   }
   for ( unsigned int type_idx = 0; type_idx < p_vmm->type_cnt; type_idx++ ) {
     p_vmm->arr_heap_indices[type_idx] =
-      ptr_mem_properties->memoryProperties.memoryTypes[type_idx].heapIndex;
+      p_mem_properties->memoryProperties.memoryTypes[type_idx].heapIndex;
     p_vmm->arr_mem_property_flags[type_idx] =
-      ptr_mem_properties->memoryProperties.memoryTypes[type_idx].propertyFlags;
+      p_mem_properties->memoryProperties.memoryTypes[type_idx].propertyFlags;
   }
 
   // Assume 0 bytes of heap memory was used by our application.
@@ -100,7 +100,7 @@ enum err_msg ma_init_vk_mem_mgr(
 
 //-------------------------------------------------------------------------------------------------
 void ma_destroy_vk_mem_mgr(
-    struct ma_vk_mem_mgr * p_vmm,
+    struct ma_vk_mem_mgr * restrict p_vmm,
     VkDevice logical_dev,
     void * restrict userdata,
     void (*custom_free)(void * restrict userdata, void * restrict ptr)
@@ -156,7 +156,7 @@ void ma_destroy_vk_mem_mgr(
 
 //-------------------------------------------------------------------------------------------------
 enum err_msg ma_create_staging_buf(
-    struct ma_vk_mem_mgr * p_vmm,
+    struct ma_vk_mem_mgr * restrict p_vmm,
     VkDevice logical_dev,
     unsigned int buf_len
     )
@@ -433,7 +433,7 @@ enum err_msg prototype_create_vk_trans_bufs(
 //-------------------------------------------------------------------------------------------------
 
 enum err_msg ma_prepare_upload_mgr(
-    struct ma_vk_mem_mgr * vmm,
+    struct ma_vk_mem_mgr * restrict vmm,
     void * restrict userdata,
     void * (*custom_malloc)(void * userdata, size_t alignment, size_t size)
     )
@@ -453,15 +453,16 @@ enum err_msg ma_prepare_upload_mgr(
 
 //-------------------------------------------------------------------------------------------------
 enum err_msg ma_bind_img_to_malloc(
-    struct ma_vk_mem_mgr * p_vmm,
+    struct ma_vk_mem_mgr * restrict p_vmm,
     void * restrict userdata,
     void * (*custom_malloc)(void * userdata, size_t alignment, size_t size),
     VkDevice log_dev,
     VkImage vk_img,
     uint32_t type_idx,
-    VkDeviceSize size
+    VkDeviceSize req_size
     )
 {
+  VkDeviceSize size_to_req = _align_to_power_of_two( req_size, p_vmm->buf_granularity );
   VkResult result;
   enum err_msg err;
   void * (*local_malloc)(void * userdata, size_t alignment, size_t size);
@@ -480,7 +481,7 @@ enum err_msg ma_bind_img_to_malloc(
         VkMemoryAllocateInfo buf_malloc_info;
         buf_malloc_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
         buf_malloc_info.pNext = nullptr;
-        buf_malloc_info.allocationSize = size;
+        buf_malloc_info.allocationSize = len_chunk_of_pages;
         buf_malloc_info.memoryTypeIndex = type_idx;
         SPALL_BEGIN("alloc_mem");
         result = vkAllocateMemory( log_dev,
@@ -529,11 +530,12 @@ enum err_msg ma_bind_img_to_malloc(
       // Check if there is enough space
       struct range_u32 * p_rent;
       p_rent = infos_pm_rent( (struct infos_page_mgr*)p_pm, userdata, local_malloc,
-          size, true );
+          _align_to_power_of_two(size_to_req, p_vmm->len_non_coherent_atom), true );
       if ( !p_rent ) {
         continue;
       }
-      p_vmm->arr_usages[heap_idx] += size;
+      p_vmm->arr_usages[heap_idx] += _align_to_power_of_two(
+          size_to_req, p_vmm->len_non_coherent_atom );
 
       // Bind the image with *p_malloc
       SPALL_BEGIN("bind_img_mem");
@@ -548,7 +550,8 @@ enum err_msg ma_bind_img_to_malloc(
           fprintf( stderr, "[Carbonara] Could not return the rented pages!! "
               "'%s'\n", err_msg_text[err] );
         } else {
-          p_vmm->arr_usages[heap_idx] -= size;
+          p_vmm->arr_usages[heap_idx] -= _align_to_power_of_two(
+              size_to_req, p_vmm->len_non_coherent_atom );
         }
         switch ( result ) {
           case VK_ERROR_OUT_OF_DEVICE_MEMORY:
@@ -602,9 +605,70 @@ enum err_msg ma_bind_img_to_malloc(
 
 
 //-------------------------------------------------------------------------------------------------
+enum err_msg ma_report_malloc_rel(
+    struct ma_vk_mem_mgr * restrict p_vmm,
+    void * restrict userdata,
+    void * (*custom_malloc)(void * userdata, size_t alignment, size_t size),
+    uint32_t type_idx,
+    struct range_u32 * p_malloc_range
+    )
+{
+  void * (*local_malloc)(void * userdata, size_t alignment, size_t size);
+  local_malloc = custom_malloc ? custom_malloc : default_malloc;
+
+  enum err_msg err;
+
+  uint32_t heap_idx = p_vmm->arr_heap_indices[type_idx];
+  struct infos_singly_linked_list_node * m_node = &p_vmm->mallocs.lists[type_idx].head;
+  struct infos_singly_linked_list_node * p_node = &p_vmm->page_mgrs.lists[type_idx].head;
+  const uint32_t last_idx = 1 << p_vmm->mallocs.log2_nr_elems;
+  while(7) {
+    for ( uint32_t idx = 0; idx < last_idx; idx++ ) {
+      struct infos_page_mgr_p2 * p_pm = p_node->data + idx * sizeof(*p_pm);
+      if ( !p_pm->al_vacancies.list.nr_nodes ) {
+        return err_msg_no_such_entry;
+      }
+
+      err = infos_pm_return_via_ptr( (struct infos_page_mgr*)p_pm, userdata, local_malloc,
+          p_malloc_range );
+
+      switch ( err ) {
+        case err_msg_no_such_entry:
+          continue;
+        case 0:
+          p_vmm->arr_usages[heap_idx] -= get_range_len(*p_malloc_range);
+#if !defined( ARE_WE_SHIPPING_IT )
+          VkDeviceMemory * p_malloc = m_node->data + idx * sizeof(VkDeviceMemory);
+          if ( *p_malloc == VK_NULL_HANDLE ) {
+            return err_msg_unknown;
+          }
+#endif
+          [[fallthrough]];
+        case err_msg_already_done:
+          [[fallthrough]];
+        case err_msg_out_of_memory:
+          [[fallthrough]];
+        default:
+          return err;
+      }
+    }
+
+    if ( !p_node->next ) {
+      return err_msg_no_such_entry;
+    }
+
+#if !defined( ARE_WE_SHIPPING_IT )
+    m_node = m_node->next;
+#endif
+    p_node = p_node->next;
+  }
+}
+
+
+//-------------------------------------------------------------------------------------------------
 uint32_t ma_pick_best_mtype(
-    struct ma_vk_mem_mgr * p_vmm,
-    VkMemoryRequirements * req,
+    struct ma_vk_mem_mgr * restrict p_vmm,
+    VkMemoryRequirements * restrict req,
     VkMemoryPropertyFlags required_props,
     VkMemoryPropertyFlags preferred_props,
     VkMemoryPropertyFlags tolerable_props

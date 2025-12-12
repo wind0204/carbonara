@@ -214,7 +214,7 @@ static uint32_t infos_smm_rent_impl( struct infos_simple_mem_mgr * restrict mana
         continue;
       }
 
-      if ( _length_of_range(vacancy) >= length ) {
+      if ( get_range_len(*vacancy) >= length ) {
         // Register the rental_info
         nr_elems = UINT64_C(1) << manager->al_rental_info.log2_nr_elems;
         struct infos_singly_linked_list_node * restrict r_node;
@@ -242,7 +242,7 @@ take_and_return:
 //fprintf(stdout, "[SMM] infos_smm_rent_impl %lx + %u-%u\n",
 //    ptr2ui(manager->data), rental->start, rental->stop);
 //#endif
-              manager->total_space_left -= _length_of_range(rental);
+              manager->total_space_left -= get_range_len(*rental);
 
               // Reduce the size of vacancy
               // From the right side? or the left side?
@@ -251,7 +251,7 @@ take_and_return:
               else
                 vacancy->stop = vacancy->stop - length;
 
-              if ( _length_of_range(vacancy) == 0 ) {
+              if ( get_range_len(*vacancy) == 0 ) {
                 vacancy->start = -7;
                 vacancy->stop = 7;
                 if ( base_vidx + vacancy_idx == manager->idx_last_vacancy ) {
@@ -292,7 +292,7 @@ take_and_return:
 //fprintf(stdout, "[SMM] infos_smm_rent_impl %lx + %u-%u\n",
 //    ptr2ui(manager->data), rental->start, rental->stop);
 //#endif
-        manager->total_space_left -= _length_of_range(rental);
+        manager->total_space_left -= get_range_len(*rental);
 
         // Reduce the size of vacancy
         // From the right side? or the left side?
@@ -301,7 +301,7 @@ take_and_return:
         else
           vacancy->stop = vacancy->stop - length;
 
-        if ( _length_of_range(vacancy) == 0 ) {
+        if ( get_range_len(*vacancy) == 0 ) {
           vacancy->start = -7;
           vacancy->stop = 7;
           if ( base_vidx + vacancy_idx == manager->idx_last_vacancy ) {
@@ -371,7 +371,7 @@ void * infos_smm_rent_chunks( struct infos_simple_mem_mgr * restrict manager,
         continue;
       }
 
-      if ( _length_of_range(vacancy) >= nr_chunks ) {
+      if ( get_range_len(*vacancy) >= nr_chunks ) {
         // Register the rental_info
         nr_elems = UINT64_C(1) << manager->al_rental_info.log2_nr_elems;
         struct infos_singly_linked_list_node * restrict r_node;
@@ -399,7 +399,7 @@ take_and_return:
 //fprintf(stdout, "[SMM] infos_smm_rent_chunks_ %lx + %u-%u\n",
 //    ptr2ui(manager->data), rental->start, rental->stop);
 //#endif
-              manager->total_space_left -= _length_of_range(rental);
+              manager->total_space_left -= get_range_len(*rental);
 
               // Reduce the size of vacancy
               // From the right side? or the left side?
@@ -408,7 +408,7 @@ take_and_return:
               else
                 vacancy->stop = vacancy->stop - nr_chunks;
 
-              if ( _length_of_range(vacancy) == 0 ) {
+              if ( get_range_len(*vacancy) == 0 ) {
                 vacancy->start = -7;
                 vacancy->stop = 7;
                 if ( base_vidx + vacancy_idx == manager->idx_last_vacancy ) {
@@ -450,7 +450,7 @@ take_and_return:
 //fprintf(stdout, "[SMM] infos_smm_rent_chunks_ %lx + %u-%u\n",
 //    ptr2ui(manager->data), rental->start, rental->stop);
 //#endif
-        manager->total_space_left -= _length_of_range(rental);
+        manager->total_space_left -= get_range_len(*rental);
 
         // Reduce the size of vacancy
         // From the right side? or the left side?
@@ -459,7 +459,7 @@ take_and_return:
         else
           vacancy->stop = vacancy->stop - nr_chunks;
 
-        if ( _length_of_range(vacancy) == 0 ) {
+        if ( get_range_len(*vacancy) == 0 ) {
           vacancy->start = -7;
           vacancy->stop = 7;
           if ( base_vidx + vacancy_idx == manager->idx_last_vacancy ) {
@@ -524,7 +524,7 @@ static uint32_t infos_smm_rent_aligned_impl( struct infos_simple_mem_mgr * restr
       struct range_u32 new_vacancy;
       new_vacancy.start = -7;
       new_vacancy.stop = 7;
-      if ( _aligned_length_of_range(vacancy, alignment, lsbs_head_addr)
+      if ( get_aligned_range_len(*vacancy, alignment, lsbs_head_addr)
           >= length ) {
         bool take_from_right = true;  // Let us take the right-most part in most of the cases.
         nr_tries_to_find_prealigned++;
@@ -553,7 +553,7 @@ static uint32_t infos_smm_rent_aligned_impl( struct infos_simple_mem_mgr * restr
 come_back_here_with_a_spacious_range:
         // Split vacancy in two pieces
         // NOTE It simply splits the range into 2 halves but there may be a better way.
-        uint32_t nr_units_left_after_alloc = _length_of_range(vacancy) - length;
+        uint32_t nr_units_left_after_alloc = get_range_len(*vacancy) - length;
         uint32_t first_unit_idx = nr_units_left_after_alloc/2 - length/2;
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wconditional-uninitialized"
@@ -605,7 +605,7 @@ take_it_and_return:
 //fprintf(stdout, "[SMM] infos_smm_rent_aligned_impl %lx + %u-%u\n",
 //    ptr2ui(manager->data), rental->start, rental->stop);
 //#endif
-              manager->total_space_left -= _length_of_range(rental);
+              manager->total_space_left -= get_range_len(*rental);
               // Reduce the size of vacancy
               // From the right side? or the left side?
               if ( !take_from_right )
@@ -617,7 +617,7 @@ take_it_and_return:
                 goto register_new_vacancy;
               }
 
-              if ( _length_of_range(vacancy) == 0 ) {
+              if ( get_range_len(*vacancy) == 0 ) {
                 vacancy->start = -7;
                 vacancy->stop = 7;
                 if ( base_vidx + vacancy_idx == manager->idx_last_vacancy ) {
@@ -651,7 +651,7 @@ take_it_and_return:
 //fprintf(stdout, "[SMM] infos_smm_rent_aligned_impl %lx + %u-%u\n",
 //    ptr2ui(manager->data), rental->start, rental->stop);
 //#endif
-            manager->total_space_left -= _length_of_range(rental);
+            manager->total_space_left -= get_range_len(*rental);
 
             // Reduce the size of vacancy
             // From the right side? or the left side?
@@ -665,7 +665,7 @@ take_it_and_return:
                 goto register_new_vacancy;
             }
 
-            if ( _length_of_range(vacancy) == 0 ) {
+            if ( get_range_len(*vacancy) == 0 ) {
               vacancy->start = -7;
               vacancy->stop = 7;
               if ( base_vidx + vacancy_idx == manager->idx_last_vacancy ) {
@@ -706,7 +706,7 @@ take_it_and_return:
 //fprintf(stdout, "[SMM] infos_smm_rent_aligned_impl %lx + %u-%u\n",
 //    ptr2ui(manager->data), rental->start, rental->stop);
 //#endif
-        manager->total_space_left -= _length_of_range(rental);
+        manager->total_space_left -= get_range_len(*rental);
 
         if ( new_vacancy.start > new_vacancy.stop ) {
           // Reduce the size of vacancy
@@ -716,7 +716,7 @@ take_it_and_return:
           else
             vacancy->stop = vacancy->stop - length;
 
-          if ( _length_of_range(vacancy) == 0 ) {
+          if ( get_range_len(*vacancy) == 0 ) {
             vacancy->start = -7;
             vacancy->stop = 7;
             if ( base_vidx + vacancy_idx == manager->idx_last_vacancy ) {
@@ -729,6 +729,7 @@ take_it_and_return:
         }
 
 register_new_vacancy:
+        rental = r_node->data;
         // Register new_vacancy
         nr_elems = UINT64_C(1) << manager->al_vacancies.log2_nr_elems;
         r_node = &manager->al_vacancies.list.head;
@@ -749,18 +750,15 @@ register_new_vacancy:
             new_slot = r_node->data + il_vidx * sizeof(*new_slot);
             if ( new_slot->stop < new_slot->start ) {
 //#ifdef DEBUG_MODE
-//#pragma GCC diagnostic push
-//#pragma GCC diagnostic ignored "-Wconditional-uninitialized"
 //fprintf(stdout,
 //    "[SMM] infos_smm_rent_aligned_impl %lx + %u-%u (register_new_vacancy)\n",
 //    ptr2ui(manager->data), rental->start, rental->stop);
-//#pragma GCC diagnostic pop
 //#endif
-              manager->total_space_left -= _length_of_range(rental);
+              manager->total_space_left -= get_range_len(*rental);
 
               new_slot->start = new_vacancy.start;
               new_slot->stop = new_vacancy.stop;
-              if ( _length_of_range(vacancy) == 0 ) {
+              if ( get_range_len(*vacancy) == 0 ) {
                 vacancy->start = -7;
                 vacancy->stop = 7;
                 if ( base_vidx + il_vidx == manager->idx_last_vacancy ) {
@@ -789,12 +787,12 @@ populate_new_vacancy:
 //    "[SMM] infos_smm_rent_aligned_impl %lx + %u-%u (populate_new_vacancy)\n",
 //    ptr2ui(manager->data), rental->start, rental->stop);
 //#endif
-            manager->total_space_left -= _length_of_range(rental);
+            manager->total_space_left -= get_range_len(*rental);
 
             new_slot->start = new_vacancy.start;
             new_slot->stop = new_vacancy.stop;
             manager->idx_last_vacancy++;
-            if ( _length_of_range(vacancy) == 0 ) {
+            if ( get_range_len(*vacancy) == 0 ) {
               vacancy->start = -7;
               vacancy->stop = 7;
               if ( base_vidx + vacancy_idx == manager->idx_last_vacancy ) {
@@ -830,7 +828,7 @@ populate_new_vacancy:
 //fprintf(stdout, "[SMM] infos_smm_rent_aligned_impl %lx + %u-%u (Grow the linked array)\n",
 //    ptr2ui(manager->data), rental->start, rental->stop);
 //#endif
-        manager->total_space_left -= _length_of_range(rental);
+        manager->total_space_left -= get_range_len(*rental);
 
         r_node = infos_ll_get_last_node(&manager->al_vacancies.list.head);
         manager->idx_last_vacancy++;
@@ -838,7 +836,7 @@ populate_new_vacancy:
         new_slot->start = new_vacancy.start;
         new_slot->stop = new_vacancy.stop;
 
-        if ( _length_of_range(vacancy) == 0 ) {
+        if ( get_range_len(*vacancy) == 0 ) {
           vacancy->start = -7;
           vacancy->stop = 7;
           if ( base_vidx + vacancy_idx == manager->idx_last_vacancy ) {
@@ -910,7 +908,7 @@ static uint32_t infos_smm_rent_aligned_chunks_impl(
       struct range_u32 new_vacancy;
       new_vacancy.start = -7;
       new_vacancy.stop = 7;
-      if ( _aligned_length_of_range(vacancy, alignment_in_chunks, lsbs_headchunk_addr)
+      if ( get_aligned_range_len(*vacancy, alignment_in_chunks, lsbs_headchunk_addr)
           >= nr_chunks ) {
         bool take_from_right = true;  // Let us take the back part in most of the cases.
         nr_tries_to_find_prealigned++;
@@ -940,7 +938,7 @@ static uint32_t infos_smm_rent_aligned_chunks_impl(
 come_back_here_with_a_spacious_range:
         // Split vacancy in two pieces
         // NOTE It simply splits the range into 2 halves but there might be a better way.
-        uint32_t nr_units_left_after_alloc = _length_of_range(vacancy) - nr_chunks;
+        uint32_t nr_units_left_after_alloc = get_range_len(*vacancy) - nr_chunks;
         uint32_t first_unit_idx = nr_units_left_after_alloc/2 - nr_chunks/2;
         first_unit_idx =
           _align_to_power_of_two( vacancy->start + first_unit_idx + lsbs_headchunk_addr,
@@ -1001,9 +999,9 @@ take_it_and_return:
                 goto register_new_vacancy;
               }
 
-              manager->total_space_left -= _length_of_range(rental);
+              manager->total_space_left -= get_range_len(*rental);
 
-              if ( _length_of_range(vacancy) == 0 ) {
+              if ( get_range_len(*vacancy) == 0 ) {
                 vacancy->start = -7;
                 vacancy->stop = 7;
                 if ( base_vidx + vacancy_idx == manager->idx_last_vacancy ) {
@@ -1037,7 +1035,7 @@ take_it_and_return:
 //fprintf(stdout, "[SMM] infos_smm_rent_aligned_chunks_impl %lx + %u-%u\n",
 //    ptr2ui(manager->data), rental->start, rental->stop);
 //#endif
-            manager->total_space_left -= _length_of_range(rental);
+            manager->total_space_left -= get_range_len(*rental);
 
             // Reduce the size of vacancy
             // From the right side? or the left side?
@@ -1051,7 +1049,7 @@ take_it_and_return:
                 goto register_new_vacancy;
             }
 
-            if ( _length_of_range(vacancy) == 0 ) {
+            if ( get_range_len(*vacancy) == 0 ) {
               vacancy->start = -7;
               vacancy->stop = 7;
               if ( base_vidx + vacancy_idx == manager->idx_last_vacancy ) {
@@ -1093,7 +1091,7 @@ take_it_and_return:
 //fprintf(stdout, "[SMM] infos_smm_rent_aligned_chunks_impl %lx + %u-%u\n",
 //    ptr2ui(manager->data), rental->start, rental->stop);
 //#endif
-        manager->total_space_left -= _length_of_range(rental);
+        manager->total_space_left -= get_range_len(*rental);
 
         if ( new_vacancy.start > new_vacancy.stop ) {
           // Reduce the size of vacancy
@@ -1103,7 +1101,7 @@ take_it_and_return:
           else
             vacancy->stop = vacancy->stop - nr_chunks;
 
-          if ( _length_of_range(vacancy) == 0 ) {
+          if ( get_range_len(*vacancy) == 0 ) {
             vacancy->start = -7;
             vacancy->stop = 7;
             if ( base_vidx + vacancy_idx == manager->idx_last_vacancy ) {
@@ -1116,6 +1114,7 @@ take_it_and_return:
         }
 
 register_new_vacancy:
+        rental = r_node->data;
         // Register new_vacancy
         nr_elems = UINT64_C(1) << manager->al_vacancies.log2_nr_elems;
         struct infos_singly_linked_list_node * restrict il_v_node;
@@ -1137,18 +1136,15 @@ register_new_vacancy:
             new_slot = il_v_node->data + il_vidx * sizeof(*new_slot);
             if ( new_slot->stop < new_slot->start ) {
 //#ifdef DEBUG_MODE
-//#pragma GCC diagnostic push
-//#pragma GCC diagnostic ignored "-Wconditional-uninitialized"
 //fprintf(stdout,
 //    "[SMM] infos_smm_rent_aligned_chunks_impl %lx + %u-%u (register_new_vacancy)\n",
 //    ptr2ui(manager->data), rental->start, rental->stop);
-//#pragma GCC diagnostic pop
 //#endif
-              manager->total_space_left -= _length_of_range(rental);
+              manager->total_space_left -= get_range_len(*rental);
 
               new_slot->start = new_vacancy.start;
               new_slot->stop = new_vacancy.stop;
-              if ( _length_of_range(vacancy) == 0 ) {
+              if ( get_range_len(*vacancy) == 0 ) {
                 vacancy->start = -7;
                 vacancy->stop = 7;
                 if ( base_vidx + il_vidx == manager->idx_last_vacancy ) {
@@ -1177,12 +1173,12 @@ populate_new_vacancy:
 //    "[SMM] infos_smm_rent_aligned_chunks_impl %lx + %u-%u (populate_new_vacancy)\n",
 //    ptr2ui(manager->data), rental->start, rental->stop );
 //#endif
-            manager->total_space_left -= _length_of_range(rental);
+            manager->total_space_left -= get_range_len(*rental);
 
             new_slot->start = new_vacancy.start;
             new_slot->stop = new_vacancy.stop;
             manager->idx_last_vacancy++;
-            if ( _length_of_range(vacancy) == 0 ) {
+            if ( get_range_len(*vacancy) == 0 ) {
               vacancy->start = -7;
               vacancy->stop = 7;
               if ( base_vidx + vacancy_idx == manager->idx_last_vacancy ) {
@@ -1221,7 +1217,7 @@ populate_new_vacancy:
 //    "[SMM] infos_smm_rent_aligned_chunks_impl %lx + %u-%u (Grow the linked array)\n",
 //    ptr2ui(manager->data), rental->start, rental->stop );
 //#endif
-        manager->total_space_left -= _length_of_range(rental);
+        manager->total_space_left -= get_range_len(*rental);
 
         il_v_node = infos_ll_get_last_node(&manager->al_vacancies.list.head);
         manager->idx_last_vacancy++;
@@ -1229,7 +1225,7 @@ populate_new_vacancy:
         new_slot->start = new_vacancy.start;
         new_slot->stop = new_vacancy.stop;
 
-        if ( _length_of_range(vacancy) == 0 ) {
+        if ( get_range_len(*vacancy) == 0 ) {
           vacancy->start = -7;
           vacancy->stop = 7;
           if ( base_vidx + vacancy_idx == manager->idx_last_vacancy ) {
@@ -1346,18 +1342,18 @@ static enum err_msg infos_smm_return_impl( struct infos_simple_mem_mgr * restric
             // Some messy code from a long time ago
             if ( !vacancy_to_merge_with ) {
               if ( vacancy->stop == target - 1 ) {
-                _merge_range_into_lower(vacancy, rental_info);
+                merge_range_into_lower(vacancy, rental_info);
                 vacancy_to_merge_with = vacancy;
               } else if ( vacancy->start == rental_info->stop + 1 ) {
-                _merge_range_into_higher(rental_info, vacancy);
+                merge_range_into_higher(rental_info, vacancy);
                 vacancy_to_merge_with = vacancy;
               }
             } else {
               if ( vacancy->stop == vacancy_to_merge_with->start - 1 ) {
-                _merge_range_into_lower(vacancy, vacancy_to_merge_with);
+                merge_range_into_lower(vacancy, vacancy_to_merge_with);
                 vacancy_to_merge_with = 0;
               } else if ( vacancy->start == vacancy_to_merge_with->stop + 1 ) {
-                _merge_range_into_higher(vacancy_to_merge_with, vacancy);
+                merge_range_into_higher(vacancy_to_merge_with, vacancy);
                 vacancy_to_merge_with = 0;
               }
 
@@ -1370,7 +1366,7 @@ mark_empty_and_return:
 //fprintf( stdout, "[SMM] smm_return_impl released %u-%u\n",
 //    rental_info->start, rental_info->stop );
 //#endif
-                manager->total_space_left -= _length_of_range(rental_info);
+                manager->total_space_left -= get_range_len(*rental_info);
 
                 // Mark the element empty.
                 rental_info->start = -7;
@@ -1422,7 +1418,7 @@ no_existing_range_to_merge:
 //fprintf( stdout, "[SMM] smm_return_impl released %u-%u\n",
 //    rental_info->start, rental_info->stop );
 //#endif
-              manager->total_space_left -= _length_of_range(rental_info);
+              manager->total_space_left -= get_range_len(*rental_info);
 
               // Mark the element empty.
               rental_info->start = -7;
@@ -1453,7 +1449,7 @@ populate_new_vacancy:
 //fprintf( stdout, "[SMM] smm_return_impl released %u-%u\n",
 //    rental_info->start, rental_info->stop );
 //#endif
-            manager->total_space_left -= _length_of_range(rental_info);
+            manager->total_space_left -= get_range_len(*rental_info);
 
             // Mark the element empty.
             rental_info->start = -7;
@@ -1488,7 +1484,7 @@ populate_new_vacancy:
 //fprintf( stdout, "[SMM] smm_return_impl released %u-%u\n",
 //    rental_info->start, rental_info->stop );
 //#endif
-        manager->total_space_left -= _length_of_range(rental_info);
+        manager->total_space_left -= get_range_len(*rental_info);
 
         // Mark the element empty.
         rental_info->start = -7;
@@ -1584,7 +1580,7 @@ void * infos_smm_realloc_chunks( struct infos_simple_mem_mgr * restrict manager,
         //int32_t len_diff = new_length - (_length_of_range(rental_info) << log2_chunk_len);
         uint32_t new_len_in_chunks = ( new_length + (UINT64_C(1) << log2_chunk_len) - 1 )
           >> log2_chunk_len;
-        int32_t len_diff_in_chunks = new_len_in_chunks - _length_of_range(rental_info);
+        int32_t len_diff_in_chunks = new_len_in_chunks - get_range_len(*rental_info);
         if ( len_diff_in_chunks == 0 ) {
 //#ifdef DEBUG_MODE
 //fprintf( stdout, "[SMM] smm_realloc_chunks %lx(%lu) -> %lx(%u) (%+d=%u)\n",
@@ -1647,11 +1643,11 @@ end_of_neighbor_search:
           if ( len_diff_in_chunks > 0 ) {
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wsign-compare"
-            if ( _length_of_range( vacancy_back ) < len_diff_in_chunks ) {
+            if ( get_range_len( *vacancy_back ) < len_diff_in_chunks ) {
               goto no_surrounding_space_big_enough_to_take;
             }
             // Merge with the range in the back
-            int whole_merge = _length_of_range(vacancy_back) == len_diff_in_chunks ?
+            int whole_merge = get_range_len(*vacancy_back) == len_diff_in_chunks ?
               -7 : 0;
             rental_info->stop += len_diff_in_chunks;
             if ( !whole_merge ) {
@@ -1674,11 +1670,11 @@ end_of_neighbor_search:
         // Try to edit vacancy_front
         if ( vacancy_front ) {
           if ( len_diff_in_chunks > 0 ) {
-            if ( _length_of_range( vacancy_front ) < len_diff_in_chunks ) {
+            if ( get_range_len( *vacancy_front ) < len_diff_in_chunks ) {
               goto no_surrounding_space_big_enough_to_take;
             }
             // Merge with the range in the front
-            int whole_merge = _length_of_range(vacancy_front) == len_diff_in_chunks ?
+            int whole_merge = get_range_len(*vacancy_front) == len_diff_in_chunks ?
               -7 : 0;
             rental_info->start -= len_diff_in_chunks;
             if ( !whole_merge ) {
@@ -1702,13 +1698,13 @@ end_of_neighbor_search:
         // Try to edit both vacancy_front and vacancy_back
         if ( vacancy_back && vacancy_front ) {
           if ( len_diff_in_chunks > 0 &&
-              (_length_of_range(vacancy_front) + _length_of_range(vacancy_back)
+              (get_range_len(*vacancy_front) + get_range_len(*vacancy_back)
               < len_diff_in_chunks) ) {
 #pragma GCC diagnostic pop
             goto no_surrounding_space_big_enough_to_take;
           }
           // Take space from the front first
-          uint32_t added_len = _length_of_range(vacancy_front);
+          uint32_t added_len = get_range_len(*vacancy_front);
           rental_info->start -= added_len;
           vacancy_front->start = -7;
           vacancy_front->stop = 7;
@@ -1720,7 +1716,7 @@ end_of_neighbor_search:
           uint32_t deficit = len_diff_in_chunks - added_len;
           rental_info->stop += deficit;
           vacancy_back->start += deficit;
-          if ( _length_of_range(vacancy_back) == 0 ) {
+          if ( get_range_len(*vacancy_back) == 0 ) {
             vacancy_back->start = -7;
             vacancy_back->stop = 7;
             if ( vacancy_back == vacancy_at_tip && manager->idx_last_vacancy > 0 ) {
@@ -1750,8 +1746,8 @@ no_surrounding_space_big_enough_to_take:
           return 0;
         }
 
-        memcpy( new_ptr, orig_ptr, _length_of_range(rental_info) > new_len_in_chunks ?
-            new_len_in_chunks << log2_chunk_len : _length_of_range(rental_info) << log2_chunk_len );
+        memcpy( new_ptr, orig_ptr, get_range_len(*rental_info) > new_len_in_chunks ?
+            new_len_in_chunks << log2_chunk_len : get_range_len(*rental_info) << log2_chunk_len );
         if ( base_ridx + rent_idx == manager->idx_last_rental_info  &&
             manager->idx_last_rental_info > 0) {
           manager->idx_last_rental_info--;
@@ -1801,7 +1797,7 @@ static void * try_to_merge_with_vacancy_right_next_for_an_aligned_alloc(
     uint32_t log2_chunk_len
     )
 {
-  uint32_t new_len_in_chunks = _length_of_range( orig_rent ) + len_diff_in_chunks;
+  uint32_t new_len_in_chunks = get_range_len( *orig_rent ) + len_diff_in_chunks;
   uint32_t nr_misaligned_chunks_at_head =
     ( (alignment_in_chunks - lsbs_headchunk_addr) & (alignment_in_chunks - 1) );
   uint32_t lsbs_last_chunk_addr_when_aligned =
@@ -1824,7 +1820,7 @@ static void * try_to_merge_with_vacancy_right_next_for_an_aligned_alloc(
     merged_range.stop = vacancy_back->stop;
     the_vacancy = vacancy_back;
 
-    if ( _aligned_length_of_range(&merged_range, alignment_in_chunks, lsbs_headchunk_addr)
+    if ( get_aligned_range_len(merged_range, alignment_in_chunks, lsbs_headchunk_addr)
         >= new_len_in_chunks ) {
       if ( prealigned_head ) {
         take_from_right = false;
@@ -1833,7 +1829,7 @@ static void * try_to_merge_with_vacancy_right_next_for_an_aligned_alloc(
 dont_skip_the_divider:
         // Split vacancy in two pieces
         // NOTE It simply splits the range into 2 halves but there might be a better way.
-        uint32_t nr_units_left_after_alloc = _length_of_range(&merged_range) - new_len_in_chunks;
+        uint32_t nr_units_left_after_alloc = get_range_len(*&merged_range) - new_len_in_chunks;
         uint32_t first_unit_idx = nr_units_left_after_alloc/2 - new_len_in_chunks/2;
         first_unit_idx =
           _align_to_power_of_two( merged_range.start + first_unit_idx + lsbs_headchunk_addr,
@@ -1903,7 +1899,7 @@ skip_the_divider:
               if ( new_slot->stop < new_slot->start ) {
                 new_slot->start = new_vacancy.start;
                 new_slot->stop = new_vacancy.stop;
-                if ( _length_of_range(the_vacancy) == 0 ) {
+                if ( get_range_len(*the_vacancy) == 0 ) {
                   the_vacancy->start = -7;
                   the_vacancy->stop = 7;
                   if ( base_vidx + il_vidx == manager->idx_last_vacancy ) {
@@ -1929,7 +1925,7 @@ populate_new_vacancy:
               new_slot->start = new_vacancy.start;
               new_slot->stop = new_vacancy.stop;
               manager->idx_last_vacancy++;
-              if ( _length_of_range(the_vacancy) == 0 ) {
+              if ( get_range_len(*the_vacancy) == 0 ) {
                 the_vacancy->start = -7;
                 the_vacancy->stop = 7;
                 const uint64_t vacancy_idx = ( (void*)the_vacancy - il_v_node->data ) /
@@ -1948,7 +1944,7 @@ populate_new_vacancy:
         }  // if ( new_vacancy.start <= new_vacancy.stop ) 
 
         if ( the_vacancy ) {
-          if ( _length_of_range(the_vacancy) == 0 ) {
+          if ( get_range_len(*the_vacancy) == 0 ) {
             the_vacancy->start = -7;
             the_vacancy->stop = 7;
 
@@ -1974,7 +1970,7 @@ populate_new_vacancy:
           struct range_u32 * vacancies_near[2] = { vacancy_back, vacancy_front };
           for ( int ptr_idx = 0; ptr_idx < 2; ptr_idx++ ) {
             typeof(vacancies_near[0]) il_vacancy = vacancies_near[ptr_idx];
-            if ( _length_of_range(il_vacancy) == 0 ) {
+            if ( get_range_len(*il_vacancy) == 0 ) {
               il_vacancy->start = -7;
               il_vacancy->stop = 7;
 
@@ -2002,7 +1998,7 @@ populate_new_vacancy:
         manager->total_space_left -= len_diff_in_chunks;
         return manager->data + (orig_rent->start << log2_chunk_len);
       }
-    }  // if ( _aligned_length_of_range(&merged_range, alignment_in_chunks, lsbs_headchunk_addr)
+    }  // if ( get_aligned_range_len(&merged_range, alignment_in_chunks, lsbs_headchunk_addr)
        //     >= new_len_in_chunks ) 
   }
 
@@ -2013,7 +2009,7 @@ populate_new_vacancy:
     merged_range.stop = orig_rent->stop;
     the_vacancy = vacancy_front;
 
-    if ( _aligned_length_of_range(&merged_range, alignment_in_chunks, lsbs_headchunk_addr)
+    if ( get_aligned_range_len(merged_range, alignment_in_chunks, lsbs_headchunk_addr)
         >= new_len_in_chunks ) {
       if ( prealigned_tail ) {
         goto skip_the_divider;
@@ -2030,7 +2026,7 @@ populate_new_vacancy:
     merged_range.stop = vacancy_back->stop;
     the_vacancy = nullptr;
 
-    if ( _aligned_length_of_range(&merged_range, alignment_in_chunks, lsbs_headchunk_addr)
+    if ( get_aligned_range_len(merged_range, alignment_in_chunks, lsbs_headchunk_addr)
         >= new_len_in_chunks ) {
       goto dont_skip_the_divider;
     }
@@ -2081,7 +2077,7 @@ void * infos_smm_realloc_aligned_chunks( struct infos_simple_mem_mgr * restrict 
         //int32_t len_diff = new_length - (_length_of_range(rental_info) << log2_chunk_len);
         uint32_t new_len_in_chunks = ( new_length + (UINT64_C(1) << log2_chunk_len) - 1 )
           >> log2_chunk_len;
-        int32_t len_diff_in_chunks = new_len_in_chunks - _length_of_range(rental_info);
+        int32_t len_diff_in_chunks = new_len_in_chunks - get_range_len(*rental_info);
         uint32_t nr_misaligned_chunks_at_head =
           ( (alignment_in_chunks - lsbs_headchunk_addr) & (alignment_in_chunks - 1) );
         uint32_t lsbs_last_chunk_addr_when_aligned =
@@ -2094,7 +2090,7 @@ void * infos_smm_realloc_aligned_chunks( struct infos_simple_mem_mgr * restrict 
               lsbs_last_chunk_addr_when_aligned;
 
         //if ( len_diff_in_chunks <= 0 ) 
-        if ( _aligned_length_of_range(rental_info, alignment_in_chunks, lsbs_headchunk_addr) >=
+        if ( get_aligned_range_len(*rental_info, alignment_in_chunks, lsbs_headchunk_addr) >=
             new_len_in_chunks ) {
 //#ifdef DEBUG_MODE
 //fprintf( stdout, "[SMM] smm_realloc_chunks %lx(%lu) -> %lx(%u) (%+d=%u)\n",
@@ -2202,8 +2198,8 @@ end_of_neighbor_search:
           return 0;
         }
 
-        memcpy( new_ptr, orig_ptr, _length_of_range(rental_info) > new_len_in_chunks ?
-            new_len_in_chunks << log2_chunk_len : _length_of_range(rental_info) << log2_chunk_len );
+        memcpy( new_ptr, orig_ptr, get_range_len(*rental_info) > new_len_in_chunks ?
+            new_len_in_chunks << log2_chunk_len : get_range_len(*rental_info) << log2_chunk_len );
         if ( base_ridx + rent_idx == manager->idx_last_rental_info  &&
             manager->idx_last_rental_info > 0) {
           manager->idx_last_rental_info--;
@@ -2271,7 +2267,7 @@ void * infos_smm_realloc( struct infos_simple_mem_mgr * restrict manager,
         continue;
       }
       if ( rental_info->start == target ) {
-        int32_t len_diff = new_length - _length_of_range(rental_info);
+        int32_t len_diff = new_length - get_range_len(*rental_info);
         if ( len_diff == 0 ) {
 //#ifdef DEBUG_MODE
 //fprintf( stdout, "[SMM] smm_realloc %lx(%lu) -> %lx(%u) (%+d=%u)\n",
@@ -2334,11 +2330,11 @@ end_of_neighbor_search:
           if ( len_diff > 0 ) {
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wsign-compare"
-            if ( _length_of_range( vacancy_back ) < len_diff ) {
+            if ( get_range_len( *vacancy_back ) < len_diff ) {
               goto no_surrounding_space_big_enough_to_take;
             }
             // Merge with the range in the back
-            int whole_merge = _length_of_range(vacancy_back) == len_diff ?
+            int whole_merge = get_range_len(*vacancy_back) == len_diff ?
               -7 : 0;
             rental_info->stop += len_diff;
             if ( !whole_merge ) {
@@ -2362,11 +2358,11 @@ end_of_neighbor_search:
         // Try to edit vacancy_front
         if ( vacancy_front ) {
           if ( len_diff > 0 ) {
-            if ( _length_of_range( vacancy_front ) < len_diff ) {
+            if ( get_range_len( *vacancy_front ) < len_diff ) {
               goto no_surrounding_space_big_enough_to_take;
             }
             // Merge with the range in the front
-            int whole_merge = _length_of_range(vacancy_front) == len_diff ?
+            int whole_merge = get_range_len(*vacancy_front) == len_diff ?
               -7 : 0;
             rental_info->start -= len_diff;
             if ( !whole_merge ) {
@@ -2391,12 +2387,12 @@ end_of_neighbor_search:
         // Try to edit both vacancy_front and vacancy_back
         if ( vacancy_back && vacancy_front ) {
           if ( len_diff > 0 &&
-              _length_of_range(vacancy_front) + _length_of_range(vacancy_back) < len_diff ) {
+              get_range_len(*vacancy_front) + get_range_len(*vacancy_back) < len_diff ) {
 #pragma GCC diagnostic pop
             goto no_surrounding_space_big_enough_to_take;
           }
           // Take space from the front first
-          uint32_t added_len = _length_of_range(vacancy_front);
+          uint32_t added_len = get_range_len(*vacancy_front);
           rental_info->start -= added_len;
           vacancy_front->start = -7;
           vacancy_front->stop = 7;
@@ -2409,7 +2405,7 @@ end_of_neighbor_search:
           uint32_t deficit = len_diff - added_len;
           rental_info->stop += deficit;
           vacancy_back->start += deficit;
-          if ( _length_of_range(vacancy_back) == 0 ) {
+          if ( get_range_len(*vacancy_back) == 0 ) {
             vacancy_back->start = -7;
             vacancy_back->stop = 7;
             if ( manager->idx_last_vacancy > 0 &&
@@ -2439,8 +2435,8 @@ no_surrounding_space_big_enough_to_take:
           return 0;
         }
 
-        memcpy( new_ptr, orig_ptr, _length_of_range(rental_info) > new_length ?
-            new_length : _length_of_range(rental_info) );
+        memcpy( new_ptr, orig_ptr, get_range_len(*rental_info) > new_length ?
+            new_length : get_range_len(*rental_info) );
         rental_info->stop = -7;
         rental_info->start = 7;
         if ( base_ridx + rent_idx == manager->idx_last_rental_info  &&
@@ -2518,7 +2514,7 @@ enum err_msg infos_smm_resize_pool( struct infos_simple_mem_mgr * restrict manag
         continue;
       }
       if ( vacancy->stop == new_vacancy.start - 1 ) {
-        _merge_range_into_lower(vacancy, &new_vacancy);
+        merge_range_into_lower(vacancy, &new_vacancy);
         manager->idx_last_vacancy--;
       }
     }

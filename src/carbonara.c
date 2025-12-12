@@ -2281,12 +2281,14 @@ void jf_kickstart( struct cara_worker_state * ws )
   constexpr unsigned int nr_miplevels = 12;
   constexpr unsigned int len_mipmapped_2048 = 16 + 16 + (4*4)*4/4 + (8*8)*4/4 + (16*16)*4/4 +
     (32*32)*4/4 + (64*64)*4/4 + (128*128)*4/4 + (256*256)*4/4 + (512*512)*4/4 + (1024*1024)*4/4 + (2048*2048)*4/4;
-  unsigned int nr_bytes_to_copy =
+  unsigned int nr_bytes_to_alloc =
     _align_to_power_of_two( len_mipmapped_2048, cara_vk.vmm.buf_granularity );
   const struct range_u32 * rent_for_stone = infos_pm_rent(
-      &cara_vk.vmm.uploads, &ws->malloc_helper, cara_malloc, nr_bytes_to_copy, true );
+      &cara_vk.vmm.uploads, &ws->malloc_helper, cara_malloc,
+      _align_to_power_of_two(nr_bytes_to_alloc, cara_vk.vmm.len_non_coherent_atom), true );
   const struct range_u32 * rent_for_sand = infos_pm_rent(
-      &cara_vk.vmm.uploads, &ws->malloc_helper, cara_malloc, nr_bytes_to_copy, true );
+      &cara_vk.vmm.uploads, &ws->malloc_helper, cara_malloc,
+      _align_to_power_of_two(nr_bytes_to_alloc, cara_vk.vmm.len_non_coherent_atom), true );
   if ( !rent_for_stone || !rent_for_sand ) {
     fprintf( stderr, "[Carbonara-Debug] infos_pm_rent failed.. (errno=%d)\n", errno );
     //infos_pm_destroy( &cara_vk.vmm.uploads, &ws->worker_info->idx_self, cara_free );
@@ -2298,9 +2300,9 @@ void jf_kickstart( struct cara_worker_state * ws )
   // vkFlushMappedMemoryRanges and vkInvalidateMappedMemoryRanges are not needed to manage
   // availability and visibility on the host.
   memcpy( cara_vk.vmm.p_staging_buf + rent_for_stone->start,
-      cara_vk.stone_texture + dds_header_size, nr_bytes_to_copy );
+      cara_vk.stone_texture + dds_header_size, len_mipmapped_2048 );
   memcpy( cara_vk.vmm.p_staging_buf + rent_for_sand->start,
-      cara_vk.sand_texture + dds_header_size, nr_bytes_to_copy );
+      cara_vk.sand_texture + dds_header_size, len_mipmapped_2048 );
   SPALL_END();  // memcpy_2_textures
 
   VkImageCreateInfo img_create_info;
@@ -2324,7 +2326,6 @@ void jf_kickstart( struct cara_worker_state * ws )
   SPALL_BEGIN("create_img");
   VkResult result = vkCreateImage( cara_vk.log_dev,
       &img_create_info, &vk_alloc_callbacks, &cara_vk.tex8_2048
-      //&img_create_info, nullptr, &cara_vk.vki_8_2048_tex
       );
   if ( result != VK_SUCCESS ) {
     fprintf( stderr, "[Carbonara-Debug] vkCreateImage an 8-pack failed.. (result=%s)\n",
@@ -2348,6 +2349,7 @@ void jf_kickstart( struct cara_worker_state * ws )
   // Save the best type for later?
   cara_vk.vmm.arr_best_mtype_idx[vk_buf_type_tex8_2048] = type_idx;
 
+  // Bind the image to a vulkan memory object
   err = ma_bind_img_to_malloc( &cara_vk.vmm, &ws->malloc_helper, cara_malloc,
       cara_vk.log_dev, cara_vk.tex8_2048, type_idx, req.size );
   if ( err ) {
@@ -2406,7 +2408,7 @@ void jf_kickstart( struct cara_worker_state * ws )
   //  buf_bar[layer_idx].dstQueueFamilyIndex = cara_vk.trans_q_fam_idx;
   //  buf_bar[layer_idx].buffer = cara_vk.vmm.staging_buf;
   //  buf_bar[layer_idx].offset = arr_p_rents[layer_idx]->start;
-  //  buf_bar[layer_idx].size = nr_bytes_to_copy;
+  //  buf_bar[layer_idx].size = nr_bytes_to_alloc;
   //}
 
   VkImageMemoryBarrier2KHR img_bar;
@@ -3597,29 +3599,14 @@ stop_everything_after_failure:
 
   if ( cara_vk.sampler8_2048 ) {
     vkDestroySampler( cara_vk.log_dev, cara_vk.sampler8_2048, &vk_alloc_callbacks );
-    //vkDestroySampler( cara_vk.log_dev, cara_vk.sampler_8_2048_tex, nullptr );
     cara_vk.sampler8_2048 = VK_NULL_HANDLE;
   }
-
   if ( cara_vk.tex8_2048_iv ) {
     vkDestroyImageView( cara_vk.log_dev, cara_vk.tex8_2048_iv, &vk_alloc_callbacks );
-    //vkDestroyImageView( cara_vk.log_dev, cara_vk.iv_8_2048_tex, nullptr );
     cara_vk.tex8_2048_iv = VK_NULL_HANDLE;
   }
-
-  // TODO p_malloc -> p_rent
-  //if ( p_malloc ) {
-  //  if ( *p_malloc ) {
-  //    vkFreeMemory( cara_vk.log_dev, *p_malloc, &vk_alloc_callbacks );
-  //    *p_malloc = 0;
-  //    cara_vk.vmm.arr_usages[heap_idx] -= req.size;
-  //  }
-  //  //TODO cara_vk.vmm.arr_idx_next_unoccupied_elem[heap_idx]--;
-  //}
-
-  if ( cara_vk.sampler8_2048 ) {
+  if ( cara_vk.tex8_2048 ) {
     vkDestroyImage( cara_vk.log_dev, cara_vk.tex8_2048, &vk_alloc_callbacks );
-    //vkDestroyImage( cara_vk.log_dev, cara_vk.vki_8_2048_tex, nullptr );
     cara_vk.tex8_2048 = VK_NULL_HANDLE;
   }
 

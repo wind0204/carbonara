@@ -239,14 +239,18 @@ struct range_u32 {
 /**
  * no docstring for macro :(
  */
-#define _length_of_range(ptr_range) ( (ptr_range)->stop - (ptr_range)->start + 1 )
+//#define _length_of_range(ptr_range) ( (ptr_range)->stop - (ptr_range)->start + 1 )
+__attribute__((always_inline)) [[maybe_unused]]
+static inline uint32_t get_range_len( struct range_u32 range ) {
+  return range.stop - range.start + 1;
+}
 
 //-------------------------------------------------------------------------------------------------
 /**
  * \brief Merge two ranges and the range between them as well if exists.
  * Keep the value at \a ptr_lower as is. Use the result at \a ptr_higher.
  */
-#define _merge_range_into_higher(ptr_lower, ptr_higher) \
+#define merge_range_into_higher(ptr_lower, ptr_higher) \
     ( (ptr_higher)->start = (ptr_lower)->start )
 
 //-------------------------------------------------------------------------------------------------
@@ -254,17 +258,23 @@ struct range_u32 {
  * \brief Merge two ranges and the range between them as well if exists.
  * Keep the value at \a ptr_higher as is. Use the result at \a ptr_lower.
  */
-#define _merge_range_into_lower(ptr_lower, ptr_higher) ( (ptr_lower)->stop = (ptr_higher)->stop )
+#define merge_range_into_lower(ptr_lower, ptr_higher) ( (ptr_lower)->stop = (ptr_higher)->stop )
 
 //-------------------------------------------------------------------------------------------------
 /**
  * \brief The number of units available in the range when the head is aligned
  */
-#define _aligned_length_of_range(ptr_range, nr_units_to_align_to, lsbs_head_address) \
-  ( 1 + (ptr_range)->stop - \
-    ( _align_to_power_of_two( (ptr_range)->start + (lsbs_head_address), (nr_units_to_align_to) )\
-      - (lsbs_head_address) ) \
-  )
+//#define get_aligned_range_len(ptr_range, nr_units_to_align_to, lsbs_head_address)               \
+//  ( 1 + (ptr_range)->stop -                                                                     \
+//    ( _align_to_power_of_two( (ptr_range)->start + (lsbs_head_address), (nr_units_to_align_to) )\
+//      - (lsbs_head_address) )                                                                   \
+//  )
+__attribute__((always_inline)) [[maybe_unused]]
+static inline uint32_t get_aligned_range_len( struct range_u32 range,
+    uint64_t nr_units_to_align_to, uint64_t lsbs_head_address ) {
+  return range.stop - ( _align_to_power_of_two(range.start + (lsbs_head_address),
+          (nr_units_to_align_to)) - (lsbs_head_address) ) + 1;
+}
 
 
 
@@ -1767,14 +1777,14 @@ struct infos_page_mgr_p2 {
 
 //-------------------------------------------------------------------------------------------------
 enum err_msg infos_pm_init_prealloc(
-    struct infos_page_mgr * restrict ptr_pm,
+    struct infos_page_mgr * restrict p_pm,
     uint32_t nr_pages,
     void * restrict userdata,
     void * (*custom_malloc)(void * userdata, size_t alignment, size_t size)
     );
 
 //-------------------------------------------------------------------------------------------------
-void infos_pm_destroy( struct infos_page_mgr * manager,
+void infos_pm_destroy( struct infos_page_mgr * p_pm,
     void * restrict userdata,
     void (*custom_free)(void * restrict userdata, void * restrict ptr)
     );
@@ -1788,7 +1798,7 @@ void infos_pm_destroy( struct infos_page_mgr * manager,
  * errno ENOMEM There was a failure of a memory allocation;
  * errno ENOBUFS There was not enough space left;
  */
-struct range_u32 * infos_pm_rent( struct infos_page_mgr * restrict pm,
+struct range_u32 * infos_pm_rent( struct infos_page_mgr * restrict p_pm,
     void * restrict userdata,
     void * (*custom_malloc)(void * userdata, size_t alignment, size_t size),
     uint32_t nr_seq_pages_needed,
@@ -1796,10 +1806,17 @@ struct range_u32 * infos_pm_rent( struct infos_page_mgr * restrict pm,
     );
 
 //-------------------------------------------------------------------------------------------------
-enum err_msg infos_pm_return( struct infos_page_mgr * restrict pm,
+enum err_msg infos_pm_return( struct infos_page_mgr * restrict p_pm,
     void * restrict userdata,
     void * (*custom_malloc)(void * userdata, size_t alignment, size_t size),
     uint32_t head_idx
+    );
+
+//-------------------------------------------------------------------------------------------------
+enum err_msg infos_pm_return_via_ptr( struct infos_page_mgr * restrict p_pm,
+    void * restrict userdata,
+    void * (*custom_malloc)(void * userdata, size_t alignment, size_t size),
+    struct range_u32 * p_range
     );
 
 

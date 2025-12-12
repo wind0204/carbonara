@@ -322,16 +322,16 @@ constexpr size_t page_mgrs_node_size = mallocs_node_size / sizeof(VkDeviceMemory
  * \brief Start managing VkDeviceMemory objects
  */
 enum err_msg ma_init_vk_mem_mgr(
-    struct ma_vk_mem_mgr * p_vmm,
-    VkPhysicalDeviceMemoryProperties2 * ptr_mem_properties,
-    VkPhysicalDeviceLimits * limits,
+    struct ma_vk_mem_mgr * restrict p_vmm,
+    VkPhysicalDeviceMemoryProperties2 * restrict p_mem_properties,
+    VkPhysicalDeviceLimits * restrict p_limits,
     void * restrict userdata,
     void * (*custom_malloc)(void * userdata, size_t alignment, size_t size)
     );
 
 //-------------------------------------------------------------------------------------------------
 void ma_destroy_vk_mem_mgr(
-    struct ma_vk_mem_mgr * p_vmm,
+    struct ma_vk_mem_mgr * restrict p_vmm,
     VkDevice logical_dev,
     void * restrict userdata,
     void (*custom_free)(void * restrict userdata, void * restrict ptr)
@@ -339,14 +339,14 @@ void ma_destroy_vk_mem_mgr(
 
 //-------------------------------------------------------------------------------------------------
 enum err_msg ma_create_staging_buf(
-    struct ma_vk_mem_mgr * p_vmm,
+    struct ma_vk_mem_mgr * restrict p_vmm,
     VkDevice logical_dev,
     unsigned int buf_len
     );
 
 //-------------------------------------------------------------------------------------------------
 enum err_msg prototype_create_vk_trans_bufs(
-    struct ma_vk_mem_mgr * p_vmm,
+    struct ma_vk_mem_mgr * restrict p_vmm,
     VkDevice logical_device,
     unsigned int max_nr_pages,
     void * restrict userdata,
@@ -356,20 +356,29 @@ enum err_msg prototype_create_vk_trans_bufs(
 
 //-------------------------------------------------------------------------------------------------
 enum err_msg ma_prepare_upload_mgr(
-    struct ma_vk_mem_mgr * p_vmm,
+    struct ma_vk_mem_mgr * restrict p_vmm,
     void * restrict userdata,
     void * (*custom_malloc)(void * userdata, size_t alignment, size_t size)
     );
 
 //-------------------------------------------------------------------------------------------------
 enum err_msg ma_bind_img_to_malloc(
-    struct ma_vk_mem_mgr * p_vmm,
+    struct ma_vk_mem_mgr * restrict p_vmm,
     void * restrict userdata,
     void * (*custom_malloc)(void * userdata, size_t alignment, size_t size),
     VkDevice log_dev,
     VkImage vk_img,
     uint32_t type_idx,
-    VkDeviceSize size
+    VkDeviceSize req_size  // Required allocation size in bytes
+    );
+
+//-------------------------------------------------------------------------------------------------
+enum err_msg ma_report_malloc_rel(
+    struct ma_vk_mem_mgr * restrict p_vmm,
+    void * restrict userdata,
+    void * (*custom_malloc)(void * userdata, size_t alignment, size_t size),
+    uint32_t type_idx,
+    struct range_u32 * p_malloc_range
     );
 
 //-------------------------------------------------------------------------------------------------
@@ -377,8 +386,8 @@ enum err_msg ma_bind_img_to_malloc(
  * \brief Should I make it a static function? FIXME
  */
 uint32_t ma_pick_best_mtype(
-    struct ma_vk_mem_mgr * vmm,
-    VkMemoryRequirements * req,
+    struct ma_vk_mem_mgr * restrict vmm,
+    VkMemoryRequirements * restrict req,
     VkMemoryPropertyFlags required_props,
     VkMemoryPropertyFlags preferred_props,
     VkMemoryPropertyFlags tolerable_props

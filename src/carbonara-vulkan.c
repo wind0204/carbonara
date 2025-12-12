@@ -1,3 +1,4 @@
+#include "info_struct.h"
 #include <stdatomic.h>
 #include <stdint.h>
 
@@ -2278,19 +2279,15 @@ void destroy_vulkan_objects( _typeof_member(struct ms_worker_info, idx_self) wor
 
   if ( cara_vk.sampler8_2048 ) {
     vkDestroySampler( cara_vk.log_dev, cara_vk.sampler8_2048, &vk_alloc_callbacks );
-    //vkDestroySampler( cara_vk.log_dev, cara_vk.sampler8_2048, nullptr );
     cara_vk.sampler8_2048 = VK_NULL_HANDLE;
   }
-
   if ( cara_vk.tex8_2048_iv ) {
     vkDestroyImageView( cara_vk.log_dev, cara_vk.tex8_2048_iv, &vk_alloc_callbacks );
-    //vkDestroyImageView( cara_vk.log_dev, cara_vk.tex8_2048_iv, nullptr );
     cara_vk.tex8_2048_iv = VK_NULL_HANDLE;
   }
-
-  if ( cara_vk.sampler8_2048 ) {
+  if ( cara_vk.tex8_2048 ) {
+    //struct range_u32 * foo; TODO
     vkDestroyImage( cara_vk.log_dev, cara_vk.tex8_2048, &vk_alloc_callbacks );
-    //vkDestroyImage( cara_vk.log_dev, cara_vk.tex8_2048, nullptr );
     cara_vk.tex8_2048 = VK_NULL_HANDLE;
   }
 
