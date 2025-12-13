@@ -333,8 +333,10 @@ enum err_msg ma_init_vk_mem_mgr(
 void ma_destroy_vk_mem_mgr(
     struct ma_vk_mem_mgr * restrict p_vmm,
     VkDevice logical_dev,
-    void * restrict userdata,
-    void (*custom_free)(void * restrict userdata, void * restrict ptr)
+    void * restrict userdata_free,
+    void (*custom_free)(void * restrict userdata, void * restrict ptr),
+    void * restrict userdata_malloc,
+    void * (*custom_malloc)(void * userdata, size_t alignment, size_t size)
     );
 
 //-------------------------------------------------------------------------------------------------
@@ -369,11 +371,12 @@ enum err_msg ma_bind_img_to_malloc(
     VkDevice log_dev,
     VkImage vk_img,
     uint32_t type_idx,
-    VkDeviceSize req_size  // Required allocation size in bytes
+    VkDeviceSize req_size,  // Required allocation size in bytes
+    struct range_u32 ** pp_malloc_range
     );
 
 //-------------------------------------------------------------------------------------------------
-enum err_msg ma_report_malloc_rel(
+enum err_msg ma_report_vk_malloc_rel(
     struct ma_vk_mem_mgr * restrict p_vmm,
     void * restrict userdata,
     void * (*custom_malloc)(void * userdata, size_t alignment, size_t size),

@@ -43,16 +43,16 @@ enum cara_signs_born : uint64_t {
 };
 
 enum cara_subpass : unsigned char {
-  cs_depth_only = 0,
+  cs_z_only = 0,
   cs_main_render,
   cs_copy_to_swapchain_img,
   cara_nr_subpasses,
 };
 
 enum cara_framebuffers : unsigned char {
-  fb_depth = 0,
-  fb_color,
-  fb_swapchain,
+  fb_zbuf = 0,  // Depth
+  fb_cbuf,  // Color
+  fb_swapchain,  // Present on screen
   cara_nr_famebuffers,
 };
 
@@ -119,8 +119,8 @@ union win_dims {
  */
 struct cara_vk_renderer {
   int64_t asset_size;  // const unsigned int len_mipmapped_2048 = 16 + 16 + (4*4)*4/4 + (8*8)*4/4 + (16*16)*4/4 + (32*32)*4/4 + (64*64)*4/4 + (128*128)*4/4 + (256*256)*4/4 + (512*512)*4/4 + (1024*1024)*4/4 + (2048*2048)*4/4; ..Plus header size for now
-  int64_t len_depth_only;
-  int64_t len_depth_only_frag;
+  int64_t len_z_only;
+  int64_t len_z_only_frag;
   int64_t len_simple_vert;
   int64_t len_simple_frag;
   int64_t len_copy2sc_vert;
@@ -128,12 +128,14 @@ struct cara_vk_renderer {
   static_assert( alignof(int64_t) >= alignof(void*), "Sort the struct members!" );
   char * stone_texture;
   char * sand_texture;
-  void * spv_depth_only;
-  void * spv_depth_only_frag;
+  void * spv_z_only;
+  void * spv_z_only_frag;
   void * spv_simple_vert;
   void * spv_simple_frag;
   void * spv_copy2sc_vert;
   void * spv_copy2sc_frag;
+  struct range_u32 * p_malloc_range_tex8_2048;
+  struct range_u32 * p_malloc_range_zbuf_and_cbuf[2];
   SDL_Window * window;
   VkImage * arr_swapchain_imgs;
   VkImageView * arr_swapchain_iv;
@@ -141,7 +143,7 @@ struct cara_vk_renderer {
   static_assert( alignof(void*) >= alignof(struct ma_vk_mem_mgr) );
   struct ma_vk_mem_mgr vmm;
   static_assert( alignof(struct ma_vk_mem_mgr) >= alignof(struct infos_arr_list) );
-  struct infos_arr_list old_swapchains;
+  struct infos_arr_list old_swapchains;  // VkSwapchainKHR
   static_assert( alignof(struct infos_arr_list) >= alignof(VkSwapchainKHR) );
   VkSwapchainKHR swapchain;
   // Images represent data that can have one, two, or three dimensions, and can have additional
@@ -151,26 +153,24 @@ struct cara_vk_renderer {
   // (similarly to OpenGL). We can render into images, in which case we use images as color or depth
   // attachments (render targets).
 
-  VkImage cbuf;
-  VkImage zbuf;
+  VkImage zbuf_n_cbuf[2];
   VkImage tex8_2048;  // 8-layer image of 2048*2048
   VkImageView tex8_2048_iv;
-  VkImageView cbuf_iv;
-  VkImageView zbuf_iv;
+  VkImageView zbuf_n_cbuf_iv[2];
   VkSampler sampler8_2048;
-  VkDescriptorSetLayout dsl_depth_only;
+  VkDescriptorSetLayout dsl_z_only;
   VkDescriptorSetLayout dsl_main_render;
   VkDescriptorSetLayout dsl_copy2sc;
   VkDescriptorPool dp_main_render;
   VkDescriptorSet ds_main_render;
-  VkPipelineLayout pll_depth_only;
+  VkPipelineLayout pll_z_only;
   VkPipelineLayout pll_main_render;
   VkPipelineLayout pll_copy2sc;
   VkPipeline arr_pipelines[cara_nr_subpasses];
   VkRenderPass render_pass;
   VkFramebuffer framebuffer;
-  VkShaderModule sm_depth_only;
-  VkShaderModule sm_depth_only_frag;
+  VkShaderModule sm_z_only;
+  VkShaderModule sm_z_only_frag;
   VkShaderModule sm_simple_vert;
   VkShaderModule sm_simple_frag;
   VkShaderModule sm_copy2sc_vert;

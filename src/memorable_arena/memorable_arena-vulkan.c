@@ -102,15 +102,99 @@ enum err_msg ma_init_vk_mem_mgr(
 void ma_destroy_vk_mem_mgr(
     struct ma_vk_mem_mgr * restrict p_vmm,
     VkDevice logical_dev,
-    void * restrict userdata,
-    void (*custom_free)(void * restrict userdata, void * restrict ptr)
+    void * restrict userdata_free,
+    void (*custom_free)(void * restrict userdata, void * restrict ptr),
+    void * restrict userdata_malloc,
+    void * (*custom_malloc)(void * userdata, size_t alignment, size_t size)
     )
 {
   void (*local_free)(void * restrict userdata, void * restrict ptr);
   local_free = custom_free ? custom_free : default_free;
-  local_free( userdata, p_vmm->arr_usages );
+  local_free( userdata_free, p_vmm->arr_usages );
+  void * (*local_malloc)(void * userdata_malloc, size_t alignment, size_t size);
+  local_malloc = custom_malloc ? custom_malloc : default_malloc;
 
-  // TODO vkFreeMemory per malloc in vmm->mallocs
+  // Release every memory allocation
+  for ( unsigned int type_idx = 0; type_idx < p_vmm->type_cnt; type_idx++ ) {
+    enum err_msg err;
+
+    uint32_t heap_idx = p_vmm->arr_heap_indices[type_idx];
+    struct infos_singly_linked_list_node * m_node = &p_vmm->mallocs.lists[type_idx].head;
+    struct infos_singly_linked_list_node * p_node = &p_vmm->page_mgrs.lists[type_idx].head;
+    const uint32_t last_idx = 1 << p_vmm->mallocs.log2_nr_elems;
+    uint32_t node_idx = 0;
+    while(7) {
+      for ( uint32_t malloc_idx = 0; malloc_idx < last_idx; malloc_idx++ ) {
+        struct infos_page_mgr_p2 * p_pm = p_node->data + malloc_idx * sizeof(*p_pm);
+        if ( !p_pm->al_vacancies.list.nr_nodes ) {
+          break;
+        }
+
+        VkDeviceMemory * p_malloc = m_node->data + malloc_idx * sizeof(VkDeviceMemory);
+        if ( *p_malloc == VK_NULL_HANDLE ) {
+          fprintf( stderr, "[MA] *p_malloc is already VK_NULL_HANDLE "
+              "type_idx=%u node_idx=%u malloc_idx=%u\n",
+              type_idx, node_idx, malloc_idx );
+          continue;
+        }
+
+        vkFreeMemory( logical_dev, *p_malloc, &vk_alloc_callbacks );
+        *p_malloc = VK_NULL_HANDLE;
+#if !defined( ARE_WE_SHIPPING_IT )
+        struct infos_singly_linked_list_node * r_node = &p_pm->al_rental_info.list.head;
+        while( r_node ) {
+          struct range_u32 * p_malloc_range = r_node->data; p_malloc_range--;
+          for ( uint32_t bind_idx = 0; bind_idx < p_pm->idx_last_rental_info; bind_idx++ ) {
+            p_malloc_range++;
+            if ( (*p_malloc_range).start > (*p_malloc_range).stop ) {
+              continue;
+            }
+
+            err = infos_pm_return_via_ptr( (struct infos_page_mgr*)p_pm,
+                userdata_malloc, local_malloc,
+                p_malloc_range );
+            switch ( err ) {
+              case 0:
+                p_vmm->arr_usages[heap_idx] -= get_range_len(*p_malloc_range);
+                break;
+              case err_msg_no_such_entry:
+                [[fallthrough]];
+              case err_msg_already_done:
+                [[fallthrough]];
+              case err_msg_out_of_memory:
+                [[fallthrough]];
+              default:
+                fprintf( stderr, "[MA] Error occured in infos_pm_return_via_ptr: %s\n",
+                    err_msg_text[err] );
+                fprintf( stderr, "[MA] context: "
+                    "type_idx=%u node_idx=%u malloc_idx=%u rnode_idx=? bind_idx=%u\n",
+                    type_idx, node_idx, malloc_idx, bind_idx );
+                break;
+            }
+          }
+          r_node = r_node->next;
+        }  // while( r_node )
+
+        if ( p_vmm->arr_usages[heap_idx] > 0 ) {
+          fprintf( stdout, "[MA-Debug] leftover in heap_idx %u = %lu\n",
+              heap_idx, p_vmm->arr_usages[heap_idx] );
+        }
+#endif
+      }  // for ( uint32_t malloc_idx = 0; malloc_idx < last_idx; malloc_idx++ )
+
+      if ( !p_node->next ) {
+        infos_multi_al_destroy_except_preallocated_struct( &p_vmm->page_mgrs,
+            userdata_free, local_free );
+        infos_multi_al_destroy_except_preallocated_struct( &p_vmm->mallocs,
+            userdata_free, local_free );
+        break;
+      }
+
+      m_node = m_node->next;
+      p_node = p_node->next;
+      node_idx++;
+    }
+  }
 
   if ( p_vmm->p_staging_buf ) {
     vkUnmapMemory( logical_dev, p_vmm->staging_buf_malloc );
@@ -124,7 +208,7 @@ void ma_destroy_vk_mem_mgr(
   }
 
   //if ( vmm->uploads.al_vacancies.log2_node_size ) {
-  //  infos_pm_destroy( &vmm->uploads, userdata, custom_free );
+  //  infos_pm_destroy( &vmm->uploads, userdata_free, custom_free );
   //  vmm->uploads.al_vacancies.log2_node_size = 0;
   //  vmm->uploads.al_rental_info.log2_node_size = 0;
   //}
@@ -143,7 +227,7 @@ void ma_destroy_vk_mem_mgr(
   //    vkDestroyBuffer( logical_dev, vmm->arr_trans_bufs[malloc_idx], &cara_vk.vk_alloc_callbacks );
   //    vkFreeMemory( logical_dev, *p_alloc, &cara_vk.vk_alloc_callbacks );
   //  }
-  //  local_free( userdata, vmm->arr_trans_bufs );
+  //  local_free( userdata_free, vmm->arr_trans_bufs );
   //  vmm->arr_trans_bufs = nullptr;
   //}
 
@@ -189,13 +273,8 @@ enum err_msg ma_create_staging_buf(
   // Choose the best memory type
   VkMemoryPropertyFlags preferred_props, required_props, tolerable_props;
   preferred_props = VK_MEMORY_PROPERTY_HOST_CACHED_BIT;
-  required_props =
-    VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-    VK_MEMORY_PROPERTY_HOST_COHERENT_BIT |
-    0;
-  tolerable_props =
-    VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT |
-    0;
+  required_props = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+  tolerable_props = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
   const uint32_t type_idx = ma_pick_best_mtype(
       p_vmm, &req, required_props, preferred_props, tolerable_props );
   p_vmm->arr_best_mtype_idx[vk_buf_type_transfer] = type_idx;
@@ -459,7 +538,8 @@ enum err_msg ma_bind_img_to_malloc(
     VkDevice log_dev,
     VkImage vk_img,
     uint32_t type_idx,
-    VkDeviceSize req_size
+    VkDeviceSize req_size,  // Required allocation size in bytes
+    struct range_u32 ** pp_malloc_range
     )
 {
   VkDeviceSize size_to_req = _align_to_power_of_two( req_size, p_vmm->buf_granularity );
@@ -473,9 +553,9 @@ enum err_msg ma_bind_img_to_malloc(
   struct infos_singly_linked_list_node * p_node = &p_vmm->page_mgrs.lists[type_idx].head;
   const uint32_t last_idx = 1 << p_vmm->mallocs.log2_nr_elems;
   while(7) {
-    for ( uint32_t idx = 0; idx < last_idx; idx++ ) {
-      VkDeviceMemory * p_malloc = m_node->data + idx * sizeof(VkDeviceMemory);
-      struct infos_page_mgr_p2 * p_pm = p_node->data + idx * sizeof(*p_pm);
+    for ( uint32_t malloc_idx = 0; malloc_idx < last_idx; malloc_idx++ ) {
+      VkDeviceMemory * p_malloc = m_node->data + malloc_idx * sizeof(VkDeviceMemory);
+      struct infos_page_mgr_p2 * p_pm = p_node->data + malloc_idx * sizeof(*p_pm);
       if ( *p_malloc == 0 ) {
         // Create a new VkDeviceMemory
         VkMemoryAllocateInfo buf_malloc_info;
@@ -567,6 +647,7 @@ enum err_msg ma_bind_img_to_malloc(
         }
       }
 
+      *pp_malloc_range = p_rent;
       return 0;
     }
 
@@ -605,7 +686,7 @@ enum err_msg ma_bind_img_to_malloc(
 
 
 //-------------------------------------------------------------------------------------------------
-enum err_msg ma_report_malloc_rel(
+enum err_msg ma_report_vk_malloc_rel(
     struct ma_vk_mem_mgr * restrict p_vmm,
     void * restrict userdata,
     void * (*custom_malloc)(void * userdata, size_t alignment, size_t size),
@@ -619,7 +700,9 @@ enum err_msg ma_report_malloc_rel(
   enum err_msg err;
 
   uint32_t heap_idx = p_vmm->arr_heap_indices[type_idx];
+#if !defined( ARE_WE_SHIPPING_IT )
   struct infos_singly_linked_list_node * m_node = &p_vmm->mallocs.lists[type_idx].head;
+#endif
   struct infos_singly_linked_list_node * p_node = &p_vmm->page_mgrs.lists[type_idx].head;
   const uint32_t last_idx = 1 << p_vmm->mallocs.log2_nr_elems;
   while(7) {
@@ -639,9 +722,7 @@ enum err_msg ma_report_malloc_rel(
           p_vmm->arr_usages[heap_idx] -= get_range_len(*p_malloc_range);
 #if !defined( ARE_WE_SHIPPING_IT )
           VkDeviceMemory * p_malloc = m_node->data + idx * sizeof(VkDeviceMemory);
-          if ( *p_malloc == VK_NULL_HANDLE ) {
-            return err_msg_unknown;
-          }
+          assume( *p_malloc );
 #endif
           [[fallthrough]];
         case err_msg_already_done:

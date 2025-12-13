@@ -79,12 +79,12 @@ else()
   #add_definitions( -DCarbonara_DEBUG=0 )
 endif()
 
+include_directories( SYSTEM "${CMAKE_CURRENT_SOURCE_DIR}/extern/spall-web" )
 if( CMAKE_BUILD_TYPE MATCHES Release )
   add_definitions( -DARE_WE_SHIPPING_IT )
   message( STATUS "Are we shipping it?" )
 else()
   add_definitions( -DENABLE_PROFILING )
-  include_directories( SYSTEM "${CMAKE_CURRENT_SOURCE_DIR}/extern/spall-web" )
 endif()
 
 
