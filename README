@@ -2,25 +2,25 @@
 │   1. How to build             │
 └───────────────────────────────┘
 
-for FindWayland.cmake (NOT NEEDED ANYMORE)
+Prepare for FindWayland.cmake (NOT NEEDED ANYMORE)
  $ sudo apt install extra-cmake-modules
 
-for SDL3
+Prepare SDL3
  clone the git repo and place it in `extern/SDL`
 
-for xdg-shell.xml (NOT NEEDED ANYMORE)
+Prepare for xdg-shell.xml (NOT NEEDED ANYMORE)
  $ sudo apt install wayland-protocols
 
-for hwloc
+Prepare hwloc
  clone the git repo ans place it in `extern/hwloc`
 
-Prepare a cmake directory there
+Configure cmake build
  $ CC=clang-20 cmake -B build-Debug -DCMAKE_BUILD_TYPE=Debug -G Ninja
  $ CC=clang-20 cmake -B build-RelWithDebInfo -DCMAKE_BUILD_TYPE=RelWithDebInfo -G Ninja
  $ CC=clang-20 cmake -B build-ship_it -DCMAKE_BUILD_TYPE=Release -G Ninja
 
 Start building
- $ time cmake --build build-RelWithDebInfo -- -j $(nproc)
+ $ time cmake --build build-RelWithDebInfo
 
 You can get the list of the compile commands and use it for auto-complete or other useful tools.
  $ ln -s build-RelWithDebInfo/compile_commands.json .
