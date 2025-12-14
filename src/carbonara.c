@@ -3176,50 +3176,59 @@ void jf_kickstart( struct cara_worker_state * ws )
   //
   // MSAA
   //
-  VkPipelineMultisampleStateCreateInfo plmss_create_info;
-  plmss_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
-  plmss_create_info.pNext = nullptr;
-  plmss_create_info.flags = 0;
-  plmss_create_info.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
-  plmss_create_info.sampleShadingEnable = VK_FALSE;
-  //plmss_create_info.minSampleShading = .5f;
-  plmss_create_info.pSampleMask = nullptr;
-  plmss_create_info.alphaToCoverageEnable = VK_FALSE;
-  plmss_create_info.alphaToOneEnable = VK_FALSE;
+  VkPipelineMultisampleStateCreateInfo plmss_create_info = {
+    .sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
+    .pNext = nullptr,
+    .flags = 0,
+    .rasterizationSamples = VK_SAMPLE_COUNT_1_BIT,
+    .sampleShadingEnable = VK_FALSE,
+    //.minSampleShading = .5f,
+    .pSampleMask = nullptr,
+    .alphaToCoverageEnable = VK_FALSE,
+    .alphaToOneEnable = VK_FALSE,
+  };
 
 
   //
   // Depth/Stencil
   //
-  VkPipelineDepthStencilStateCreateInfo pldss_create_info;
-  pldss_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
-  pldss_create_info.pNext = nullptr;
-  pldss_create_info.flags = 0;
-  pldss_create_info.depthTestEnable = VK_TRUE;
-  pldss_create_info.depthWriteEnable = VK_TRUE;
-  pldss_create_info.depthCompareOp = VK_COMPARE_OP_GREATER;
-  pldss_create_info.depthBoundsTestEnable = VK_FALSE;
-  pldss_create_info.stencilTestEnable = VK_FALSE;
-  VkStencilOpState stencil_op_state_front;
-  stencil_op_state_front.failOp = VK_STENCIL_OP_KEEP;
-  stencil_op_state_front.passOp = VK_STENCIL_OP_KEEP;
-  stencil_op_state_front.depthFailOp = VK_STENCIL_OP_KEEP;
-  stencil_op_state_front.compareOp = VK_COMPARE_OP_EQUAL;
-  stencil_op_state_front.compareMask = ~UINT32_C(0);
-  stencil_op_state_front.writeMask = ~UINT32_C(0);
-  stencil_op_state_front.reference = 0;
-  VkStencilOpState stencil_op_state_back;
-  stencil_op_state_back.failOp = VK_STENCIL_OP_KEEP;
-  stencil_op_state_back.passOp = VK_STENCIL_OP_KEEP;
-  stencil_op_state_back.depthFailOp = VK_STENCIL_OP_KEEP;
-  stencil_op_state_back.compareOp = VK_COMPARE_OP_NEVER;
-  stencil_op_state_back.compareMask = 0;
-  stencil_op_state_back.writeMask = 0;
-  stencil_op_state_back.reference = 0;
-  pldss_create_info.front = stencil_op_state_front;
-  pldss_create_info.back = stencil_op_state_back;
-  pldss_create_info.minDepthBounds = .0f;
-  pldss_create_info.maxDepthBounds = 1.0f;
+  VkPipelineDepthStencilStateCreateInfo arr_pldss_create_info[cara_nr_subpasses];
+  for ( unsigned int sp_idx = 0; sp_idx < cara_nr_subpasses; sp_idx++ ) {
+    arr_pldss_create_info[sp_idx].sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+    arr_pldss_create_info[sp_idx].pNext = nullptr;
+    arr_pldss_create_info[sp_idx].flags = 0;
+    arr_pldss_create_info[sp_idx].depthBoundsTestEnable = VK_FALSE;
+    arr_pldss_create_info[sp_idx].stencilTestEnable = VK_FALSE;
+    arr_pldss_create_info[sp_idx].front = (VkStencilOpState) {
+      .failOp = VK_STENCIL_OP_KEEP,
+      .passOp = VK_STENCIL_OP_KEEP,
+      .depthFailOp = VK_STENCIL_OP_KEEP,
+      .compareOp = VK_COMPARE_OP_EQUAL,
+      .compareMask = ~UINT32_C(0),
+      .writeMask = ~UINT32_C(0),
+      .reference = 0,
+    };
+    arr_pldss_create_info[sp_idx].back = (VkStencilOpState) {
+      .failOp = VK_STENCIL_OP_KEEP,
+      .passOp = VK_STENCIL_OP_KEEP,
+      .depthFailOp = VK_STENCIL_OP_KEEP,
+      .compareOp = VK_COMPARE_OP_NEVER,
+      .compareMask = 0,
+      .writeMask = 0,
+      .reference = 0,
+    };
+    arr_pldss_create_info[sp_idx].minDepthBounds = .0f;
+    arr_pldss_create_info[sp_idx].maxDepthBounds = 1.0f;
+  }
+  arr_pldss_create_info[cs_z_only].depthTestEnable = VK_TRUE;
+  arr_pldss_create_info[cs_z_only].depthWriteEnable = VK_TRUE;
+  arr_pldss_create_info[cs_z_only].depthCompareOp = VK_COMPARE_OP_GREATER;
+  arr_pldss_create_info[cs_main_render].depthTestEnable = VK_TRUE;
+  arr_pldss_create_info[cs_main_render].depthWriteEnable = VK_FALSE;
+  arr_pldss_create_info[cs_main_render].depthCompareOp = VK_COMPARE_OP_EQUAL;
+  arr_pldss_create_info[cs_copy_to_swapchain_img].depthTestEnable = VK_FALSE;
+  arr_pldss_create_info[cs_copy_to_swapchain_img].depthWriteEnable = VK_FALSE;
+  arr_pldss_create_info[cs_copy_to_swapchain_img].depthCompareOp = VK_COMPARE_OP_EQUAL;
 
 
   //
@@ -3228,31 +3237,33 @@ void jf_kickstart( struct cara_worker_state * ws )
 
   // The blending state is optional and is not required if rasterization is disabled or when there
   //  are no color attachments in a subpass, in which a given graphics pipeline is used.
-  VkPipelineColorBlendAttachmentState plcbas;
-  plcbas.blendEnable = VK_FALSE;
-  plcbas.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
-  plcbas.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
-  plcbas.colorBlendOp = VK_BLEND_OP_ADD;
-  plcbas.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
-  plcbas.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
-  plcbas.alphaBlendOp = VK_BLEND_OP_ADD;
-  plcbas.colorWriteMask =
-    VK_COLOR_COMPONENT_R_BIT |
-    VK_COLOR_COMPONENT_G_BIT |
-    VK_COLOR_COMPONENT_B_BIT |
-    0;
-  VkPipelineColorBlendStateCreateInfo plcbs_create_info;
-  plcbs_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
-  plcbs_create_info.pNext = nullptr;
-  plcbs_create_info.flags = 0;
-  plcbs_create_info.logicOpEnable = VK_FALSE;
-  plcbs_create_info.logicOp = VK_LOGIC_OP_NO_OP;
-  plcbs_create_info.attachmentCount = 1;
-  plcbs_create_info.pAttachments = &plcbas;
-  plcbs_create_info.blendConstants[0] = .0f;
-  plcbs_create_info.blendConstants[1] = .0f;
-  plcbs_create_info.blendConstants[2] = .0f;
-  plcbs_create_info.blendConstants[3] = .0f;
+  VkPipelineColorBlendAttachmentState plcbas = {
+    .blendEnable = VK_FALSE,
+    .srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA,
+    .dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
+    .colorBlendOp = VK_BLEND_OP_ADD,
+    .srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE,
+    .dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO,
+    .alphaBlendOp = VK_BLEND_OP_ADD,
+    .colorWriteMask =
+      VK_COLOR_COMPONENT_R_BIT |
+      VK_COLOR_COMPONENT_G_BIT |
+      VK_COLOR_COMPONENT_B_BIT |
+      0,
+  };
+  VkPipelineColorBlendStateCreateInfo plcbs_create_info = {
+    .sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
+    .pNext = nullptr,
+    .flags = 0,
+    .logicOpEnable = VK_FALSE,
+    .logicOp = VK_LOGIC_OP_NO_OP,
+    .attachmentCount = 1,
+    .pAttachments = &plcbas,
+    .blendConstants[0] = .0f,
+    .blendConstants[1] = .0f,
+    .blendConstants[2] = .0f,
+    .blendConstants[3] = .0f,
+  };
 
   //
   // Dynamic states
@@ -3263,12 +3274,13 @@ void jf_kickstart( struct cara_worker_state * ws )
     VK_DYNAMIC_STATE_VIEWPORT,  // vkCmdSetViewport()
     VK_DYNAMIC_STATE_SCISSOR,  // vkCmdSetScissor()
   };
-  VkPipelineDynamicStateCreateInfo plds_create_info;
-  plds_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
-  plds_create_info.pNext = nullptr;
-  plds_create_info.flags = 0;
-  plds_create_info.dynamicStateCount = _arr_elem_cnt( dynamic_states );
-  plds_create_info.pDynamicStates = dynamic_states;
+  VkPipelineDynamicStateCreateInfo plds_create_info = {
+    .sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
+    .pNext = nullptr,
+    .flags = 0,
+    .dynamicStateCount = _arr_elem_cnt( dynamic_states ),
+    .pDynamicStates = dynamic_states,
+  };
 
 
   //
@@ -3278,14 +3290,15 @@ void jf_kickstart( struct cara_worker_state * ws )
   arr_pc_ranges[0].offset = 0;  assume( arr_pc_ranges[0].offset % 4 == 0 );
   arr_pc_ranges[0].size = 64;  assume( arr_pc_ranges[0].size % 4 == 0 );
   arr_pc_ranges[0].stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-  VkPipelineLayoutCreateInfo pll_create_info;
-  pll_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-  pll_create_info.pNext = nullptr;
-  pll_create_info.flags = 0;
-  pll_create_info.setLayoutCount = 1;
-  pll_create_info.pSetLayouts = &cara_vk.dsl_z_only;
-  pll_create_info.pushConstantRangeCount = _arr_elem_cnt( arr_pc_ranges );
-  pll_create_info.pPushConstantRanges = arr_pc_ranges;
+  VkPipelineLayoutCreateInfo pll_create_info = {
+    .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+    .pNext = nullptr,
+    .flags = 0,
+    .setLayoutCount = 1,
+    .pSetLayouts = &cara_vk.dsl_z_only,
+    .pushConstantRangeCount = _arr_elem_cnt( arr_pc_ranges ),
+    .pPushConstantRanges = arr_pc_ranges,
+  };
   // Usually, multiple pipelines will access different resources. During command buffer recording,
   // we bind a given pipeline and descriptor sets. Only after that can we issue drawing commands.
   // When we switch from one pipeline to another, we need to bind new descriptor sets according to
@@ -3308,10 +3321,9 @@ void jf_kickstart( struct cara_worker_state * ws )
         string_VkResult(result) );
     goto stop_everything_after_failure;
   }
-  pll_create_info.setLayoutCount = 1;
+  arr_pc_ranges[0].offset = 64;  assume( arr_pc_ranges[0].offset % 4 == 0 );
+  arr_pc_ranges[0].size = 64;  assume( arr_pc_ranges[0].size % 4 == 0 );
   pll_create_info.pSetLayouts = &cara_vk.dsl_main_render;
-  pll_create_info.pushConstantRangeCount = _arr_elem_cnt( arr_pc_ranges );
-  pll_create_info.pPushConstantRanges = arr_pc_ranges;
   result = vkCreatePipelineLayout( cara_vk.log_dev, &pll_create_info,
       &vk_alloc_callbacks, &cara_vk.pll_main_render
       //nullptr, &cara_vk.pll_main_render
@@ -3321,10 +3333,9 @@ void jf_kickstart( struct cara_worker_state * ws )
         string_VkResult(result) );
     goto stop_everything_after_failure;
   }
-  pll_create_info.setLayoutCount = 1;
+  arr_pc_ranges[0].offset = 64;  assume( arr_pc_ranges[0].offset % 4 == 0 );
+  arr_pc_ranges[0].size = 64;  assume( arr_pc_ranges[0].size % 4 == 0 );
   pll_create_info.pSetLayouts = &cara_vk.dsl_copy2sc;
-  pll_create_info.pushConstantRangeCount = _arr_elem_cnt( arr_pc_ranges );
-  pll_create_info.pPushConstantRanges = arr_pc_ranges;
   result = vkCreatePipelineLayout( cara_vk.log_dev, &pll_create_info,
       &vk_alloc_callbacks, &cara_vk.pll_copy2sc
       //nullptr, &cara_vk.pll_copy2sc
@@ -3363,6 +3374,7 @@ void jf_kickstart( struct cara_worker_state * ws )
 
   // cs_depth_only pipeline
   arr_gpl_create_infos[cs_z_only].stageCount = _arr_elem_cnt( depth_only_plss_create_info );
+  arr_gpl_create_infos[cs_z_only].stageCount = _arr_elem_cnt( depth_only_plss_create_info );
   arr_gpl_create_infos[cs_z_only].pStages = depth_only_plss_create_info;
   arr_gpl_create_infos[cs_z_only].pVertexInputState = &plvis_create_info_depth_only;
   arr_gpl_create_infos[cs_z_only].pInputAssemblyState = &plias_create_info;
@@ -3381,9 +3393,8 @@ void jf_kickstart( struct cara_worker_state * ws )
                         // VK_DYNAMIC_STATE_ALPHA_TO_ONE_ENABLE_EXT is set, in which case
                         // VkPipelineMultisampleStateCreateInfo::sampleShadingEnable is assumed to
                         // be VK_FALSE.
-  arr_gpl_create_infos[cs_z_only].pDepthStencilState = &pldss_create_info;
+  arr_gpl_create_infos[cs_z_only].pDepthStencilState = &arr_pldss_create_info[cs_z_only];
   arr_gpl_create_infos[cs_z_only].pColorBlendState = nullptr;  // No color attachment
-                        // TODO. Write &plcbs_create_info here for cs_main_render
   arr_gpl_create_infos[cs_z_only].pDynamicState = &plds_create_info;
   arr_gpl_create_infos[cs_z_only].layout = cara_vk.pll_z_only;
   arr_gpl_create_infos[cs_z_only].renderPass = cara_vk.render_pass;
@@ -3403,7 +3414,7 @@ void jf_kickstart( struct cara_worker_state * ws )
   arr_gpl_create_infos[cs_main_render].pViewportState = &plvps_create_info;
   arr_gpl_create_infos[cs_main_render].pRasterizationState = &plrs_create_info;
   arr_gpl_create_infos[cs_main_render].pMultisampleState = &plmss_create_info;
-  arr_gpl_create_infos[cs_main_render].pDepthStencilState = &pldss_create_info;
+  arr_gpl_create_infos[cs_main_render].pDepthStencilState = &arr_pldss_create_info[cs_main_render];
   arr_gpl_create_infos[cs_main_render].pColorBlendState = &plcbs_create_info;
   arr_gpl_create_infos[cs_main_render].pDynamicState = &plds_create_info;
   arr_gpl_create_infos[cs_main_render].layout = cara_vk.pll_main_render;
@@ -3421,7 +3432,8 @@ void jf_kickstart( struct cara_worker_state * ws )
   arr_gpl_create_infos[cs_copy_to_swapchain_img].pViewportState = &plvps_create_info;
   arr_gpl_create_infos[cs_copy_to_swapchain_img].pRasterizationState = &plrs_create_info;
   arr_gpl_create_infos[cs_copy_to_swapchain_img].pMultisampleState = &plmss_create_info;
-  arr_gpl_create_infos[cs_copy_to_swapchain_img].pDepthStencilState = &pldss_create_info;
+  arr_gpl_create_infos[cs_copy_to_swapchain_img].pDepthStencilState =
+    &arr_pldss_create_info[cs_copy_to_swapchain_img];
   arr_gpl_create_infos[cs_copy_to_swapchain_img].pColorBlendState = &plcbs_create_info;
   arr_gpl_create_infos[cs_copy_to_swapchain_img].pDynamicState = &plds_create_info;
   arr_gpl_create_infos[cs_copy_to_swapchain_img].layout = cara_vk.pll_copy2sc;
