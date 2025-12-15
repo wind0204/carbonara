@@ -101,8 +101,10 @@ struct infos_simple_mem_mgr * infos_smm_init_chunks( void * restrict buffer,
   }
 
   struct infos_simple_mem_mgr * new_manager;
+  // TODO There should be an out of align offset check
   new_manager = buffer + total_len_buf_n_struct - sizeof(struct infos_simple_mem_mgr);
   new_manager->data_len = total_len_buf_n_struct - sizeof(struct infos_simple_mem_mgr);
+  new_manager->data_len >>= log2_chunk_len;
   new_manager->total_space_left = new_manager->data_len;
   new_manager->data = buffer;
   new_manager->idx_last_rental_info = 0;
@@ -198,6 +200,12 @@ static uint32_t infos_smm_rent_impl( struct infos_simple_mem_mgr * restrict mana
 {
   uint64_t nr_elems;
   uint64_t base_vidx;
+
+  if ( manager->total_space_left < length ) {
+    errno = ENOBUFS;
+    return 0;
+  }
+
   nr_elems = UINT64_C(1) << manager->al_vacancies.log2_nr_elems;
   struct infos_singly_linked_list_node * restrict v_node = &manager->al_vacancies.list.head;
   base_vidx = 0;
@@ -277,7 +285,6 @@ take_and_return:
           }
           return 0;
         }
-        //manager->total_space_left -= (1 << manager->al_rental_info.log2_node_size);
         r_node = infos_ll_get_last_node(&manager->al_rental_info.list.head);
         manager->idx_last_rental_info = base_ridx;
         struct range_u32 * restrict rental = r_node->data;
@@ -434,8 +441,8 @@ take_and_return:
           }
           return 0;
         }
-        assume( manager->al_rental_info.log2_node_size > log2_chunk_len );
-        manager->total_space_left -= 1 << (manager->al_rental_info.log2_node_size - log2_chunk_len);
+        //assume( manager->al_rental_info.log2_node_size > log2_chunk_len );
+        //manager->total_space_left -= 1 << (manager->al_rental_info.log2_node_size - log2_chunk_len);
         r_node = infos_ll_get_last_node(&manager->al_rental_info.list.head);
         manager->idx_last_rental_info = base_ridx;
         struct range_u32 * restrict rental = r_node->data;
@@ -493,6 +500,11 @@ static uint32_t infos_smm_rent_aligned_impl( struct infos_simple_mem_mgr * restr
   assume( alignment > 1 );
   assume( _is_power_of_two(alignment) );
   //assume( _is_aligned_to_power_of_two(length, alignment) );
+
+  if ( manager->total_space_left < length ) {
+    errno = ENOBUFS;
+    return 0;
+  }
 
   uint_fast8_t nr_tries_to_find_prealigned = 0;
   struct range_u32 * spacious_range;
@@ -691,7 +703,7 @@ take_it_and_return:
           }
           return 0;
         }
-        manager->total_space_left -= UINT64_C(1) << manager->al_rental_info.log2_node_size;
+        //manager->total_space_left -= UINT64_C(1) << manager->al_rental_info.log2_node_size;
         r_node = infos_ll_get_last_node(&manager->al_rental_info.list.head);
         manager->idx_last_rental_info++;
         struct range_u32 * restrict rental = r_node->data;
@@ -823,7 +835,7 @@ populate_new_vacancy:
 
           return 0;
         }
-        manager->total_space_left -= UINT64_C(1) << manager->al_vacancies.log2_node_size;
+        //manager->total_space_left -= UINT64_C(1) << manager->al_vacancies.log2_node_size;
 //#ifdef DEBUG_MODE
 //fprintf(stdout, "[SMM] infos_smm_rent_aligned_impl %lx + %u-%u (Grow the linked array)\n",
 //    ptr2ui(manager->data), rental->start, rental->stop);
@@ -874,6 +886,12 @@ static uint32_t infos_smm_rent_aligned_chunks_impl(
 {
   assume( alignment > 1 );
   assume( _is_power_of_two(alignment) );
+
+  if ( manager->total_space_left < nr_chunks ) {
+    errno = ENOBUFS;
+    return 0;
+  }
+
   uint64_t lsbs_head_addr = ptr2ui(manager->data) & (alignment - 1);
   uint64_t alignment_in_chunks = alignment >> log2_chunk_len;
   uint64_t lsbs_headchunk_addr = lsbs_head_addr >> log2_chunk_len & (alignment_in_chunks - 1);
@@ -1074,9 +1092,9 @@ take_it_and_return:
           }
           return 0;
         }
-        assume( manager->al_rental_info.log2_node_size > log2_chunk_len );
-        manager->total_space_left -=
-          UINT64_C(1) << ( manager->al_rental_info.log2_node_size - log2_chunk_len );
+        //assume( manager->al_rental_info.log2_node_size > log2_chunk_len );
+        //manager->total_space_left -=
+        //  UINT64_C(1) << ( manager->al_rental_info.log2_node_size - log2_chunk_len );
         r_node = infos_ll_get_last_node(&manager->al_rental_info.list.head);
         manager->idx_last_rental_info++;
         struct range_u32 * restrict rental = r_node->data;
@@ -1209,9 +1227,9 @@ populate_new_vacancy:
 
           return 0;
         }
-        assume( manager->al_vacancies.log2_node_size > log2_chunk_len );
-        manager->total_space_left -=
-          UINT64_C(1) << ( manager->al_vacancies.log2_node_size - log2_chunk_len );
+        //assume( manager->al_vacancies.log2_node_size > log2_chunk_len );
+        //manager->total_space_left -=
+        //  UINT64_C(1) << ( manager->al_vacancies.log2_node_size - log2_chunk_len );
 //#ifdef DEBUG_MODE
 //fprintf( stdout,
 //    "[SMM] infos_smm_rent_aligned_chunks_impl %lx + %u-%u (Grow the linked array)\n",
@@ -1470,7 +1488,7 @@ populate_new_vacancy:
           }
           return err_msg_out_of_memory;
         }
-        manager->total_space_left -= UINT64_C(1) <<  manager->al_vacancies.log2_node_size;
+        //manager->total_space_left -= UINT64_C(1) <<  manager->al_vacancies.log2_node_size;
         v_node = infos_ll_get_last_node(&manager->al_vacancies.list.head);
         manager->idx_last_vacancy++;
         vacancy = v_node->data;
@@ -1908,7 +1926,6 @@ skip_the_divider:
                     }
                   }
                 }
-                //manager->total_space_left -= _length_of_range(orig_rent);
                 manager->total_space_left -= len_diff_in_chunks;
                 return manager->data + (orig_rent->start << log2_chunk_len);
               }
@@ -1936,7 +1953,6 @@ populate_new_vacancy:
                   }
                 }
               }
-              //manager->total_space_left -= _length_of_range(orig_rent);
               manager->total_space_left -= len_diff_in_chunks;
               return manager->data + (orig_rent->start << log2_chunk_len);
             }
@@ -2581,7 +2597,7 @@ populate_new_vacancy:
   if ( err ) {
     return err_msg_out_of_memory;
   }
-  manager->total_space_left -= UINT64_C(1) <<  manager->al_vacancies.log2_node_size;
+  //manager->total_space_left -= UINT64_C(1) <<  manager->al_vacancies.log2_node_size;
   struct infos_singly_linked_list_node * tail =
     infos_ll_get_last_node(&manager->al_vacancies.list.head);
   manager->idx_last_vacancy++;

@@ -27,7 +27,7 @@ typedef struct {
   //char padding[ _get_nr_bytes_for_struct_padding(CACHELINE_LEN,
   //    sizeof(void*) + sizeof(uint32_t) + sizeof(uint8_t)) ];
   alignas(CACHELINE_LEN)
-    struct ma_sub_arena * tail;  ///< Obviously the last ma_sub_arena in the linked list
+  struct ma_sub_arena * tail;  ///< Obviously the last ma_sub_arena in the linked list
   static_assert( alignof(void*) >= alignof(atomic_uint_least16_t), "Sort the struct members!" );
   atomic_uint_least16_t nr_nodes;  ///< The user should update this value themself whenever they are
                                    ///<  about to call ma_add_sub_arena or ma_remove_sub_arena.
@@ -372,6 +372,7 @@ enum err_msg ma_bind_img_to_malloc(
     VkImage vk_img,
     uint32_t type_idx,
     VkDeviceSize req_size,  // Required allocation size in bytes
+    VkDeviceSize req_alignment,  // Required allocation alignment in bytes
     struct range_u32 ** pp_malloc_range
     );
 

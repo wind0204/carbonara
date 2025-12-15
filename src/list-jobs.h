@@ -12,7 +12,7 @@
 /**
  * \brief carbonara-job.c:known_jobs
  */
-enum job_func_indices : _typeof_member(struct cara_job_batch_desc_64, job_func_idx[0]) {
+enum job_func_idx : _typeof_member(struct cara_job_batch_desc_64, job_func_idx[0]) {
   jf_idx_none,  // #0
 
   // carbonara-maint.c
@@ -32,22 +32,22 @@ enum job_func_indices : _typeof_member(struct cara_job_batch_desc_64, job_func_i
 
 //-------------------------------------------------------------------------------------------------
 // carbonara-maint.c
-extern void jf_maint_job_list(struct cara_worker_state * ws);
-extern void jf_maint_job_arg_pool(struct cara_worker_state * ws);
-extern void jf_maint_memo_maps(struct cara_worker_state * ws);
-extern void jf_maint_collective_grower(struct cara_worker_state * ws);
+extern void jf_maint_job_list( struct cara_worker_state * p_ws );
+extern void jf_maint_job_arg_pool( struct cara_worker_state * p_ws );
+extern void jf_maint_memo_maps( struct cara_worker_state * p_ws );
+extern void jf_maint_collective_grower( struct cara_worker_state * p_ws );
 
 //-------------------------------------------------------------------------------------------------
 // carbonara-rainbow.c
-extern void jf_start_rainbow_scene(struct cara_worker_state * ws);
-extern void jf_update_rainbow_scene(struct cara_worker_state * ws);
-extern void jf_end_rainbow_scene(struct cara_worker_state * ws);
+extern void jf_start_rainbow_scene( struct cara_worker_state * p_ws );
+extern void jf_update_rainbow_scene( struct cara_worker_state * p_ws );
+extern void jf_end_rainbow_scene( struct cara_worker_state * p_ws );
 
 //-------------------------------------------------------------------------------------------------
 // carbonara.c
-extern void jf_start_kill_chain(struct cara_worker_state * ws);
-extern void jf_kickstart(struct cara_worker_state * ws);
-extern void jf_police_patrol(struct cara_worker_state * ws);
+extern void jf_start_kill_chain( struct cara_worker_state * p_ws );
+extern void jf_kickstart( struct cara_worker_state * p_ws );
+extern void jf_police_patrol( struct cara_worker_state * p_ws );
 
 
 #endif

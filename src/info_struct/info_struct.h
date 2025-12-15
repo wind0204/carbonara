@@ -295,8 +295,8 @@ extern void * default_realloc_vk(
     void * orig_ptr, size_t size, [[maybe_unused]] size_t alignment,
     [[maybe_unused]] VkSystemAllocationScope alloc_scope );
 
-extern void default_free( void * restrict userdata, void * restrict ptr );
-extern void default_free_vk( [[maybe_unused]] void * restrict userdata, void * restrict ptr );
+extern void default_free( void * userdata, void * ptr );
+extern void vk_free_wrapper( [[maybe_unused]] void * userdata, void * ptr );
 
 
 
@@ -463,7 +463,7 @@ enum err_msg infos_multi_al_grow( struct infos_multi_arr_list * restrict mal,
     void * restrict userdata,
     void * (*custom_malloc)(void * userdata, size_t alignment, size_t size),
     uint32_t arr_len,
-    const uint32_t idx_al[arr_len],
+    const uint32_t arr_al_indices[arr_len],
     bool zero_all
     );
 
@@ -1765,7 +1765,7 @@ constexpr size_t p2_sizeof_page_mgr = _ct_align_to_the_close_power_of_two(
     sizeof(struct infos_page_mgr) );
 struct infos_page_mgr_p2 {
   alignas( p2_sizeof_page_mgr )
-    struct infos_arr_list al_rental_info;
+  struct infos_arr_list al_rental_info;
   struct infos_arr_list al_vacancies;
   static_assert( sizeof(struct infos_arr_list) >= alignof(uint32_t) );
   uint32_t nr_unused_pages;
@@ -1794,14 +1794,29 @@ void infos_pm_destroy( struct infos_page_mgr * p_pm,
  * \brief Rent a page or a number of pages.
  * \return The pointer to the range_u32
  *
- * bugprone-sizeof-expression
- * errno ENOMEM There was a failure of a memory allocation;
- * errno ENOBUFS There was not enough space left;
+ * errno ENOMEM There was a failure of a memory allocation
+ * errno ENOBUFS There was not enough space left
  */
 struct range_u32 * infos_pm_rent( struct infos_page_mgr * restrict p_pm,
     void * restrict userdata,
     void * (*custom_malloc)(void * userdata, size_t alignment, size_t size),
     uint32_t nr_seq_pages_needed,
+    bool take_from_left
+    );
+
+//-------------------------------------------------------------------------------------------------
+/**
+ * \brief Rent a page or a number of pages.
+ * \return The pointer to the range_u32
+ *
+ * errno ENOMEM There was a failure of a memory allocation
+ * errno ENOBUFS There was not enough space left
+ */
+struct range_u32 * infos_pm_rent_aligned( struct infos_page_mgr * restrict p_pm,
+    void * restrict userdata,
+    void * (*custom_malloc)(void * userdata, size_t alignment, size_t size),
+    uint32_t nr_seq_pages_needed,
+    uint32_t alignment,
     bool take_from_left
     );
 

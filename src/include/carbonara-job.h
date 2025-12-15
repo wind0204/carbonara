@@ -1,3 +1,4 @@
+#include "carbonara.h"
 #if !defined CARBONARA_JOB_H_
 # define CARBONARA_JOB_H_
 
@@ -16,39 +17,39 @@
 
 
 //-------------------------------------------------------------------------------------------------
-constexpr size_t CARBONARA_MAX_LEN_JOB_FUNC_ARGS = 8;
+constexpr size_t cara_len_job_func_param = 8;
 //#define NR_PTRS_IN_BUFFER_FOR_GET_JOB 4
 
+// Type casting to a different function signature can result undefined behavior.
 /**
  * \brief It describes what kind of arguments the job function will take
  */
-enum job_fsig : unsigned char {
-  job_fsig_void = 0,  ///< The function won't take any argument except
-                            ///< one pointer to struct worker_state.
-  job_fsig_ui32,
-  job_fsig_ui64,
-  job_fsig_i32,
-  job_fsig_i64,
-  job_fsig_float,
-  job_fsig_double,
-  job_fsig_ptr,  ///< The function will take a void pointer as an argument.
-  job_fsig_ui8 = 8,
-  job_fsig_ui16,
-  job_fsig_i8,
-  job_fsig_i16,
-};
-
+//enum job_fsig : unsigned char {
+//  job_fsig_void = 0,  ///< The function won't take any argument except
+//                            ///< one pointer to struct worker_state.
+//  job_fsig_ui32,
+//  job_fsig_ui64,
+//  job_fsig_i32,
+//  job_fsig_i64,
+//  job_fsig_float,
+//  job_fsig_double,
+//  job_fsig_ptr,  ///< The function will take a void pointer as an argument.
+//  job_fsig_ui8 = 8,
+//  job_fsig_ui16,
+//  job_fsig_i8,
+//  job_fsig_i16,
+//};
 // Each element of this array is an enum job_func_sig declared in carbonara-job.h
-constexpr enum job_fsig job_fsig_db[] = {
-  0,
-  job_fsig_void,
-  job_fsig_void,
-  job_fsig_void,
-  job_fsig_void,
-  job_fsig_void,
-  job_fsig_void,
-  job_fsig_void,  // #7
-};
+//constexpr enum job_fsig job_fsig_db[] = {
+//  0,
+//  job_fsig_void,
+//  job_fsig_void,
+//  job_fsig_void,
+//  job_fsig_void,
+//  job_fsig_void,
+//  job_fsig_void,
+//  job_fsig_void,  // #7
+//};
 
 /**
  * \brief It describes the properties of the job
@@ -60,7 +61,7 @@ enum job_flag : unsigned char {
 };
 
 //-------------------------------------------------------------------------------------------------
-extern void (* const known_jobs[])();
+extern void (* const known_jobs[])( struct cara_worker_state * p_ws );
 
 //-------------------------------------------------------------------------------------------------
 /**
@@ -76,10 +77,12 @@ struct cara_job_batch_desc_64 {
                                   ///< ~0 is assigned if the jobs are not for duo.
                                   ///< UINT8_MAX-1 is assigned hen the jobs are for duo and the
                                   ///<  preferred core hasn't been determined.
-  uint8_t job_func_args[6 * CARBONARA_MAX_LEN_JOB_FUNC_ARGS]; ///< The first argument for each function is the biggest
-                                                              ///< and its position should be aligned accordingly.
-  // The first element in this array is the first job to get done.
-  uint8_t job_func_idx[6];  ///< enum job_func_indices  You must be kidding; Just 255 types? FIXME
+  uint8_t job_func_params[6 * cara_len_job_func_param];  ///< The first argument for each
+                                                              ///< function is the biggest and its
+                                                              ///< position should be aligned
+                                                              ///< accordingly.
+  // The first element in this array is the enum job_func_idx of the first job to get done.
+  uint8_t job_func_idx[6];  ///< enum job_func_idx  XXX Just 255 types? FIXME
   uint8_t job_flags[6];  ///< enum job_flag;
   //uint8_t pattern_len[6];
   /*
@@ -91,7 +94,7 @@ struct cara_job_batch_desc_64 {
   uint8_t idx_peer_job;   ///< The index of the other partner job in the duo job pair.
                           ///< It's the index of an element in cara_single.job_list.
   uint8_t user_data[ 64 - 2*sizeof(atomic_uint_least8_t) - sizeof(uint8_t)
-    - 6 * CARBONARA_MAX_LEN_JOB_FUNC_ARGS * sizeof(uint8_t)
+    - 6 * cara_len_job_func_param * sizeof(uint8_t)
     - 6 * 2 * sizeof(uint8_t) ];  ///< Use it on whatever purpose.
 };
 static_assert( sizeof(struct cara_job_batch_desc_64) == 64,

@@ -539,6 +539,7 @@ enum err_msg ma_bind_img_to_malloc(
     VkImage vk_img,
     uint32_t type_idx,
     VkDeviceSize req_size,  // Required allocation size in bytes
+    VkDeviceSize req_alignment,  // Required allocation alignment in bytes
     struct range_u32 ** pp_malloc_range
     )
 {

@@ -9,12 +9,12 @@
 #include "carbonara-job.h"
 
 
-void jf_maint_job_list(struct cara_worker_state * ws);
-void jf_maint_memo_maps(struct cara_worker_state * ws);
+void jf_maint_job_list(struct cara_worker_state * p_ws);
+void jf_maint_memo_maps(struct cara_worker_state * p_ws);
 
 
 
-void jf_maint_job_list(struct cara_worker_state * ws) {
+void jf_maint_job_list(struct cara_worker_state * p_ws) {
   const uint_fast8_t nr_nodes = cara_single.job_list->list.nr_nodes;
   uint64_t nr_elems = nr_nodes << cara_single.job_list->log2_nr_elems;
 
@@ -26,7 +26,7 @@ void jf_maint_job_list(struct cara_worker_state * ws) {
         "nr_elems:%lu, nr_elems_taken_by_workers:%lu\n", nr_elems, nr_elems_taken_by_workers);
 #endif
     const uint8_t ret = infos_al_grow( cara_single.job_list,
-        &ws->malloc_helper, cara_malloc, 1, 0 );
+        &p_ws->malloc_helper, cara_malloc, 1, 0 );
     if ( ret ) {
       fprintf(stderr, "[Maint-JD] failed to allocate memory. %s\n", __FUNCTION__);
       return;
@@ -51,7 +51,7 @@ void jf_maint_job_list(struct cara_worker_state * ws) {
  *
  * Just pack them in the job batch description together.
  *
-void jf_maint_job_arg_pool(struct cara_worker_state * ws) {
+void jf_maint_job_arg_pool(struct cara_worker_state * p_ws) {
   uint_fast8_t nr_nodes = cara_single.job_arg_pool->list->nr_nodes;
   uint_fast16_t nr_elems = cara_single.job_arg_pool->node_size / cara_single.job_arg_pool->elem_size;
 
@@ -71,7 +71,7 @@ void jf_maint_job_arg_pool(struct cara_worker_state * ws) {
 }
 */
 
-void jf_maint_memo_maps( [[maybe_unused]] struct cara_worker_state * ws ) {
+void jf_maint_memo_maps( [[maybe_unused]] struct cara_worker_state * p_ws ) {
   struct ma_sub_arena * sub_arena = cara_single.mem_arena->head;
   uint_fast64_t nr_mem_chunks_unallocated = 0;
   uint_fast64_t threshold_nr_mem_chunks_unallocated = 0;

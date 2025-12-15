@@ -1,5 +1,3 @@
-#include "info_struct.h"
-#include <assert.h>
 #if !defined SALAMI_GRAPHICS_H_
 #define SALAMI_GRAPHICS_H_
 
@@ -9,6 +7,7 @@
 
 #include <SDL3/SDL_video.h>
 
+#include "carbonara-singleton.h"
 #include "util-c_lang-basic.h"
 #include "appdev_support-processor_map.h"
 #include "carbonara.h"
@@ -206,6 +205,7 @@ struct cara_vk_renderer {
   uint32_t trans_q_fam_idx;
   uint32_t compute_q_fam_idx;
   uint32_t nr_old_swapchains;
+  uint32_t frame_id;  // the frame id of the 1st frame rendered will most likely be 1.
   float max_anisotropy;
   union win_dims win_size;  // The current dimensions of the window
   union win_dims max_win_size;  // The width and height of the framebuffers and swapchain images
@@ -220,6 +220,13 @@ struct cara_vk_renderer {
   uint8_t nr_swapchain_imgs;
   uint8_t nr_swapchain_imgs_we_request;
   uint8_t texture_format_chosen; // either texture_format_astc or texture_format_s3tc
+};
+
+struct dead_swapchain {
+  VkSwapchainKHR swapchain;
+  static_assert( alignof(VkSwapchainKHR) >=
+      alignof(_typeof_member(struct cara_vk_renderer, frame_id)) );
+  _typeof_member(struct cara_vk_renderer, frame_id) destruct_time;
 };
 
 extern struct cara_vk_renderer cara_vk;
@@ -288,7 +295,7 @@ uint8_t init_vulkan( uint32_t vendor_id_pref, uint32_t device_id_pref,
     struct cara_worker_state * restrict worker_state );
 
 //-------------------------------------------------------------------------------------------------
-void destroy_vulkan_objects( _typeof_member(struct ms_worker_info, idx_self) worker_idx );
+void destroy_vk_objs( _typeof_member(struct ms_worker_info, idx_self) worker_idx );
 //void acquire_swapchain_image();
 //void present_image();
 //void prepare_thread_local_vulkan_objects();

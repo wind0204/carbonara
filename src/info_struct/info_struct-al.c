@@ -46,7 +46,7 @@ struct infos_arr_list * infos_al_create(
   ptr = local_malloc( userdata, CACHELINE_LEN,
       out_of_align_diff + node_size + sizeof(struct infos_arr_list) );
   if ( !ptr ) {
-    return 0;
+    return nullptr;
   }
   if ( zero_all ) {
     memset( ptr + ofs_data, 0, node_size );
@@ -86,7 +86,7 @@ struct infos_arr_list * infos_al_create_prealloc( struct infos_arr_list * restri
   assume( CACHELINE_LEN >= ALIGN_FOR_AVX512 );
   ptr = local_malloc( userdata, CACHELINE_LEN, node_size );
   if ( !ptr ) {
-    return 0;
+    return nullptr;
   }
   if ( zero_all ) {
     memset( ptr, 0, node_size );
@@ -133,8 +133,9 @@ enum err_msg infos_al_grow(
 
   void * (*local_malloc)(void * userdata, size_t alignment, size_t size);
   local_malloc = custom_malloc ? custom_malloc : default_malloc;
+  assume( CACHELINE_LEN > ALIGN_FOR_AVX512 );
   void * restrict ptr = local_malloc( userdata, CACHELINE_LEN,
-      sum_ooa_diff + sum_new_nodes_len + sizeof(struct infos_singly_linked_list_node) );
+      sum_ooa_diff + sum_new_nodes_len + nr_nodes * sizeof(struct infos_singly_linked_list_node) );
   if ( !ptr ) {
     //ptr = default_malloc( userdata, CACHELINE_LEN,
     //    sum_ooa_diff + sum_new_nodes_len + sizeof(struct infos_singly_linked_list_node) );
@@ -152,12 +153,17 @@ enum err_msg infos_al_grow(
   uint32_t ofs_node = ofs_data + sum_new_nodes_len + out_of_align_diff1;
 
   struct infos_singly_linked_list_node * old_tail = infos_ll_get_last_node(&al->list.head);
-  struct infos_singly_linked_list_node * new_node = ptr + ofs_node;
+  struct infos_singly_linked_list_node * node = ptr + ofs_node;
 
-  new_node->next = 0;
-  new_node->data = ptr + ofs_data;
+  old_tail->next = node;
+  node->data = ptr + ofs_data;
+  for ( unsigned int i = 1; i < nr_nodes; i++ ) {
+    node->next = node + 1;
+    node->next->data = node->data + ( UINT64_C(1) << al->log2_node_size );
+    node = node->next;
+  }
+  node->next = nullptr;
 
-  old_tail->next = new_node;
   al->list.nr_nodes += nr_nodes;
 
   return 0;
@@ -275,7 +281,7 @@ struct infos_multi_arr_list * infos_multi_al_create(
       out_of_align_diff + (UINT64_C(1) << log2_nr_arr_lists) * ((UINT64_C(1) << log2_node_size) +
         sizeof(struct infos_singly_linked_list_fh)) + sizeof(struct infos_multi_arr_list) );
   if ( !ptr ) {
-    return 0;
+    return nullptr;
   }
   constexpr uint64_t ofs_data = 0;  // the first node's data should be in the front.
   if ( zero_all ) {
@@ -366,7 +372,7 @@ enum err_msg infos_multi_al_grow( struct infos_multi_arr_list * restrict mal,
     void * restrict userdata,
     void * (*custom_malloc)(void * userdata, size_t alignment, size_t size),
     uint32_t arr_len,
-    const uint32_t idx_al[arr_len],
+    const uint32_t arr_al_indices[arr_len],
     bool zero_all
     )
 {
@@ -384,11 +390,11 @@ enum err_msg infos_multi_al_grow( struct infos_multi_arr_list * restrict mal,
   // a 64-byte aligned string for cache line separation
   uint32_t ofs_data = 0;
   uint32_t ofs_node = ofs_data + (1 << mal->log2_node_size) + out_of_align_diff1;
-  for ( uint32_t i = 0; i < arr_len; i++ ) {
+  for ( uint32_t al_idx = 0; al_idx < arr_len; al_idx++ ) {
     assume( CACHELINE_LEN >= ALIGN_FOR_AVX512 );
     void * restrict ptr = local_malloc( userdata, CACHELINE_LEN,
         out_of_align_diff1 +
-        (1 << mal->log2_node_size) + sizeof(struct infos_singly_linked_list_node) );
+        (1 << mal->log2_node_size) + arr_len * sizeof(struct infos_singly_linked_list_node) );
     if ( !ptr ) {
       return err_msg_out_of_memory;
     }
@@ -405,14 +411,14 @@ enum err_msg infos_multi_al_grow( struct infos_multi_arr_list * restrict mal,
     }
 
     struct infos_singly_linked_list_node * old_tail =
-      infos_ll_get_last_node(&mal->lists[idx_al[i]].head);
+      infos_ll_get_last_node(&mal->lists[arr_al_indices[al_idx]].head);
     struct infos_singly_linked_list_node * new_node = ptr + ofs_node;
 
     new_node->next = 0;
     new_node->data = ptr + ofs_data;
 
     old_tail->next = new_node;
-    mal->lists[idx_al[i]].nr_nodes++;
+    mal->lists[arr_al_indices[al_idx]].nr_nodes++;
   }
 
   return 0;
@@ -512,7 +518,7 @@ void * infos_al_get_elem( const struct infos_arr_list * al, uint32_t idx_elem )
   idx_elem = idx_elem - (node_idx << al->log2_node_size >> al->log2_elem_size);
   for ( uint32_t i = 0; i < node_idx; i++ ) {
     if ( !node->next ) {
-      return 0;
+      return nullptr;
     }
     node = node->next;
   }
@@ -529,7 +535,7 @@ void * infos_multi_al_get_elem( const struct infos_multi_arr_list * mal,
   idx_elem = idx_elem - (node_idx << mal->log2_node_size >> mal->log2_elem_size);
   for ( uint32_t i = 0; i < node_idx; i++ ) {
     if ( !node->next ) {
-      return 0;
+      return nullptr;
     }
     node = node->next;
   }
@@ -548,7 +554,7 @@ void * infos_al_get_elem_cond32( const struct infos_arr_list * al,
   idx_elem = idx_elem - (node_idx << al->log2_node_size >> al->log2_elem_size);
   for ( uint32_t i = 0; i < node_idx; i++ ) {
     if ( !node->next ) {
-      return 0;
+      return nullptr;
     }
     node = node->next;
   }
@@ -624,7 +630,7 @@ void * infos_al_get_elem_cond64( const struct infos_arr_list * al,
   idx_elem = idx_elem - (node_idx << al->log2_node_size >> al->log2_elem_size);
   for ( uint32_t i = 0; i < node_idx; i++ ) {
     if ( !node->next ) {
-      return 0;
+      return nullptr;
     }
     node = node->next;
   }
@@ -701,7 +707,7 @@ void * infos_multi_al_get_elem_cond32( const struct infos_multi_arr_list * mal,
   idx_elem = idx_elem - (node_idx << mal->log2_node_size >> mal->log2_elem_size);
   for ( uint32_t i = 0; i < node_idx; i++ ) {
     if ( !node->next ) {
-      return 0;
+      return nullptr;
     }
     node = node->next;
   }
@@ -777,7 +783,7 @@ void * infos_multi_al_get_elem_cond64( const struct infos_multi_arr_list * mal,
   idx_elem = idx_elem - (node_idx << mal->log2_node_size >> mal->log2_elem_size);
   for ( uint32_t i = 0; i < node_idx; i++ ) {
     if ( !node->next ) {
-      return 0;
+      return nullptr;
     }
     node = node->next;
   }

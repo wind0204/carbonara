@@ -75,13 +75,13 @@ void * default_realloc_vk(
 }
 
 //-------------------------------------------------------------------------------------------------
-void default_free( [[maybe_unused]] void * restrict userdata, void * restrict ptr )
+void default_free( [[maybe_unused]] void * userdata, void * ptr )
 {
   free( ptr );
 }
 
 //-------------------------------------------------------------------------------------------------
-void default_free_vk( [[maybe_unused]] void * restrict userdata, void * restrict ptr )
+void vk_free_wrapper( [[maybe_unused]] void * p_VkAllocationCallbacks, void * ptr )
 {
   free( ptr );
 }

@@ -52,15 +52,14 @@ struct carbonara {
 
   // Not static
   alignas(CACHELINE_LEN)
-    atomic_uint_least64_t cur_time_in_5us_general;  ///< Timestamp in 5us unit
+  atomic_uint_least64_t cur_time_in_5us_general;  ///< Timestamp in 5us unit
   atomic_uint_least64_t cur_time_in_5us_for_render;
   atomic_uint_least64_t cur_time_in_5us_for_physics;
   atomic_uint_least64_t cur_time_in_5us_for_sim;
-  atomic_uint_least8_t is_frame_id_even;  ///< the frame id of the 1st frame rendered will be odd.
 
   // Quite dynamic
   alignas(CACHELINE_LEN)
-    atomic_uint_least16_t nr_job_batch_descriptors_taken;
+  atomic_uint_least16_t nr_job_batch_descriptors_taken;
   // atomic_uint_fast16_t nr_job_arg_groups_taken;
 };
 

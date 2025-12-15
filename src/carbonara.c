@@ -111,7 +111,7 @@ static uint8_t init_sdl(void);
 
 
 //-------------------------------------------------------------------------------------------------
-void jf_police_patrol( [[maybe_unused]] struct cara_worker_state * ws )
+void jf_police_patrol( [[maybe_unused]] struct cara_worker_state * p_ws )
 {
   const unsigned int mxcsr = _mm_getcsr();
   if ( (mxcsr & _MM_FLUSH_ZERO_ON) ) {
@@ -147,7 +147,7 @@ void SDL_AppQuit( [[maybe_unused]] void *appstate, SDL_AppResult result )
 
       remove_appdev_support_thread();
 
-      destroy_vulkan_objects( 0 );
+      destroy_vk_objs( 0 );
 
       ma_end_arena(cara_single.mem_arena);
       break;
@@ -225,7 +225,7 @@ SDL_AppResult SDL_AppIterate( [[maybe_unused]] void *appstate )
     return SDL_APP_SUCCESS;
   }
 
-  static uint_fast8_t is_frame_id_even = 0;
+  static _typeof_member(struct cara_vk_renderer, frame_id) frame_id = 1;
 
 
   //
@@ -294,7 +294,7 @@ acquire_img:
       cara_vk.swapchain,
       100000000,        // It specifies how long the function waits, in nanoseconds, if no image is
                         // available.
-      cara_vk.arr_acquire_semaphores[is_frame_id_even],  // VK_NULL_HANDLE or a semaphore to
+      cara_vk.arr_acquire_semaphores[frame_id % cara_max_nr_fif],  // VK_NULL_HANDLE or a semaphore to
                                                          //  signal.
       VK_NULL_HANDLE,                 // VK_NULL_HANDLE or a fence to signal.
                         // WARNING semaphore and fence must not both be equal to VK_NULL_HANDLE
@@ -356,6 +356,8 @@ acquire_img:
     case VK_SUCCESS:
   }
 
+  // TODO The first thing we need to record is to change the swapchain image's layout to a VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL layout.
+  // This operation should be performed implicitly using appropriate render pass parameters (initial and sub-pass layouts). But if queues used for the presentation and graphics operations come from two different families, we must perform ownership transfer. This cannot be done implicitly—for this we need to set up an image memory barrier.
 
 
   result = vkEndCommandBuffer( pri_trans_buf );
@@ -370,21 +372,20 @@ acquire_img:
   //
   // Render the scene
   //
-  is_frame_id_even = 1 ^ is_frame_id_even;
-  atomic_store_explicit(
-      &cara_single.is_frame_id_even, is_frame_id_even, memory_order_release );
+  frame_id = frame_id + 1;
+  cara_vk.frame_id = frame_id;
 
   // The commented lines below are about getting a secondary command buffer:
   //constexpr uint_fast8_t worker_idx = foobar;
   //VkCommandBuffer pri_cmd_buf = cara_get_arr_command_buffers_for_graphics(
-  //    cara_single.proc_map->nr_processors, is_frame_id_even )[
+  //    cara_single.proc_map->nr_processors, frame_id % cara_max_nr_fif )[
   //  worker_idx * cara_max_nr_subpasses];
   VkCommandBuffer pri_cmd_buf =
-    cara_vk.arr_frame_infos[is_frame_id_even].primary_cmd_buf;
+    cara_vk.arr_frame_infos[frame_id % cara_max_nr_fif].primary_cmd_buf;
 fprintf( stderr, "[DEBUG] cmd_buf=%lu; cara_vk.arr_framebuffers[%u].primary_command_buffer=%lu\n",
   ptr2ui(pri_cmd_buf),
-  is_frame_id_even,
-  ptr2ui(cara_vk.arr_frame_infos[is_frame_id_even].primary_cmd_buf) );
+  frame_id % cara_max_nr_fif,
+  ptr2ui(cara_vk.arr_frame_infos[frame_id % cara_max_nr_fif].primary_cmd_buf) );
 
   // TODO synchronization needed
   // Begin recording on the primary command buffer for graphics
@@ -528,7 +529,7 @@ fprintf( stderr, "[DEBUG] cmd_buf=%lu; cara_vk.arr_framebuffers[%u].primary_comm
   VkSemaphoreSubmitInfoKHR semaphore_wait_info;
   semaphore_wait_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO_KHR;
   semaphore_wait_info.pNext = nullptr;
-  semaphore_wait_info.semaphore = cara_vk.arr_semaphore_before_A[is_frame_id_even];
+  semaphore_wait_info.semaphore = cara_vk.arr_semaphore_before_A[frame_id % cara_max_nr_fif];
   semaphore_wait_info.value = csb_data_transfer_done;
   semaphore_wait_info.stageMask = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT_KHR;
   semaphore_wait_info.deviceIndex = 0;
@@ -536,7 +537,7 @@ fprintf( stderr, "[DEBUG] cmd_buf=%lu; cara_vk.arr_framebuffers[%u].primary_comm
   VkSemaphoreSubmitInfoKHR semaphore_sgnl_info;
   semaphore_sgnl_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO_KHR;
   semaphore_sgnl_info.pNext = nullptr;
-  semaphore_sgnl_info.semaphore = cara_vk.arr_semaphore_after_A[is_frame_id_even];
+  semaphore_sgnl_info.semaphore = cara_vk.arr_semaphore_after_A[frame_id % cara_max_nr_fif];
   semaphore_sgnl_info.value = csb_present_swapchain_img;
   semaphore_sgnl_info.stageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT_KHR;
   semaphore_sgnl_info.deviceIndex = 0;
@@ -599,7 +600,7 @@ fprintf( stderr, "[DEBUG] cmd_buf=%lu; cara_vk.arr_framebuffers[%u].primary_comm
   wait_info.pNext = nullptr;
   wait_info.flags = 0;
   wait_info.semaphoreCount = 1;
-  wait_info.pSemaphores = &cara_vk.arr_semaphore_before_A[is_frame_id_even];
+  wait_info.pSemaphores = &cara_vk.arr_semaphore_before_A[frame_id % cara_max_nr_fif];
   wait_info.pValues = &wait_val;
   SPALL_BEGIN("wait_transfer");
   vkWaitSemaphores( cara_vk.log_dev, &wait_info, 1000*1000*UINT64_C(20) );
@@ -623,14 +624,14 @@ fprintf( stderr, "[DEBUG] cmd_buf=%lu; cara_vk.arr_framebuffers[%u].primary_comm
   SPALL_END();
 
   wait_val = csb_present_swapchain_img;
-  wait_info.pSemaphores = &cara_vk.arr_semaphore_after_A[is_frame_id_even];
+  wait_info.pSemaphores = &cara_vk.arr_semaphore_after_A[frame_id % cara_max_nr_fif];
   SPALL_BEGIN("wait_graphics");
   vkWaitSemaphores( cara_vk.log_dev, &wait_info, 1000*1000*UINT64_C(20) );
   SPALL_END();
   SPALL_BEGIN("reset_graphics_cmd_pool");
   result = vkResetCommandPool(
       cara_vk.log_dev,
-      cara_vk.arr_frame_infos[is_frame_id_even].arr_cmd_pools[
+      cara_vk.arr_frame_infos[frame_id % cara_max_nr_fif].arr_cmd_pools[
         cara_single.proc_map->nr_processors ],
       release_resources ? VK_COMMAND_POOL_RESET_RELEASE_RESOURCES_BIT : 0 );
   if( result != VK_SUCCESS ) {
@@ -673,6 +674,27 @@ fprintf( stderr, "[DEBUG] cmd_buf=%lu; cara_vk.arr_framebuffers[%u].primary_comm
 
   // TODO Host access to queue must be externally synchronized
   result = vkQueuePresentKHR( cara_vk.graphics_q, &present_info );
+
+
+  // Destroy old swapchain if any
+  for ( unsigned int i = 0; i < cara_vk.nr_old_swapchains; i++ ) {
+    struct dead_swapchain * p_dead = infos_al_get_elem( &cara_vk.old_swapchains, i );
+
+    if ( p_dead->destruct_time <= frame_id ) {
+      SPALL_BEGIN("destroy_swapchain");
+      vkDestroySwapchainKHR( cara_vk.log_dev, p_dead->swapchain, &vk_alloc_callbacks );
+      SPALL_END();
+
+      struct dead_swapchain * p_last = infos_al_get_elem(
+          &cara_vk.old_swapchains, cara_vk.nr_old_swapchains );
+      *p_dead = *p_last;
+      i--;
+      cara_vk.nr_old_swapchains--;
+    }
+
+  }
+
+
   switch( result ) {
     case VK_SUCCESS:
       return SDL_APP_CONTINUE;
@@ -680,6 +702,10 @@ fprintf( stderr, "[DEBUG] cmd_buf=%lu; cara_vk.arr_framebuffers[%u].primary_comm
     fprintf( stderr, "[Carbonara] Error presenting an image. '%s'\n", string_VkResult(result) );
     return SDL_APP_FAILURE;
   }
+
+
+
+
 
   //return SDL_APP_CONTINUE;
 }
@@ -950,7 +976,7 @@ enum err_msg init_carbonara( uint32_t len_each_arena, uint64_t proc_info )
   //
   struct cara_worker_state tmp_ws;
   tmp_ws.current_batch = nullptr;
-  tmp_ws.worker_info = (void*)&dummy_worker_info;
+  tmp_ws.worker_idx = 0;
   tmp_ws.malloc_helper.worker_idx = 0;
   tmp_ws.malloc_helper.node_recently_used = cara_single.mem_arena->head;
 
@@ -962,7 +988,7 @@ enum err_msg init_carbonara( uint32_t len_each_arena, uint64_t proc_info )
   //vk_alloc_callbacks.pUserData = (void*) &tmp_ws.malloc_helper;
   // Nope, vulkan's internal buffers should not keep &tmp_ws.malloc_helper (transient stack frame)
   vk_alloc_callbacks.pfnAllocation = default_malloc_vk;
-  vk_alloc_callbacks.pfnFree = default_free_vk;
+  vk_alloc_callbacks.pfnFree = vk_free_wrapper;
   vk_alloc_callbacks.pfnInternalAllocation = nullptr;
   vk_alloc_callbacks.pfnInternalFree = nullptr;
   vk_alloc_callbacks.pfnReallocation = default_realloc_vk;
@@ -1837,7 +1863,7 @@ void * launch_worker( void * arg )
   assume( !err );
 
   worker_state.current_batch = 0;
-  worker_state.worker_info = worker;
+  worker_state.worker_idx = worker->idx_self;
 
   // The loop.
   worker_loop( &worker_state );
@@ -1851,7 +1877,7 @@ __attribute__((noreturn))
 static void worker_loop( struct cara_worker_state * worker_state )
 {
   struct ms_worker_info * const worker =
-    &cara_single.proc_map->processors[worker_state->worker_info->idx_self];
+    &cara_single.proc_map->processors[worker_state->worker_idx];
   struct cara_malloc_helper * const alloc_helper = &worker_state->malloc_helper;
 
   // pc_std is not read by anyone—It will probably be removed by the optimizer.
@@ -1969,131 +1995,19 @@ static void worker_loop( struct cara_worker_state * worker_state )
     worker_state->current_batch = cara_get_job(worker);
 
     if ( worker_state->current_batch ) {
-      uint_fast8_t cur_job_func_arg = 0;
-      /*
-      struct cara_job_func_args_64 * job_func_args_group = nullptr;
-      if ( worker_state->current_batch->job_idx_func_arg_group[0] != UINT16_MAX ) {
-        job_func_args_group = infos_al_get_elem(cara_single.job_arg_pool,
-            worker_state->current_batch->job_idx_func_arg_group[0]);
-      }
-      */
-
-      //
-      uint8_t * restrict const job_func_args = worker_state->current_batch->job_func_args;
-
-/*#ifdef DEBUG_MODE  //?!
-      fprintf( stdout, "[Worker] (%u) I got a job batch descriptor. %lu\n",
-          proc_idx,
-          (ptr2ui(worker_state->current_batch) - ptr2ui(cara_single.job_list->list->head->data))
-          >> mm_singleton.len_cacheline_exp );
-#endif*/
       for ( uint_fast8_t job_idx = 0; job_idx < CARBONARA_MAX_NR_JOBS_IN_A_JOB_DESC_64;
           job_idx++ ) {
         if ( worker_state->current_batch->job_func_idx[job_idx] ) {
 #ifdef DEBUG_MODE  //?!
           fprintf( stdout, "[Worker] (%u) I'm on it! job_func_idx=%u\n",
-              worker_state->worker_info->idx_self,
+              worker_state->worker_idx,
               worker_state->current_batch->job_func_idx[job_idx] );
 #endif
 
-          uint_fast8_t len_first_arg;
-          uint_fast8_t total_len_args = 0;
-          switch ( job_fsig_db[worker_state->current_batch->job_func_idx[job_idx]] ) {
-            case job_fsig_i64:
-            case job_fsig_ui64:
-            case job_fsig_double:
-              len_first_arg = 8;
-              break;
-            case job_fsig_i32:
-            case job_fsig_ui32:
-            case job_fsig_float:
-              len_first_arg = 4;
-              break;
-            case job_fsig_i16:
-            case job_fsig_ui16:
-              len_first_arg = 2;
-              break;
-            case job_fsig_i8:
-            case job_fsig_ui8:
-              len_first_arg = 1;
-              break;
-            case job_fsig_ptr:
-              len_first_arg = sizeof(void*);
-              break;
-            case job_fsig_void:
-              len_first_arg = 0;
-              break;
-          }
-          if ( len_first_arg ) {
-            // The first argument of each function is the biggest.
-            cur_job_func_arg = _align_to_power_of_two(cur_job_func_arg, len_first_arg);
-            switch ( job_fsig_db[worker_state->current_batch->job_func_idx[job_idx]] ) {
-              case job_fsig_i64:
-              case job_fsig_ui64:
-              case job_fsig_double:
-                total_len_args = 8;
-                break;
-              case job_fsig_i32:
-              case job_fsig_ui32:
-              case job_fsig_float:
-                total_len_args = 4;
-                break;
-              case job_fsig_i16:
-              case job_fsig_ui16:
-                total_len_args = 2;
-                break;
-              case job_fsig_i8:
-              case job_fsig_ui8:
-                total_len_args = 1;
-                break;
-              case job_fsig_ptr:
-                total_len_args = sizeof(void*);
-                break;
-              case job_fsig_void:
-                total_len_args = 0;
-                break;
-            }
-            /*
-            if ( cur_job_func_arg + total_len_args > sizeof(job_func_args_group->data) ) {
-              atomic_store_explicit(&job_func_args_group->occupied, 0, memory_order_release);
-              atomic_fetch_sub_explicit(&cara_single.nr_job_arg_groups_taken, 1,
-                  memory_order_relaxed);
-
-              job_func_args_group = infos_al_get_elem(cara_single.job_arg_pool,
-                  worker_state->current_batch->idx_job_func_arg_group[1]);
-              cur_job_func_arg = 0;
-            }
-            */
-            // XXX Just keep it slim, no second function argument group!
-          }
-
-          switch ( job_fsig_db[worker_state->current_batch->job_func_idx[job_idx]] ) {
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wcast-function-type-strict"
-            case job_fsig_void:
-              ( (void (*)(struct cara_worker_state *))
-                known_jobs[worker_state->current_batch->job_func_idx[job_idx]] )
-                ( worker_state );
-              break;
-            case job_fsig_ui8:
-              ( (void (*)(struct cara_worker_state *, uint8_t))
-                known_jobs[worker_state->current_batch->job_func_idx[job_idx]] )
-                ( worker_state, job_func_args[cur_job_func_arg] );
-              break;
-            default:
-#if defined(ARE_WE_SHIPPING_IT)
-              unreachable();
-#else
-              fprintf( stderr, "an unknown job functions signature (%u)\n",
-                  worker_state->current_batch->job_func_idx[job_idx] );
-              break;
-#endif
-#pragma GCC diagnostic pop
-          }
-          cur_job_func_arg += total_len_args;
+          known_jobs[worker_state->current_batch->job_func_idx[job_idx]]( worker_state );
 #ifdef DEBUG_MODE  //?!
           fprintf( stdout, "[Worker] (%u) done. job_func_idx=%u\n",
-              worker_state->worker_info->idx_self,
+              worker_state->worker_idx,
               worker_state->current_batch->job_func_idx[job_idx] );
 #endif
 
@@ -2113,13 +2027,6 @@ static void worker_loop( struct cara_worker_state * worker_state )
       atomic_fetch_sub_explicit( &cara_single.nr_job_batch_descriptors_taken,
           1, memory_order_release );
 
-      /*
-      if ( job_func_args_group ) {
-        atomic_store_explicit(&job_func_args_group->occupied, 0, memory_order_release);
-        atomic_fetch_sub_explicit(&cara_single.nr_job_arg_groups_taken, 1,
-            memory_order_release);
-      }
-      */
     } else {
 
       SPALL_BEGIN( "hold_up_thread" );
@@ -2151,19 +2058,20 @@ static void worker_loop( struct cara_worker_state * worker_state )
 
 //-------------------------------------------------------------------------------------------------
 __attribute__((noreturn))
-void jf_start_kill_chain( struct cara_worker_state * ws )
+void jf_start_kill_chain( struct cara_worker_state * p_ws )
 {
   // Undo the job-take immediately.
   atomic_fetch_sub_explicit(&cara_single.nr_job_batch_descriptors_taken, 1,
       memory_order_release);
-  atomic_store_explicit(&ws->current_batch->progress, 0, memory_order_release);
+  atomic_store_explicit(&p_ws->current_batch->progress, 0, memory_order_release);
 
 #ifdef DEBUG_MODE
-  fprintf( stdout, "[Worker] (%u) Following a kill-chain...\n", ws->worker_info->idx_self );
+  fprintf( stdout, "[Worker] (%u) Following a kill-chain...\n", p_ws->worker_idx );
 #endif
 
   // Every worker quits quickly except the foreman.
-  if ( !(ws->worker_info->deployment_flags & worker_deployment_flag_foreman) ) {
+  if ( !(cara_single.proc_map->processors[p_ws->worker_idx].deployment_flags &
+        worker_deployment_flag_foreman) ) {
 
 #ifdef ENABLE_PROFILING
     // Remember to quit or flush your buffers before you exit!
@@ -2171,14 +2079,14 @@ void jf_start_kill_chain( struct cara_worker_state * ws )
     spall_buffer_quit(&spall_ctx, p_spall_buf);
 
     // Freeing our buffer's memory now that spall_buffer_quit has flushed it for us.
-    ma_free( cara_single.mem_arena, ws->worker_info->idx_self, p_spall_buf->data );
+    ma_free( cara_single.mem_arena, p_ws->worker_idx, p_spall_buf->data );
 #endif
 
     atomic_fetch_add_explicit( &cara_single.nr_workers_resigned,
         1, memory_order_release );
 
 #ifdef DEBUG_MODE
-    fprintf( stdout, "[Worker] (%u) resigned.\n", ws->worker_info->idx_self );
+    fprintf( stdout, "[Worker] (%u) resigned.\n", p_ws->worker_idx );
 #endif
 
     pthread_exit(0);
@@ -2229,7 +2137,7 @@ void jf_start_kill_chain( struct cara_worker_state * ws )
   spall_buffer_quit(&spall_ctx, p_spall_buf);
 
   // Freeing our buffer's memory now that spall_buffer_quit has flushed it for us.
-  ma_free( cara_single.mem_arena, ws->worker_info->idx_self, p_spall_buf->data );
+  ma_free( cara_single.mem_arena, p_ws->worker_idx, p_spall_buf->data );
 #endif
 
   // Assign a number bigger than 128 to sign_to_end
@@ -2275,13 +2183,13 @@ static enum err_msg verbosee_integrity_check_bc7_2048( const char * data )
 
 //-------------------------------------------------------------------------------------------------
 __attribute__ ((target ("lzcnt")))
-void jf_kickstart( struct cara_worker_state * ws )
+void jf_kickstart( struct cara_worker_state * p_ws )
 {
   uint32_t heap_idx = UINT_MAX_(heap_idx);
   //struct func_call_stack_element func_call_stack_element;
 
-  atomic_init( &cara_single.is_frame_id_even, 0 );
-  uint_fast8_t is_frame_id_even = 0;
+  cara_vk.frame_id = 0;
+  _typeof_member(struct cara_vk_renderer, frame_id) frame_id = 0;
 
 
   // TODO move the code below away!
@@ -2302,7 +2210,7 @@ void jf_kickstart( struct cara_worker_state * ws )
     goto stop_everything_after_failure;
   }
 
-  enum err_msg err = ma_prepare_upload_mgr( &cara_vk.vmm, &ws->malloc_helper, cara_malloc );
+  enum err_msg err = ma_prepare_upload_mgr( &cara_vk.vmm, &p_ws->malloc_helper, cara_malloc );
   if ( err ) {
     fprintf( stderr, "[Carbonara-Debug] ma_prepare_upload_mgr failed. (%u)\n", err );
     goto stop_everything_after_failure;
@@ -2315,10 +2223,10 @@ void jf_kickstart( struct cara_worker_state * ws )
   unsigned int nr_bytes_to_alloc =
     _align_to_power_of_two( len_mipmapped_2048, cara_vk.vmm.buf_granularity );
   const struct range_u32 * rent_for_stone = infos_pm_rent(
-      &cara_vk.vmm.uploads, &ws->malloc_helper, cara_malloc,
+      &cara_vk.vmm.uploads, &p_ws->malloc_helper, cara_malloc,
       _align_to_power_of_two(nr_bytes_to_alloc, cara_vk.vmm.len_non_coherent_atom), true );
   const struct range_u32 * rent_for_sand = infos_pm_rent(
-      &cara_vk.vmm.uploads, &ws->malloc_helper, cara_malloc,
+      &cara_vk.vmm.uploads, &p_ws->malloc_helper, cara_malloc,
       _align_to_power_of_two(nr_bytes_to_alloc, cara_vk.vmm.len_non_coherent_atom), true );
   if ( !rent_for_stone || !rent_for_sand ) {
     fprintf( stderr, "[Carbonara-Debug] infos_pm_rent failed.. (errno=%d)\n", errno );
@@ -2382,7 +2290,7 @@ void jf_kickstart( struct cara_worker_state * ws )
 
   // Bind the image to a vulkan memory object
   struct range_u32 * p_malloc_range = nullptr;
-  err = ma_bind_img_to_malloc( &cara_vk.vmm, &ws->malloc_helper, cara_malloc,
+  err = ma_bind_img_to_malloc( &cara_vk.vmm, &p_ws->malloc_helper, cara_malloc,
       cara_vk.log_dev, cara_vk.tex8_2048, type_idx, req.size, &p_malloc_range );
   if ( err ) {
     fprintf( stderr, "Error occured in ma_bind_img_to_malloc. (%s)\n", err_msg_text[err] );
@@ -2585,7 +2493,7 @@ void jf_kickstart( struct cara_worker_state * ws )
   VkSemaphoreSubmitInfoKHR semaphore_sgnl_info;
   semaphore_sgnl_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO_KHR;
   semaphore_sgnl_info.pNext = nullptr;
-  semaphore_sgnl_info.semaphore = cara_vk.arr_semaphore_before_A[is_frame_id_even];
+  semaphore_sgnl_info.semaphore = cara_vk.arr_semaphore_before_A[frame_id % cara_max_nr_fif];
   semaphore_sgnl_info.value = csb_data_transfer_done;
   semaphore_sgnl_info.stageMask = VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT_KHR;
   semaphore_sgnl_info.deviceIndex = 0;
@@ -2641,31 +2549,31 @@ void jf_kickstart( struct cara_worker_state * ws )
 
 
   // Create a VkImageView for the texture array
-  VkImageViewCreateInfo iv_create_info;
-  iv_create_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-  iv_create_info.pNext = nullptr;
-  iv_create_info.flags = 0;
-  iv_create_info.image = cara_vk.tex8_2048;
-  iv_create_info.viewType = VK_IMAGE_VIEW_TYPE_2D_ARRAY;
-  iv_create_info.format = VK_FORMAT_BC7_UNORM_BLOCK;
-  iv_create_info.components = (VkComponentMapping) {
-    VK_COMPONENT_SWIZZLE_IDENTITY,
-    VK_COMPONENT_SWIZZLE_IDENTITY,
-    VK_COMPONENT_SWIZZLE_IDENTITY,
-    VK_COMPONENT_SWIZZLE_IDENTITY  // What about VK_COMPONENT_SWIZZLE_ONE
-  };
-  img_bar.subresourceRange = (VkImageSubresourceRange) {
-    .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-      .baseMipLevel = 0,
-      .levelCount = nr_miplevels,
-      .baseArrayLayer = 0,
-      .layerCount = 2,
+  VkImageViewCreateInfo iv_create_info = {
+    .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+    .pNext = nullptr,
+    .flags = 0,
+    .image = cara_vk.tex8_2048,
+    .viewType = VK_IMAGE_VIEW_TYPE_2D_ARRAY,
+    .format = VK_FORMAT_BC7_UNORM_BLOCK,
+    .components = (VkComponentMapping) {
+      VK_COMPONENT_SWIZZLE_IDENTITY,
+      VK_COMPONENT_SWIZZLE_IDENTITY,
+      VK_COMPONENT_SWIZZLE_IDENTITY,
+      VK_COMPONENT_SWIZZLE_IDENTITY  // What about VK_COMPONENT_SWIZZLE_ONE
+    },
+    .subresourceRange = (VkImageSubresourceRange) {
+      .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+        .baseMipLevel = 0,
+        .levelCount = nr_miplevels,
+        .baseArrayLayer = 0,
+        .layerCount = 2,
+    },
   };
 
   SPALL_BEGIN("create_iv");
   result = vkCreateImageView( cara_vk.log_dev, &iv_create_info,
       &vk_alloc_callbacks, &cara_vk.tex8_2048_iv
-      //nullptr, &cara_vk.iv_8_2048_tex
       );
   if ( result != VK_SUCCESS ) {
     fprintf( stderr, "[Carbonara-Debug] vkCreateImageView failed.. (result=%s)\n",
@@ -3464,13 +3372,13 @@ void jf_kickstart( struct cara_worker_state * ws )
   SPALL_BEGIN("infos_pm_return");
   // FIXME Actually, return them at the next even/odd frame id.
   err = infos_pm_return( &cara_vk.vmm.uploads,
-      &ws->malloc_helper, cara_malloc, rent_for_stone->start );
+      &p_ws->malloc_helper, cara_malloc, rent_for_stone->start );
   if ( err ) {
     fprintf( stderr, "[Carbonara-Debug] infos_pm_return for stone failed.. (err_msg=%u)\n", err );
     goto stop_everything_after_failure;
   }
   err = infos_pm_return( &cara_vk.vmm.uploads,
-      &ws->malloc_helper, cara_malloc, rent_for_sand->start );
+      &p_ws->malloc_helper, cara_malloc, rent_for_sand->start );
   if ( err ) {
     fprintf( stderr, "[Carbonara-Debug] infos_pm_return for sand failed.. (err_msg=%u)\n", err );
     goto stop_everything_after_failure;
@@ -3488,7 +3396,7 @@ void jf_kickstart( struct cara_worker_state * ws )
   wait_info.pNext = nullptr;
   wait_info.flags = 0;
   wait_info.semaphoreCount = 1;
-  wait_info.pSemaphores = &cara_vk.arr_semaphore_before_A[is_frame_id_even];
+  wait_info.pSemaphores = &cara_vk.arr_semaphore_before_A[frame_id % cara_max_nr_fif];
   wait_info.pValues = &wait_val;
   SPALL_BEGIN("wait_transfer");
   vkWaitSemaphores( cara_vk.log_dev, &wait_info, 1000*1000*UINT64_C(20) );
@@ -3560,6 +3468,8 @@ void jf_kickstart( struct cara_worker_state * ws )
   atomic_store_explicit( &cara_single.sign_to_start, ~UINT64_C(0), memory_order_release );
 
 
+  cara_vk.frame_id = 1;
+
   return;
 
 stop_everything_after_failure:
@@ -3612,6 +3522,13 @@ stop_everything_after_failure:
     cara_vk.pll_copy2sc = VK_NULL_HANDLE;
   }
 
+  for ( unsigned int sp_idx = 0; sp_idx < cara_nr_subpasses; sp_idx++ ) {
+    if ( cara_vk.arr_pipelines[sp_idx] ) {
+      vkDestroyPipeline( cara_vk.log_dev, cara_vk.arr_pipelines[sp_idx], &vk_alloc_callbacks );
+      cara_vk.arr_pipelines[sp_idx] = VK_NULL_HANDLE;
+    }
+  }
+
   if ( cara_vk.ds_main_render ) {
     vkResetDescriptorPool( cara_vk.log_dev, cara_vk.dp_main_render, 0 );
     cara_vk.ds_main_render = VK_NULL_HANDLE;
@@ -3651,7 +3568,7 @@ stop_everything_after_failure:
     cara_vk.tex8_2048_iv = VK_NULL_HANDLE;
   }
   if ( cara_vk.tex8_2048 ) {
-    err = ma_report_vk_malloc_rel( &cara_vk.vmm, &ws->malloc_helper, cara_malloc,
+    err = ma_report_vk_malloc_rel( &cara_vk.vmm, &p_ws->malloc_helper, cara_malloc,
         cara_vk.vmm.arr_best_mtype_idx[vk_buf_type_tex8_2048],
         cara_vk.p_malloc_range_tex8_2048 );
     if ( err ) {

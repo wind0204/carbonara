@@ -163,7 +163,7 @@ uint8_t init_vulkan(
     fprintf( stderr, "[Vulkan] Could not enumerate instance extensions. (%s)\n",
         string_VkResult(result) );
     ma_free( cara_single.mem_arena,
-        worker_state->worker_info->idx_self, arr_extension_props );
+        worker_state->worker_idx, arr_extension_props );
     //unload_shared_lib( vulkan_library );
     return 1;
   }
@@ -209,7 +209,7 @@ uint8_t init_vulkan(
       fprintf( stderr, "[Vulkan] The required extension %s is not supported.\n",
           names_basic_instance_extensions[idx_required_extension] );
       ma_free( cara_single.mem_arena,
-          worker_state->worker_info->idx_self, arr_extension_props );
+          worker_state->worker_idx, arr_extension_props );
       //unload_shared_lib( vulkan_library );
       return 1;
     }
@@ -233,14 +233,14 @@ uint8_t init_vulkan(
       fprintf( stderr, "[Vulkan] The required extension %s is not supported.\n",
           names_instance_extensions_required[idx_required_extension] );
       ma_free( cara_single.mem_arena,
-          worker_state->worker_info->idx_self, arr_extension_props );
+          worker_state->worker_idx, arr_extension_props );
       //unload_shared_lib( vulkan_library );
       return 1;
     }
   }
 
   ma_free( cara_single.mem_arena,
-      worker_state->worker_info->idx_self, arr_extension_props );
+      worker_state->worker_idx, arr_extension_props );
 
 
 
@@ -389,7 +389,7 @@ uint8_t init_vulkan(
       fprintf( stderr, "[Vulkan] Could not get the number of device extensions. (result=%s)\n",
           string_VkResult(result) );
       ma_free( cara_single.mem_arena,
-          worker_state->worker_info->idx_self, arr_phys_devices);
+          worker_state->worker_idx, arr_phys_devices);
       vkDestroyInstance(vk_instance, &vk_alloc_callbacks);
       //vkDestroyInstance(vk_instance, nullptr);
       //unload_shared_lib(vulkan_library);
@@ -410,9 +410,9 @@ uint8_t init_vulkan(
       fprintf( stderr, "[Vulkan] Could not enumerate device extensions. (%s)\n",
           string_VkResult(result) );
       ma_free( cara_single.mem_arena,
-          worker_state->worker_info->idx_self, arr_extension_props );
+          worker_state->worker_idx, arr_extension_props );
       ma_free( cara_single.mem_arena,
-          worker_state->worker_info->idx_self, arr_phys_devices);
+          worker_state->worker_idx, arr_phys_devices);
       vkDestroyInstance( vk_instance, &vk_alloc_callbacks );
       //vkDestroyInstance(vk_instance, nullptr);
       //unload_shared_lib( vulkan_library );
@@ -443,7 +443,7 @@ uint8_t init_vulkan(
     }
 
     ma_free( cara_single.mem_arena,
-        worker_state->worker_info->idx_self, arr_extension_props );
+        worker_state->worker_idx, arr_extension_props );
   }
 
 
@@ -704,9 +704,9 @@ uint8_t init_vulkan(
 error_after_window_early:
     vkDestroyInstance(vk_instance, &vk_alloc_callbacks);
     //vkDestroyInstance(vk_instance, nullptr);
-    ma_free( cara_single.mem_arena, worker_state->worker_info->idx_self, arr_device_props );
+    ma_free( cara_single.mem_arena, worker_state->worker_idx, arr_device_props );
     ma_free( cara_single.mem_arena,
-        worker_state->worker_info->idx_self, arr_phys_devices );
+        worker_state->worker_idx, arr_phys_devices );
     //unload_shared_lib( vulkan_library );
     return 1;
   }
@@ -807,7 +807,7 @@ error_after_window_early:
           arr_device_props[idx_phys_dev].properties.deviceName );
       arr_phys_devices[idx_phys_dev] = 0;
       ma_free( cara_single.mem_arena,
-          worker_state->worker_info->idx_self, arr_qfam_props );
+          worker_state->worker_idx, arr_qfam_props );
       continue;
     }
 
@@ -858,7 +858,7 @@ error_after_window_early:
       // Mark as unusable if we have not found all the required queue family capabilities.
       arr_phys_devices[idx_phys_dev] = 0;
       ma_free( cara_single.mem_arena,
-          worker_state->worker_info->idx_self, arr_qfam_props );
+          worker_state->worker_idx, arr_qfam_props );
       continue;
     }
 
@@ -890,7 +890,7 @@ error_after_window_early:
       nr_discrete_gpus++;
     }
 
-    ma_free(cara_single.mem_arena, worker_state->worker_info->idx_self, arr_qfam_props);
+    ma_free(cara_single.mem_arena, worker_state->worker_idx, arr_qfam_props);
   }
 
 
@@ -934,7 +934,7 @@ error_after_window_early:
           arr_device_props[idx_phys_dev].properties.deviceName );
       // arr_phys_devices[idx_phys_dev] = 0;
       ma_free( cara_single.mem_arena,
-          worker_state->worker_info->idx_self, arr_qfam_props );
+          worker_state->worker_idx, arr_qfam_props );
       continue;
     }
 
@@ -1265,7 +1265,7 @@ error_after_window_early:
   }
 
   ma_free( cara_single.mem_arena,
-      worker_state->worker_info->idx_self, arr_available_present_modes );
+      worker_state->worker_idx, arr_available_present_modes );
 
   if ( chosen_present_mode == VK_PRESENT_MODE_MAX_ENUM_KHR ) {
     fprintf( stderr,
@@ -1354,7 +1354,7 @@ error_after_window_early:
   if( result != VK_SUCCESS || nr_supported_surface_formats == 0 ) {
     fprintf( stderr, "[Vulkan] Could not enumerate supported surface formats.(%s)\n", string_VkResult(result) );
     ma_free( cara_single.mem_arena,
-        worker_state->worker_info->idx_self, arr_supported_surface_formats );
+        worker_state->worker_idx, arr_supported_surface_formats );
     goto error_after_logical_device;
   }
 
@@ -1415,12 +1415,12 @@ error_after_window_early:
           "[Vulkan] Could not find a compatible surface format and colorspace supported "
           "by the newly created presentation surface on the selected GPU and screen.\n" );
       ma_free( cara_single.mem_arena,
-          worker_state->worker_info->idx_self, arr_supported_surface_formats );
+          worker_state->worker_idx, arr_supported_surface_formats );
       goto error_after_logical_device;
     }
   }
   ma_free( cara_single.mem_arena,
-      worker_state->worker_info->idx_self, arr_supported_surface_formats );
+      worker_state->worker_idx, arr_supported_surface_formats );
 
 #ifdef DEBUG_MODE
   fprintf( stdout, "[Vulkan] Going with {colorSpace = %#08x + format = %#08x}\n",
@@ -1496,24 +1496,25 @@ error_after_window_early:
   }
 
   // Create VkImageViews
-  VkImageViewCreateInfo iv_create_info;
-  iv_create_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-  iv_create_info.pNext = nullptr;
-  iv_create_info.flags = 0;
-  iv_create_info.format = present_img_fmt;
-  iv_create_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
-  iv_create_info.components = (VkComponentMapping) {
-    VK_COMPONENT_SWIZZLE_IDENTITY,
-    VK_COMPONENT_SWIZZLE_IDENTITY,
-    VK_COMPONENT_SWIZZLE_IDENTITY,
-    VK_COMPONENT_SWIZZLE_IDENTITY
-  };
-  iv_create_info.subresourceRange = (VkImageSubresourceRange) {
-    .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-      .baseMipLevel = 0,
-      .levelCount = 1,
-      .baseArrayLayer = 0,
-      .layerCount = 1,
+  VkImageViewCreateInfo iv_create_info = {
+    .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+    .pNext = nullptr,
+    .flags = 0,
+    .format = present_img_fmt,
+    .viewType = VK_IMAGE_VIEW_TYPE_2D,
+    .components = (VkComponentMapping) {
+      VK_COMPONENT_SWIZZLE_IDENTITY,
+      VK_COMPONENT_SWIZZLE_IDENTITY,
+      VK_COMPONENT_SWIZZLE_IDENTITY,
+      VK_COMPONENT_SWIZZLE_IDENTITY
+    },
+    .subresourceRange = (VkImageSubresourceRange) {
+      .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+        .baseMipLevel = 0,
+        .levelCount = 1,
+        .baseArrayLayer = 0,
+        .layerCount = 1,
+    },
   };
   for ( unsigned int i = 0; i < nr_swapchain_imgs; i++ ) {
     arr_swapchain_img_views[i] = VK_NULL_HANDLE;
@@ -1868,6 +1869,13 @@ error_after_window_early:
     goto error_after_swapchain_images;
   }
 
+  if ( !infos_al_create_prealloc(&cara_vk.old_swapchains,
+        &vk_alloc_callbacks, vk_malloc_wrapper,
+        32 * sizeof(struct dead_swapchain), sizeof(struct dead_swapchain), true) ) {
+    fprintf( stderr, "[Vulkan] A failure occurred in infos_al_create_prealloc.\n" );
+    goto error_after_swapchain_images;
+  }
+
 
 
   //
@@ -1983,7 +1991,7 @@ error_after_swapchain_images:
             cara_vk.arr_wsi_present_semaphores[swapchain_img_idx] = VK_NULL_HANDLE;
           }
         }
-        ma_free( cara_single.mem_arena, worker_state->worker_info->idx_self,
+        ma_free( cara_single.mem_arena, worker_state->worker_idx,
             cara_vk.arr_wsi_present_semaphores );
         cara_vk.arr_wsi_present_semaphores = nullptr;
       }
@@ -1998,7 +2006,7 @@ error_after_swapchain_images:
         }
       }
       ma_free( cara_single.mem_arena,
-          worker_state->worker_info->idx_self,
+          worker_state->worker_idx,
           arr_swapchain_images );
       if ( arr_swapchain_img_views ) {
         for ( unsigned int i = 0; i < nr_swapchain_imgs; i++ ) {
@@ -2007,7 +2015,7 @@ error_after_swapchain_images:
           }
         }
         ma_free( cara_single.mem_arena,
-            worker_state->worker_info->idx_self,
+            worker_state->worker_idx,
             arr_swapchain_img_views );
       }
 error_after_logical_device:
@@ -2052,10 +2060,10 @@ error_after_logical_device:
           );
 error_after_arr_q_create_info:
       ma_free( cara_single.mem_arena,
-          worker_state->worker_info->idx_self,
+          worker_state->worker_idx,
           arr_q_create_info );
       ma_free( cara_single.mem_arena,
-          worker_state->worker_info->idx_self,
+          worker_state->worker_idx,
           arr_qfam_props );
 error_after_presentation_surface:
       //vkDestroySurfaceKHR( vk_instance, presentation_surface,
@@ -2073,9 +2081,9 @@ error_after_presentation_surface:
           &vk_alloc_callbacks
           //nullptr
           );
-      ma_free(cara_single.mem_arena, worker_state->worker_info->idx_self, arr_device_props);
+      ma_free(cara_single.mem_arena, worker_state->worker_idx, arr_device_props);
       ma_free( cara_single.mem_arena,
-          worker_state->worker_info->idx_self, arr_phys_devices );
+          worker_state->worker_idx, arr_phys_devices );
       //unload_shared_lib( vulkan_library );
       return 1;
     }
@@ -2140,10 +2148,10 @@ error_after_presentation_surface:
   cara_vk.swapchain_img_fmt = present_img_fmt;
   cara_vk.vk_color_space = color_space;
 
-  ma_free(cara_single.mem_arena, worker_state->worker_info->idx_self, arr_q_create_info);
-  ma_free(cara_single.mem_arena, worker_state->worker_info->idx_self, arr_qfam_props);
-  ma_free(cara_single.mem_arena, worker_state->worker_info->idx_self, arr_device_props);
-  ma_free(cara_single.mem_arena, worker_state->worker_info->idx_self, arr_phys_devices);
+  ma_free(cara_single.mem_arena, worker_state->worker_idx, arr_q_create_info);
+  ma_free(cara_single.mem_arena, worker_state->worker_idx, arr_qfam_props);
+  ma_free(cara_single.mem_arena, worker_state->worker_idx, arr_device_props);
+  ma_free(cara_single.mem_arena, worker_state->worker_idx, arr_phys_devices);
   //atomic_store_explicit( &cara_vk.tmp_var_ready, -7, memory_order_release);
 
   return 0;
@@ -2153,7 +2161,7 @@ error_after_presentation_surface:
 
 
 //-------------------------------------------------------------------------------------------------
-void destroy_vulkan_objects( _typeof_member(struct ms_worker_info, idx_self) worker_idx )
+void destroy_vk_objs( _typeof_member(struct ms_worker_info, idx_self) worker_idx )
 {
   // TODO Host access to all VkQueue objects created from `device` must be externally synchronized
   const VkResult result = vkDeviceWaitIdle(cara_vk.log_dev);
@@ -2170,6 +2178,14 @@ void destroy_vulkan_objects( _typeof_member(struct ms_worker_info, idx_self) wor
     case VK_SUCCESS:
       break;
   }
+
+  for ( unsigned int i = 0; i < cara_vk.nr_old_swapchains; i++ ) {
+    struct dead_swapchain * p_dead = infos_al_get_elem( &cara_vk.old_swapchains, i );
+    vkDestroySwapchainKHR( cara_vk.log_dev, p_dead->swapchain, &vk_alloc_callbacks );
+    cara_vk.nr_old_swapchains--;
+  }
+  infos_al_destroy_except_preallocated_struct( &cara_vk.old_swapchains,
+      &vk_alloc_callbacks, vk_free_wrapper );
 
   if ( cara_vk.sm_simple_frag ) {
     vkDestroyShaderModule( cara_vk.log_dev, cara_vk.sm_simple_frag, &vk_alloc_callbacks );
@@ -2274,6 +2290,13 @@ void destroy_vulkan_objects( _typeof_member(struct ms_worker_info, idx_self) wor
         //nullptr
         );
     cara_vk.pll_copy2sc = VK_NULL_HANDLE;
+  }
+
+  for ( unsigned int sp_idx = 0; sp_idx < cara_nr_subpasses; sp_idx++ ) {
+    if ( cara_vk.arr_pipelines[sp_idx] ) {
+      vkDestroyPipeline( cara_vk.log_dev, cara_vk.arr_pipelines[sp_idx], &vk_alloc_callbacks );
+      cara_vk.arr_pipelines[sp_idx] = VK_NULL_HANDLE;
+    }
   }
 
   if ( cara_vk.ds_main_render ) {
@@ -2844,30 +2867,33 @@ enum err_msg create_1st_renderpass_and_framebuffer( struct cara_vk_renderer * re
 
 
   // Create the image views
-  VkImageViewCreateInfo iv_create_info;
-  iv_create_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-  iv_create_info.pNext = nullptr;
-  iv_create_info.flags = 0;
-  iv_create_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
-  iv_create_info.format = renderer->zbuf_fmt;
-  iv_create_info.components = (VkComponentMapping) {
-    VK_COMPONENT_SWIZZLE_IDENTITY,
-    VK_COMPONENT_SWIZZLE_IDENTITY,
-    VK_COMPONENT_SWIZZLE_IDENTITY,
-    VK_COMPONENT_SWIZZLE_IDENTITY
-  };
-  iv_create_info.subresourceRange = (VkImageSubresourceRange) {
-    .aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT,
-      .baseMipLevel = 0,
-      .levelCount = 1,
-      .baseArrayLayer = 0,
-      .layerCount = 1,
+  VkImageViewCreateInfo iv_create_info = {
+    .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+    .pNext = nullptr,
+    .flags = 0,
+    .image = renderer->zbuf_n_cbuf[fb_zbuf],
+    .viewType = VK_IMAGE_VIEW_TYPE_2D,
+    .format = renderer->zbuf_fmt,
+    .components = (VkComponentMapping) {
+      VK_COMPONENT_SWIZZLE_IDENTITY,
+      VK_COMPONENT_SWIZZLE_IDENTITY,
+      VK_COMPONENT_SWIZZLE_IDENTITY,
+      VK_COMPONENT_SWIZZLE_IDENTITY
+    },
+    .subresourceRange = (VkImageSubresourceRange) {
+      .aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT,
+        .baseMipLevel = 0,
+        .levelCount = 1,
+        .baseArrayLayer = 0,
+        .layerCount = 1,
+    },
   };
   SPALL_BEGIN("create_framebuffers_ivs");
   result = vkCreateImageView( renderer->log_dev, &iv_create_info, &vk_alloc_callbacks,
       &renderer->zbuf_n_cbuf_iv[fb_zbuf] );
   iv_create_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
   iv_create_info.format = VK_FORMAT_R8G8B8A8_UNORM;
+  iv_create_info.image = renderer->zbuf_n_cbuf[fb_cbuf];
   result = vkCreateImageView( renderer->log_dev, &iv_create_info, &vk_alloc_callbacks,
       &renderer->zbuf_n_cbuf_iv[fb_cbuf] );
   SPALL_END();
@@ -3114,10 +3140,21 @@ enum err_msg expand_swapchain_and_framebuffer( struct cara_vk_renderer * rendere
   //
   VkSwapchainKHR old_swapchain;
   old_swapchain = renderer->swapchain;
-
-  VkSwapchainKHR * p_swapchain = infos_al_get_elem(
+  if ( _is_aligned_to_power_of_two(
+        renderer->nr_old_swapchains, 1u << renderer->old_swapchains.log2_nr_elems
+        ) && !infos_al_get_elem(&renderer->old_swapchains, renderer->nr_old_swapchains)
+      ) {
+    enum err_msg err = infos_al_grow( &renderer->old_swapchains,
+        &vk_alloc_callbacks, vk_malloc_wrapper, 1, false );
+    if ( err ) {
+      fprintf( stderr, "[Vulkan] A failure occurred in infos_al_grow. %s\n", err_msg_text[err] );
+      goto stop_everything_after_failure;
+    }
+  }
+  struct dead_swapchain * p_dead = infos_al_get_elem(
       &renderer->old_swapchains, renderer->nr_old_swapchains );
-  *p_swapchain = old_swapchain;
+  p_dead->swapchain = old_swapchain;
+  p_dead->destruct_time = renderer->frame_id + renderer->nr_swapchain_imgs + 4;  // TODO Add `avg_fps/4`
   renderer->nr_old_swapchains++;
 
   VkSwapchainCreateInfoKHR swapchain_create_info;
