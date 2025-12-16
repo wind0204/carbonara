@@ -81,7 +81,7 @@ struct graphics_cmd_bufs {
                                           ///< cara_max_nr_subpasses*[the number of workers].
                                           ///< Use cara_get_arr_cmd_bufs_for_graphics
                                           ///< to get it.
-  static_assert( alignof(void*) >= alignof(VkCommandBuffer), "Sort the struct members!" );
+  static_assert( alignof(void*) >= alignof(VkCommandBuffer) );
   VkCommandBuffer primary_cmd_buf; ///< A primary cmd buffer coming from the last entry
                                           ///< in arr_cmd_pools
 };
@@ -99,7 +99,7 @@ struct trans_cmd_bufs {
                                           ///< cara_max_nr_subpasses*[the number of workers].
                                           ///< Use cara_get_arr_cmd_bufs_for_transfer
                                           ///< to get it.
-  static_assert( alignof(void*) >= alignof(VkCommandBuffer), "Sort the struct members!" );
+  static_assert( alignof(void*) >= alignof(VkCommandBuffer) );
   VkCommandBuffer primary_cmd_buf; ///< A primary command buffer coming from the last entry
                                           ///< in arr_cmd_pools
 };
@@ -124,7 +124,7 @@ struct cara_vk_renderer {
   int64_t len_simple_frag;
   int64_t len_copy2sc_vert;
   int64_t len_copy2sc_frag;
-  static_assert( alignof(int64_t) >= alignof(void*), "Sort the struct members!" );
+  static_assert( alignof(int64_t) >= alignof(void*) );
   char * stone_texture;
   char * sand_texture;
   void * spv_z_only;
@@ -142,7 +142,8 @@ struct cara_vk_renderer {
   static_assert( alignof(void*) >= alignof(struct ma_vk_mem_mgr) );
   struct ma_vk_mem_mgr vmm;
   static_assert( alignof(struct ma_vk_mem_mgr) >= alignof(struct infos_arr_list) );
-  struct infos_arr_list old_swapchains;  // VkSwapchainKHR
+  struct infos_arr_list old_swapchains;  ///< It contains `nr_old_swapchains` instances of `struct
+                                         ///< dead_swapchain`
   static_assert( alignof(struct infos_arr_list) >= alignof(VkSwapchainKHR) );
   VkSwapchainKHR swapchain;
   // Images represent data that can have one, two, or three dimensions, and can have additional
@@ -192,22 +193,23 @@ struct cara_vk_renderer {
   static_assert( alignof(struct trans_cmd_bufs) >= alignof(VkDevice) );
   VkDevice log_dev;  // A logical device. #pointer-size-aligned
   VkInstance vk_instance;  // #pointer-size-aligned
-  //static_assert( alignof(VkInstance) >= alignof(shared_lib), "Sort the struct members!" );
+  //static_assert( alignof(VkInstance) >= alignof(shared_lib) );
   //shared_lib vk_library;
   //static_assert( alignof(shared_lib) >= alignof(VkAllocationCallbacks),
-  static_assert( alignof(VkInstance) >= alignof(VkFormat), "Sort the struct members!" );
+  static_assert( alignof(VkInstance) >= alignof(VkFormat) );
   VkFormat swapchain_img_fmt;  // 32-bit aligned
   VkFormat zbuf_fmt;  // 32-bit aligned
-  static_assert( alignof(VkFormat) >= alignof(VkExtent2D), "Sort the struct members!" );
+  static_assert( alignof(VkFormat) >= alignof(VkExtent2D) );
   VkExtent2D dims_swapchain_imgs;  // VkExtent2D is 32-bit aligned
-  static_assert( alignof(VkExtent2D) >= alignof(uint32_t), "Sort the struct members!" );
+  static_assert( alignof(VkExtent2D) >= alignof(uint32_t) );
   uint32_t graphics_q_fam_idx;  // I guess I need this for memory barriers
   uint32_t trans_q_fam_idx;
   uint32_t compute_q_fam_idx;
-  uint32_t nr_old_swapchains;
+  uint32_t nr_old_swapchains;  // It tells how many slots in `old_swapchains` are being used.
   uint32_t frame_id;  // the frame id of the 1st frame rendered will most likely be 1.
   float max_anisotropy;
-  union win_dims win_size;  // The current dimensions of the window
+  union win_dims win_size;  ///< The current dimensions of the window, it can be different from the
+                            ///<  the framebuffers and swapchain images. See dims_swapchain_imgs
   union win_dims max_win_size;  // The width and height of the framebuffers and swapchain images
   union win_dims max_win_size_avail;  // The maximum size available on the presentation surface
   static_assert( alignof(int32_t) == alignof(float) && alignof(float) >= alignof(union win_dims) &&

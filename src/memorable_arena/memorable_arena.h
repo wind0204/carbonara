@@ -291,14 +291,13 @@ struct ma_vk_mem_mgr {
   //uint32_t * arr_idx_next_unoccupied_elem;          // array of heap_cnt uint32_t for managing mal
   uint32_t * arr_heap_indices;  // array of type_cnt uint32_t
   VkMemoryPropertyFlags * arr_mem_property_flags;   // array of type_cnt VkMemoryPropertyFlags
-  static_assert( alignof(void*) >= alignof(VkDeviceMemory), "Sort the struct members!" );
+  static_assert( alignof(void*) >= alignof(VkDeviceMemory) );
   VkDeviceMemory staging_buf_malloc;
-  static_assert( alignof(VkDeviceMemory) >= alignof(VkDeviceSize), "Sort the struct members!" );
+  static_assert( alignof(VkDeviceMemory) >= alignof(VkDeviceSize) );
   VkDeviceSize buf_granularity;
-  static_assert( alignof(VkDeviceSize) >= alignof(VkBuffer), "Sort the struct members!" );
+  static_assert( alignof(VkDeviceSize) >= alignof(VkBuffer) );
   VkBuffer staging_buf;
-  static_assert( alignof(VkBuffer) >= alignof(struct infos_multi_arr_list),
-      "Sort the struct members!" );
+  static_assert( alignof(VkBuffer) >= alignof(struct infos_multi_arr_list) );
   struct infos_multi_arr_list page_mgrs;  ///< One array list per memory type. It stores
                                           ///< infos_page_mgr_p2 objects for each "chunk of pages"
   struct infos_multi_arr_list mallocs;  ///< One array list per memory type. It stores
@@ -308,7 +307,9 @@ struct ma_vk_mem_mgr {
   uint32_t heap_cnt;
   uint32_t type_cnt;
   uint32_t len_staging_buf;
-  uint16_t len_non_coherent_atom;
+  uint16_t len_non_coherent_atom;  ///< The size and alignment in bytes that bounds concurrent
+                                   ///<  access to host-mapped device memory. The value must be a
+                                   ///<  power of two.
   uint8_t arr_best_mtype_idx[vk_buf_type_cnt];
 };
 constexpr size_t len_chunk_of_pages = 1024ul * 1024 * 64;

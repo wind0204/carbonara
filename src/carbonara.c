@@ -134,7 +134,7 @@ void jf_police_patrol( [[maybe_unused]] struct cara_worker_state * p_ws )
 //-------------------------------------------------------------------------------------------------
 void SDL_AppQuit( [[maybe_unused]] void *appstate, SDL_AppResult result )
 {
-  SPALL_BEGIN("stuff_done_in_SDL_AppQuit");
+  //SPALL_BEGIN("stuff_done_in_SDL_AppQuit");
 
   // You do not need to call SDL_Quit in this function, as SDL will call it after this function
   // returns and before the process terminates, but it is safe to explicitly do so.
@@ -158,7 +158,7 @@ void SDL_AppQuit( [[maybe_unused]] void *appstate, SDL_AppResult result )
   // TODO something.
 
 
-  SPALL_END();  // stuff_done_in_SDL_AppQuit
+  //SPALL_END();  // stuff_done_in_SDL_AppQuit
 
 #ifdef ENABLE_PROFILING
   // Remember to quit or flush your buffers before you exit!
@@ -356,8 +356,6 @@ acquire_img:
     case VK_SUCCESS:
   }
 
-  // TODO The first thing we need to record is to change the swapchain image's layout to a VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL layout.
-  // This operation should be performed implicitly using appropriate render pass parameters (initial and sub-pass layouts). But if queues used for the presentation and graphics operations come from two different families, we must perform ownership transfer. This cannot be done implicitly—for this we need to set up an image memory barrier.
 
 
   result = vkEndCommandBuffer( pri_trans_buf );
@@ -426,97 +424,123 @@ fprintf( stderr, "[DEBUG] cmd_buf=%lu; cara_vk.arr_framebuffers[%u].primary_comm
   arr_ivs[fb_zbuf] = cara_vk.zbuf_n_cbuf_iv[fb_zbuf];
   arr_ivs[fb_cbuf] = cara_vk.zbuf_n_cbuf_iv[fb_cbuf];
   arr_ivs[fb_swapchain] = cara_vk.arr_swapchain_iv[img_idx];
-  VkRenderPassAttachmentBeginInfo rp_att_begin_info;
-  rp_att_begin_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_ATTACHMENT_BEGIN_INFO;
-  rp_att_begin_info.pNext = nullptr;
-  rp_att_begin_info.attachmentCount = _arr_elem_cnt( arr_ivs );
-  rp_att_begin_info.pAttachments = arr_ivs;
-  constexpr VkClearValue clear_val = (VkClearValue) { .depthStencil.depth = 1.0f };
-  VkRenderPassBeginInfo rp_begin_info;
-  rp_begin_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-  rp_begin_info.pNext = &rp_att_begin_info;
-  rp_begin_info.renderPass = cara_vk.render_pass;
-  rp_begin_info.pNext = nullptr;
-  rp_begin_info.framebuffer = cara_vk.framebuffer;
-  rp_begin_info.renderArea = (VkRect2D) { {0, 0},
-    {cara_vk.win_size.parts.width, cara_vk.win_size.parts.height} };
-  rp_begin_info.clearValueCount = 1;  // clearValueCount must be greater than the largest attachment
-                                      //  index in renderPass specifying a loadOp (or stencilLoadOp,
-                                      //  if the attachment has a depth/stencil format) of
-                                      //  VK_ATTACHMENT_LOAD_OP_CLEAR.
-  rp_begin_info.pClearValues = &clear_val;
+  VkRenderPassAttachmentBeginInfo rp_att_begin_info = {
+    .sType = VK_STRUCTURE_TYPE_RENDER_PASS_ATTACHMENT_BEGIN_INFO,
+    .pNext = nullptr,
+    .attachmentCount = _arr_elem_cnt( arr_ivs ),
+    .pAttachments = arr_ivs,
+  };
+  constexpr VkClearValue clear_val = { .depthStencil.depth = 1.0f };
+  VkRenderPassBeginInfo rp_begin_info = {
+    .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
+    .pNext = &rp_att_begin_info,
+    .renderPass = cara_vk.render_pass,
+    .framebuffer = cara_vk.framebuffer,
+    .renderArea = (VkRect2D) { {0, 0},
+      {cara_vk.dims_swapchain_imgs.width, cara_vk.dims_swapchain_imgs.height} },
+    .clearValueCount = 1,  // clearValueCount must be greater than the largest attachment index in
+                           //  renderPass specifying a loadOp (or stencilLoadOp, if the attachment
+                           //  has a depth/stencil format) of VK_ATTACHMENT_LOAD_OP_CLEAR.
+    .pClearValues = &clear_val,
+  };
 
-
-  // TODO acquire one swapchain img
+  // TODO Draw background
+  // TODO Draw a triangle
+  // For performance reasons, we should submit as many batches as possible in as few function calls as possible.
+  // We shouldn't submit command buffers if they were already submitted and their execution hasn't ended yet. We can do this only when command buffers were recorded with a VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT flag, but we should avoid using this flag for performance reasons.
+  // TODO Draw a pyramid
+  // TODO Pan the camera
+  // TODO Move the pyramid
+  // TODO Create multiple light sources
+  // TODO Cast shadows
+  // TODO Move the light sources
 
 
   // VK_SUBPASS_CONTENTS_INLINE  specifies that the contents of the subpass will be recorded inline
   //  in the primary command buffer, and secondary command buffers must not be executed within the
   //  subpass.
+  SPALL_BEGIN("vkCmdBeginRenderPass");
   vkCmdBeginRenderPass( pri_cmd_buf, &rp_begin_info, VK_SUBPASS_CONTENTS_INLINE );
+  SPALL_END();
+  SPALL_BEGIN("vkCmdBindPipeline");
+  vkCmdBindPipeline( pri_cmd_buf,
+      VK_PIPELINE_BIND_POINT_GRAPHICS, cara_vk.arr_pipelines[cs_z_only] );
+  SPALL_END();
 
   // TODO cs_depth_only
 
+  SPALL_BEGIN("vkCmdNextSubpass");
   vkCmdNextSubpass( pri_cmd_buf, VK_SUBPASS_CONTENTS_INLINE );
+  SPALL_END();
+  SPALL_BEGIN("vkCmdBindPipeline");
+  vkCmdBindPipeline( pri_cmd_buf,
+      VK_PIPELINE_BIND_POINT_GRAPHICS, cara_vk.arr_pipelines[cs_main_render] );
+  SPALL_END();
 
   // TODO cs_main_render
 
 
-  //
-  // Make barriers between cs_main_render and cs_copy_to_swapchain_img
-  //
-  VkImageMemoryBarrier2KHR img_bar;
-  img_bar.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2_KHR;
-  img_bar.pNext = nullptr;
-  img_bar.srcStageMask = VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT_KHR;
-  img_bar.dstStageMask = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT_KHR;
-  img_bar.srcAccessMask = VK_ACCESS_2_NONE_KHR;
-  img_bar.dstAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT_KHR;
-  img_bar.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-  img_bar.newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-  img_bar.srcQueueFamilyIndex = cara_vk.graphics_q_fam_idx;
-  img_bar.dstQueueFamilyIndex = cara_vk.graphics_q_fam_idx;
-  // If the values of srcQueueFamilyIndex and dstQueueFamilyIndex are equal, no ownership transfer
-  //  is performed, and the barrier operates as if they were both set to VK_QUEUE_FAMILY_IGNORED.
-  img_bar.image = cara_vk.arr_swapchain_imgs[img_idx];
-  img_bar.subresourceRange = (VkImageSubresourceRange) {
-    .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-      .baseMipLevel = 0,
-      .levelCount = 1,
-      .baseArrayLayer = 0,
-      .layerCount = 1,
-  };
+  ////
+  //// Make barriers between cs_main_render and cs_copy_to_swapchain_img
+  ////
+  //VkImageMemoryBarrier2KHR img_bar;
+  //img_bar.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2_KHR;
+  //img_bar.pNext = nullptr;
+  //img_bar.srcStageMask = VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT_KHR;
+  //img_bar.dstStageMask = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT_KHR;
+  //img_bar.srcAccessMask = VK_ACCESS_2_NONE_KHR;
+  //img_bar.dstAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT_KHR;
+  //img_bar.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+  //img_bar.newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+  //img_bar.srcQueueFamilyIndex = cara_vk.graphics_q_fam_idx;
+  //img_bar.dstQueueFamilyIndex = cara_vk.graphics_q_fam_idx;
+  //// If the values of srcQueueFamilyIndex and dstQueueFamilyIndex are equal, no ownership transfer
+  ////  is performed, and the barrier operates as if they were both set to VK_QUEUE_FAMILY_IGNORED.
+  //img_bar.image = cara_vk.arr_swapchain_imgs[img_idx];
+  //img_bar.subresourceRange = (VkImageSubresourceRange) {
+  //  .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+  //    .baseMipLevel = 0,
+  //    .levelCount = 1,
+  //    .baseArrayLayer = 0,
+  //    .layerCount = 1,
+  //};
 
-  VkDependencyInfoKHR dependency_info;
-  dependency_info.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO_KHR;
-  dependency_info.pNext = nullptr;
-  dependency_info.dependencyFlags =
-    VK_DEPENDENCY_QUEUE_FAMILY_OWNERSHIP_TRANSFER_USE_ALL_STAGES_BIT_KHR |
-    0;
-  dependency_info.memoryBarrierCount = 0;
-  dependency_info.pMemoryBarriers = nullptr;
-  //dependency_info.bufferMemoryBarrierCount = _arr_elem_cnt( buf_bar );
-  //dependency_info.pBufferMemoryBarriers = buf_bar;
-  dependency_info.bufferMemoryBarrierCount = 0;
-  dependency_info.pBufferMemoryBarriers = nullptr;
-  dependency_info.imageMemoryBarrierCount = 1;
-  dependency_info.pImageMemoryBarriers = &img_bar;
+  //VkDependencyInfoKHR dependency_info;
+  //dependency_info.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO_KHR;
+  //dependency_info.pNext = nullptr;
+  //dependency_info.dependencyFlags =
+  //  VK_DEPENDENCY_QUEUE_FAMILY_OWNERSHIP_TRANSFER_USE_ALL_STAGES_BIT_KHR |
+  //  0;
+  //dependency_info.memoryBarrierCount = 0;
+  //dependency_info.pMemoryBarriers = nullptr;
+  //dependency_info.bufferMemoryBarrierCount = 0;
+  //dependency_info.pBufferMemoryBarriers = nullptr;
+  //dependency_info.imageMemoryBarrierCount = 1;
+  //dependency_info.pImageMemoryBarriers = &img_bar;
+  SPALL_BEGIN("vkCmdNextSubpass");
   vkCmdNextSubpass( pri_cmd_buf, VK_SUBPASS_CONTENTS_INLINE );
+  SPALL_END();
+  SPALL_BEGIN("vkCmdBindPipeline");
+  vkCmdBindPipeline( pri_cmd_buf,
+      VK_PIPELINE_BIND_POINT_GRAPHICS, cara_vk.arr_pipelines[cs_copy_to_swapchain_img] );
+  SPALL_END();
 
   // TODO cs_copy_to_swapchain_img
 
+  SPALL_BEGIN("vkCmdEndRenderPass");
   // End the render pass
-  vkCmdEndRenderPass( pri_cmd_buf );  // Recording this function in a command buffer performs multiple
-                                  // operations. Execution and memory dependencies are introduced
-                                  // (like the ones in memory barriers) and image layout transitions
-                                  // are performed—images are transitioned from layouts specified
-                                  // for the last subpass to the value of a final layout (refer to
-                                  // the Specifying attachment descriptions recipe). Also
+  vkCmdEndRenderPass( pri_cmd_buf );  // Recording this function in a command buffer performs
+                                  // multiple operations. Execution and memory dependencies are
+                                  // introduced (like the ones in memory barriers) and image layout
+                                  // transitions are performed—images are transitioned from layouts
+                                  // specified for the last subpass to the value of a final layout
+                                  // (refer to the Specifying attachment descriptions recipe). Also
                                   // multisample resolving is performed on color attachments for
                                   // which resolving was specified in the last subpass. Additionally
                                   // for attachments whose contents should be preserved after the
                                   // render pass, attachment data may be transferred from the cache
                                   // to the image's memory.
+  SPALL_END();
 
 
 
@@ -581,17 +605,6 @@ fprintf( stderr, "[DEBUG] cmd_buf=%lu; cara_vk.arr_framebuffers[%u].primary_comm
     return SDL_APP_FAILURE;
   }
   SPALL_END();
-
-  // TODO Draw background
-  // TODO Draw a triangle
-  // For performance reasons, we should submit as many batches as possible in as few function calls as possible.
-  // We shouldn't submit command buffers if they were already submitted and their execution hasn't ended yet. We can do this only when command buffers were recorded with a VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT flag, but we should avoid using this flag for performance reasons.
-  // TODO Draw a pyramid
-  // TODO Pan the camera
-  // TODO Move the pyramid
-  // TODO Create multiple light sources
-  // TODO Cast shadows
-  // TODO Move the light sources
 
 
   uint64_t wait_val = csb_data_transfer_done;
@@ -2291,7 +2304,7 @@ void jf_kickstart( struct cara_worker_state * p_ws )
   // Bind the image to a vulkan memory object
   struct range_u32 * p_malloc_range = nullptr;
   err = ma_bind_img_to_malloc( &cara_vk.vmm, &p_ws->malloc_helper, cara_malloc,
-      cara_vk.log_dev, cara_vk.tex8_2048, type_idx, req.size, &p_malloc_range );
+      cara_vk.log_dev, cara_vk.tex8_2048, type_idx, req.size, req.alignment, &p_malloc_range );
   if ( err ) {
     fprintf( stderr, "Error occured in ma_bind_img_to_malloc. (%s)\n", err_msg_text[err] );
     goto stop_everything_after_failure;

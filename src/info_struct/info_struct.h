@@ -1816,8 +1816,7 @@ struct range_u32 * infos_pm_rent_aligned( struct infos_page_mgr * restrict p_pm,
     void * restrict userdata,
     void * (*custom_malloc)(void * userdata, size_t alignment, size_t size),
     uint32_t nr_seq_pages_needed,
-    uint32_t alignment,
-    bool take_from_left
+    uint32_t alignment
     );
 
 //-------------------------------------------------------------------------------------------------

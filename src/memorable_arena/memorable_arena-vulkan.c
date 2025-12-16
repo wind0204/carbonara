@@ -543,6 +543,7 @@ enum err_msg ma_bind_img_to_malloc(
     struct range_u32 ** pp_malloc_range
     )
 {
+  SPALL_BEGIN("bind_img_to_m");
   VkDeviceSize size_to_req = _align_to_power_of_two( req_size, p_vmm->buf_granularity );
   VkResult result;
   enum err_msg err;
@@ -575,6 +576,7 @@ enum err_msg ma_bind_img_to_malloc(
             case VK_ERROR_OUT_OF_DEVICE_MEMORY:
               [[fallthrough]];
             case VK_ERROR_OUT_OF_HOST_MEMORY:
+              SPALL_END();
               return err_msg_out_of_memory;
 
             case VK_ERROR_INVALID_EXTERNAL_HANDLE:
@@ -582,9 +584,11 @@ enum err_msg ma_bind_img_to_malloc(
             case VK_ERROR_INVALID_OPAQUE_CAPTURE_ADDRESS_KHR:
               [[fallthrough]];
             case VK_ERROR_VALIDATION_FAILED:
+              SPALL_END();
               return err_msg_invalid_request;
 
             default:
+              SPALL_END();
               return err_msg_unknown;
           }
         }
@@ -594,6 +598,7 @@ enum err_msg ma_bind_img_to_malloc(
             userdata, local_malloc );
         if ( err ) {
           fprintf( stderr, "Error occured in infos_pm_init_prealloc. (%s)\n", err_msg_text[err] );
+          SPALL_END();
           return err;
         }
       }
@@ -604,19 +609,20 @@ enum err_msg ma_bind_img_to_malloc(
             userdata, local_malloc );
         if ( err ) {
           fprintf( stderr, "Error occured in infos_pm_init_prealloc. (%s)\n", err_msg_text[err] );
+          SPALL_END();
           return err;
         }
       }
 
       // Check if there is enough space
       struct range_u32 * p_rent;
-      p_rent = infos_pm_rent( (struct infos_page_mgr*)p_pm, userdata, local_malloc,
-          _align_to_power_of_two(size_to_req, p_vmm->len_non_coherent_atom), true );
+      p_rent = infos_pm_rent_aligned( (struct infos_page_mgr*)p_pm, userdata, local_malloc,
+          _align_to_power_of_two(size_to_req, req_alignment),
+          req_alignment );
       if ( !p_rent ) {
         continue;
       }
-      p_vmm->arr_usages[heap_idx] += _align_to_power_of_two(
-          size_to_req, p_vmm->len_non_coherent_atom );
+      p_vmm->arr_usages[heap_idx] += _align_to_power_of_two( size_to_req, req_alignment );
 
       // Bind the image with *p_malloc
       SPALL_BEGIN("bind_img_mem");
@@ -631,24 +637,27 @@ enum err_msg ma_bind_img_to_malloc(
           fprintf( stderr, "[Carbonara] Could not return the rented pages!! "
               "'%s'\n", err_msg_text[err] );
         } else {
-          p_vmm->arr_usages[heap_idx] -= _align_to_power_of_two(
-              size_to_req, p_vmm->len_non_coherent_atom );
+          p_vmm->arr_usages[heap_idx] -= _align_to_power_of_two( size_to_req, req_alignment );
         }
         switch ( result ) {
           case VK_ERROR_OUT_OF_DEVICE_MEMORY:
             [[fallthrough]];
           case VK_ERROR_OUT_OF_HOST_MEMORY:
+            SPALL_END();
             return err_msg_out_of_memory;
 
           case VK_ERROR_VALIDATION_FAILED:
+            SPALL_END();
             return err_msg_invalid_request;
 
           default:
+            SPALL_END();
             return err_msg_unknown;
         }
       }
 
       *pp_malloc_range = p_rent;
+      SPALL_END();
       return 0;
     }
 
@@ -659,6 +668,7 @@ enum err_msg ma_bind_img_to_malloc(
           true );
       if ( err ) {
         fprintf( stderr, "Error occured in infos_multi_al_grow. (%s)\n", err_msg_text[err] );
+        SPALL_END();
         return err;
       }
       err = infos_multi_al_grow( &p_vmm->page_mgrs, userdata, local_malloc,
@@ -666,6 +676,7 @@ enum err_msg ma_bind_img_to_malloc(
           true );
       if ( err ) {
         fprintf( stderr, "Error occured in infos_multi_al_grow. (%s)\n", err_msg_text[err] );
+        SPALL_END();
         return err;
       }
     } else if ( !p_node->next ) {
@@ -675,6 +686,7 @@ enum err_msg ma_bind_img_to_malloc(
           true );
       if ( err ) {
         fprintf( stderr, "Error occured in infos_multi_al_grow. (%s)\n", err_msg_text[err] );
+        SPALL_END();
         return err;
       }
     }
@@ -756,6 +768,7 @@ uint32_t ma_pick_best_mtype(
     VkMemoryPropertyFlags tolerable_props
     )
 {
+  SPALL_BEGIN("pick_best_type");
   uint_fast32_t type_idx;
   // preferred_props + required_props + !tolerable_props
   for ( type_idx = 0; type_idx < p_vmm->type_cnt; type_idx++ ) {
@@ -765,6 +778,7 @@ uint32_t ma_pick_best_mtype(
           !(p_vmm->arr_mem_property_flags[type_idx] & tolerable_props) ) {
         if ( p_vmm->arr_usages[p_vmm->arr_heap_indices[type_idx]] + req->size <=
             p_vmm->arr_sizes[p_vmm->arr_heap_indices[type_idx]] ) {
+          SPALL_END();
           return type_idx;
         }
       }
@@ -779,6 +793,7 @@ uint32_t ma_pick_best_mtype(
           !(p_vmm->arr_mem_property_flags[type_idx] & tolerable_props) ) {
         if ( p_vmm->arr_usages[p_vmm->arr_heap_indices[type_idx]] + req->size <=
             p_vmm->arr_sizes[p_vmm->arr_heap_indices[type_idx]] ) {
+          SPALL_END();
           return type_idx;
         }
       }
@@ -793,6 +808,7 @@ uint32_t ma_pick_best_mtype(
           (p_vmm->arr_mem_property_flags[type_idx] & tolerable_props) ) {
         if ( p_vmm->arr_usages[p_vmm->arr_heap_indices[type_idx]] + req->size <=
             p_vmm->arr_sizes[p_vmm->arr_heap_indices[type_idx]] ) {
+          SPALL_END();
           return type_idx;
         }
       }
@@ -807,11 +823,13 @@ uint32_t ma_pick_best_mtype(
           (p_vmm->arr_mem_property_flags[type_idx] & tolerable_props) ) {
         if ( p_vmm->arr_usages[p_vmm->arr_heap_indices[type_idx]] + req->size <=
             p_vmm->arr_sizes[p_vmm->arr_heap_indices[type_idx]] ) {
+          SPALL_END();
           return type_idx;
         }
       }
     }
   }
 
+  SPALL_END();
   return 0;
 }

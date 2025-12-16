@@ -2520,8 +2520,11 @@ enum err_msg create_1st_renderpass_and_framebuffer( struct cara_vk_renderer * re
   // Define attachments
   //
 
+
   // The color attachment
   VkAttachmentDescription2 arr_att_descs[3];
+  // NOTE Consider chaining VkAttachmentDescriptionStencilLayout in the pNext field in order to
+  // set stencilInitialLayout and stencilFinalLayout
   for ( unsigned int att_idx = 0; att_idx < _arr_elem_cnt( arr_att_descs ); att_idx++ ) {
     arr_att_descs[att_idx].flags = 0;
     arr_att_descs[att_idx].samples = VK_SAMPLE_COUNT_1_BIT;
@@ -2532,9 +2535,15 @@ enum err_msg create_1st_renderpass_and_framebuffer( struct cara_vk_renderer * re
                                                              // layout—It means that we don't need
                                                              // images content when a memory barrier
                                                              // is set up.
-    // NOTE Consider chaining VkAttachmentDescriptionStencilLayout in the pNext field in order to
-    // set stencilInitialLayout and stencilFinalLayout
   }
+  // The first thing we need to record after acquiring a swapchain image is to change the swapchain
+  //  image's layout to a VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL layout.
+  // This operation should be performed implicitly using appropriate render pass parameters (initial
+  //  and sub-pass layouts). But if queues used for the presentation and graphics operations come
+  //  from two different families, we must perform ownership transfer. This cannot be done
+  //  implicitly—for this we need to set up an image memory barrier.
+  arr_att_descs[fb_swapchain].initialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
   // The depth buffer
   arr_att_descs[fb_zbuf].format = renderer->zbuf_fmt;
   arr_att_descs[fb_zbuf].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
@@ -2633,12 +2642,13 @@ enum err_msg create_1st_renderpass_and_framebuffer( struct cara_vk_renderer * re
   arr_subpass_desc[cs_main_render].preserveAttachmentCount = 0;
   arr_subpass_desc[cs_main_render].pPreserveAttachments = nullptr;
 
-  VkAttachmentReference2 input_att_ref;
-  input_att_ref.sType = VK_STRUCTURE_TYPE_ATTACHMENT_REFERENCE_2;
-  input_att_ref.pNext = nullptr;
-  input_att_ref.attachment = fb_cbuf;
-  input_att_ref.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-  input_att_ref.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;;
+  VkAttachmentReference2 input_att_ref = {
+    .sType = VK_STRUCTURE_TYPE_ATTACHMENT_REFERENCE_2,
+    .pNext = nullptr,
+    .attachment = fb_cbuf,
+    .layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+    .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+  };
   arr_subpass_desc[cs_copy_to_swapchain_img].inputAttachmentCount = 1;
   arr_subpass_desc[cs_copy_to_swapchain_img].pInputAttachments = &input_att_ref;
   arr_subpass_desc[cs_copy_to_swapchain_img].colorAttachmentCount = 1;
@@ -2706,30 +2716,31 @@ enum err_msg create_1st_renderpass_and_framebuffer( struct cara_vk_renderer * re
   //
   // Call vkCreateRenderPass
   //
-  VkRenderPassCreateInfo2 rp_create_info;
-  rp_create_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO_2;
-  rp_create_info.pNext = nullptr;
-  rp_create_info.flags = 0;
-  rp_create_info.attachmentCount = _arr_elem_cnt( arr_att_descs );
-  rp_create_info.pAttachments = arr_att_descs;
-  rp_create_info.subpassCount = _arr_elem_cnt( arr_subpass_desc );
-  rp_create_info.pSubpasses = arr_subpass_desc;
-  rp_create_info.dependencyCount = _arr_elem_cnt( sp_dep );
-  rp_create_info.pDependencies = sp_dep;
-  rp_create_info.correlatedViewMaskCount = 0;
-  rp_create_info.pCorrelatedViewMasks = nullptr;
-  SPALL_BEGIN("create_rp");
+  VkRenderPassCreateInfo2 rp_create_info = {
+    .sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO_2,
+    .pNext = nullptr,
+    .flags = 0,
+    .attachmentCount = _arr_elem_cnt( arr_att_descs ),
+    .pAttachments = arr_att_descs,
+    .subpassCount = _arr_elem_cnt( arr_subpass_desc ),
+    .pSubpasses = arr_subpass_desc,
+    .dependencyCount = _arr_elem_cnt( sp_dep ),
+    .pDependencies = sp_dep,
+    .correlatedViewMaskCount = 0,
+    .pCorrelatedViewMasks = nullptr,
+  };
+  SPALL_BEGIN("vkCreateRenderPass2");
   VkResult result;
   result = vkCreateRenderPass2( renderer->log_dev, &rp_create_info,
       &vk_alloc_callbacks,
       //nullptr,
       &renderer->render_pass );
+  SPALL_END();
   if ( result != VK_SUCCESS ) {
     fprintf( stderr, "[Carbonara] Error occurred creating a render pass. '%s'\n",
         string_VkResult(result) );
     goto stop_everything_after_failure;
   }
-  SPALL_END();
 
 
   //
@@ -2779,33 +2790,34 @@ enum err_msg create_1st_renderpass_and_framebuffer( struct cara_vk_renderer * re
   fb_atts_create_info.attachmentImageInfoCount = _arr_elem_cnt( fb_att_img_info );
   fb_atts_create_info.pAttachmentImageInfos = fb_att_img_info;
 
-  VkFramebufferCreateInfo fb_create_info;
-  fb_create_info.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-  fb_create_info.pNext = &fb_atts_create_info;
-  fb_create_info.flags = VK_FRAMEBUFFER_CREATE_IMAGELESS_BIT;  // Framebuffers are created with a
-                                                      // small amount of additional metadata about
-                                                      // the image views that will be used in
-                                                      // `VkFramebufferAttachmentsCreateInfo`, and
-                                                      // the actual image views are provided at
-                                                      // render pass begin time via
-                                                      // `VkRenderPassAttachmentBeginInfoKHR`.
-  fb_create_info.renderPass = renderer->render_pass;
-  fb_create_info.attachmentCount = _arr_elem_cnt( fb_att_img_info );
-  fb_create_info.pAttachments = nullptr;
-  fb_create_info.width = small_win_width;
-  fb_create_info.height = small_win_height;
-  fb_create_info.layers = 1;
-  SPALL_BEGIN("create_fb");
+  VkFramebufferCreateInfo fb_create_info = {
+    .sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
+    .pNext = &fb_atts_create_info,
+    .flags = VK_FRAMEBUFFER_CREATE_IMAGELESS_BIT,  // Framebuffers are created with a small amount
+                                                   // of additional metadata about the image views
+                                                   // that will be used in
+                                                   // `VkFramebufferAttachmentsCreateInfo`, and the
+                                                   // actual image views are provided at render pass
+                                                   // begin time via
+                                                   // `VkRenderPassAttachmentBeginInfoKHR`.
+    .renderPass = renderer->render_pass,
+    .attachmentCount = _arr_elem_cnt( fb_att_img_info ),
+    .pAttachments = nullptr,
+    .width = small_win_width,
+    .height = small_win_height,
+    .layers = 1,
+  };
+  SPALL_BEGIN("vkCreateFramebuffer");
   result = vkCreateFramebuffer( renderer->log_dev, &fb_create_info,
       &vk_alloc_callbacks,
       //nullptr
       &renderer->framebuffer );
+  SPALL_END();
   if ( result != VK_SUCCESS ) {
     fprintf( stderr, "[Carbonara] Error occurred in vkCreateFramebuffer. '%s'\n",
         string_VkResult(result) );
     goto stop_everything_after_failure;
   }
-  SPALL_END();
 
 
 
@@ -2830,7 +2842,7 @@ enum err_msg create_1st_renderpass_and_framebuffer( struct cara_vk_renderer * re
   img_create_info.queueFamilyIndexCount = 0;
   img_create_info.pQueueFamilyIndices = nullptr;
   img_create_info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-  SPALL_BEGIN("create_framebuffers_imgs");
+  SPALL_BEGIN("vk_create_framebuffers_imgs");
   vkCreateImage( renderer->log_dev, &img_create_info, &vk_alloc_callbacks,
       &renderer->zbuf_n_cbuf[fb_zbuf] );
   img_create_info.format = VK_FORMAT_R8G8B8A8_UNORM;
@@ -2842,7 +2854,9 @@ enum err_msg create_1st_renderpass_and_framebuffer( struct cara_vk_renderer * re
   for ( unsigned int fb_idx = fb_zbuf; fb_idx <= fb_cbuf; fb_idx++ ) {
     // Obtain the requirements
     VkMemoryRequirements req;
+    SPALL_BEGIN("vkGetImageMemoryRequirements");
     vkGetImageMemoryRequirements( renderer->log_dev, renderer->zbuf_n_cbuf[fb_idx], &req );
+    SPALL_END();
 
     // Choose the best memory type
     VkMemoryPropertyFlags preferred_props, required_props, tolerable_props;
@@ -2857,7 +2871,8 @@ enum err_msg create_1st_renderpass_and_framebuffer( struct cara_vk_renderer * re
     struct range_u32 * p_malloc_range = nullptr;
     enum err_msg err = ma_bind_img_to_malloc( &renderer->vmm,
         &vk_alloc_callbacks, vk_malloc_wrapper,
-        renderer->log_dev, renderer->zbuf_n_cbuf[fb_idx], type_idx, req.size, &p_malloc_range );
+        renderer->log_dev, renderer->zbuf_n_cbuf[fb_idx],
+        type_idx, req.size, req.alignment, &p_malloc_range );
     if ( err ) {
       fprintf( stderr, "Error occured in ma_bind_img_to_malloc. (%s)\n", err_msg_text[err] );
       goto stop_everything_after_failure;
@@ -2888,7 +2903,7 @@ enum err_msg create_1st_renderpass_and_framebuffer( struct cara_vk_renderer * re
         .layerCount = 1,
     },
   };
-  SPALL_BEGIN("create_framebuffers_ivs");
+  SPALL_BEGIN("vk_create_framebuffers_ivs");
   result = vkCreateImageView( renderer->log_dev, &iv_create_info, &vk_alloc_callbacks,
       &renderer->zbuf_n_cbuf_iv[fb_zbuf] );
   iv_create_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
@@ -2899,6 +2914,10 @@ enum err_msg create_1st_renderpass_and_framebuffer( struct cara_vk_renderer * re
   SPALL_END();
 
 
+  renderer->dims_swapchain_imgs = (VkExtent2D) {
+    .width = small_win_width,
+    .height = small_win_height,
+  };
 
 
   return err_msg_no_error;
@@ -3028,23 +3047,24 @@ enum err_msg expand_swapchain_and_framebuffer( struct cara_vk_renderer * rendere
   fb_atts_create_info.attachmentImageInfoCount = _arr_elem_cnt( fb_att_img_info );
   fb_atts_create_info.pAttachmentImageInfos = fb_att_img_info;
 
-  VkFramebufferCreateInfo fb_create_info;
-  fb_create_info.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-  fb_create_info.pNext = &fb_atts_create_info;
-  fb_create_info.flags = VK_FRAMEBUFFER_CREATE_IMAGELESS_BIT;  // Framebuffers are created with a
-                                                      // small amount of additional metadata about
-                                                      // the image views that will be used in
-                                                      // `VkFramebufferAttachmentsCreateInfo`, and
-                                                      // the actual image views are provided at
-                                                      // render pass begin time via
-                                                      // `VkRenderPassAttachmentBeginInfoKHR`.
-  fb_create_info.renderPass = renderer->render_pass;
-  fb_create_info.attachmentCount = _arr_elem_cnt( fb_att_img_info );
-  fb_create_info.pAttachments = nullptr;
-  fb_create_info.width = new_width;
-  fb_create_info.height = new_height;
-  fb_create_info.layers = 1;
-  SPALL_BEGIN("create_fb");
+  VkFramebufferCreateInfo fb_create_info = {
+    .sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
+    .pNext = &fb_atts_create_info,
+    .flags = VK_FRAMEBUFFER_CREATE_IMAGELESS_BIT,  // Framebuffers are created with a small amount
+                                                   // of additional metadata about the image views
+                                                   // that will be used in
+                                                   // `VkFramebufferAttachmentsCreateInfo`, and the
+                                                   // actual image views are provided at render pass
+                                                   // begin time via
+                                                   // `VkRenderPassAttachmentBeginInfoKHR`.
+    .renderPass = renderer->render_pass,
+    .attachmentCount = _arr_elem_cnt( fb_att_img_info ),
+    .pAttachments = nullptr,
+    .width = new_width,
+    .height = new_height,
+    .layers = 1,
+  };
+  SPALL_BEGIN("vkCreateFramebuffer");
   result = vkCreateFramebuffer( renderer->log_dev, &fb_create_info, &vk_alloc_callbacks,
       &new_framebuffer );
   SPALL_END();
@@ -3077,7 +3097,7 @@ enum err_msg expand_swapchain_and_framebuffer( struct cara_vk_renderer * rendere
   img_create_info.queueFamilyIndexCount = 0;
   img_create_info.pQueueFamilyIndices = nullptr;
   img_create_info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-  SPALL_BEGIN("create_framebuffers_imgs");
+  SPALL_BEGIN("vk_create_framebuffers_imgs");
   vkCreateImage( renderer->log_dev, &img_create_info, &vk_alloc_callbacks, &new_zbuf_img );
   if ( result != VK_SUCCESS ) {
     fprintf( stderr, "[Carbonara] Error occurred in vkCreateImage. '%s'\n",
@@ -3114,7 +3134,7 @@ enum err_msg expand_swapchain_and_framebuffer( struct cara_vk_renderer * rendere
       .baseArrayLayer = 0,
       .layerCount = 1,
   };
-  SPALL_BEGIN("create_framebuffers_ivs");
+  SPALL_BEGIN("vk_create_framebuffers_ivs");
   result = vkCreateImageView( renderer->log_dev, &iv_create_info, &vk_alloc_callbacks,
       &new_zbuf_iv );
   if ( result != VK_SUCCESS ) {
@@ -3183,7 +3203,7 @@ enum err_msg expand_swapchain_and_framebuffer( struct cara_vk_renderer * rendere
                                             //  for all pixels in the presentable image.
   swapchain_create_info.oldSwapchain = old_swapchain;
 
-  SPALL_BEGIN("create_new_swapchain");
+  SPALL_BEGIN("vkCreateSwapchainKHR");
   result = vkCreateSwapchainKHR(
       renderer->log_dev,
       &swapchain_create_info,
@@ -3225,7 +3245,7 @@ enum err_msg expand_swapchain_and_framebuffer( struct cara_vk_renderer * rendere
     arr_swapchain_img_views[i] = VK_NULL_HANDLE;
   }
 
-  SPALL_BEGIN("create_swapchain_ivs");
+  SPALL_BEGIN("vk_create_swapchain_ivs");
   for ( unsigned int i = 0; i < nr_swapchain_imgs; i++ ) {
     iv_create_info.image = arr_swapchain_images[i];
     result = vkCreateImageView( renderer->log_dev, &iv_create_info, &vk_alloc_callbacks,
@@ -3278,7 +3298,7 @@ get_dev_mem_obj_for_zbuf:
   buf_malloc_info.pNext = nullptr;
   buf_malloc_info.allocationSize = req.size;
   buf_malloc_info.memoryTypeIndex = type_idx;
-  SPALL_BEGIN("alloc_mem");
+  SPALL_BEGIN("vkAllocateMemory");
   result = vkAllocateMemory( renderer->log_dev,
       &buf_malloc_info, &vk_alloc_callbacks, p_malloc_zbuf
       );
@@ -3290,7 +3310,7 @@ get_dev_mem_obj_for_zbuf:
   renderer->vmm.arr_usages[heap_idx] += req.size;
 
   // Bind the image to the first allocation of type_idx type
-  SPALL_BEGIN("bind_img_mem");
+  SPALL_BEGIN("vkBindImageMemory");
   result = vkBindImageMemory( renderer->log_dev, new_zbuf_img, *p_malloc_zbuf, 0 );
   SPALL_END();
   if( result != VK_SUCCESS ) {
@@ -3316,6 +3336,10 @@ get_dev_mem_obj_for_zbuf:
   vkDestroyFramebuffer( renderer->log_dev, renderer->framebuffer,
       &vk_alloc_callbacks );
   renderer->framebuffer = new_framebuffer;
+  renderer->dims_swapchain_imgs = (VkExtent2D) {
+    .width = new_width,
+    .height = new_height,
+  };
 
   // Destroy previous buffers NOTE or I should probably postpone the destruction.
   vkDestroyImageView( renderer->log_dev, renderer->zbuf_n_cbuf_iv[fb_zbuf], &vk_alloc_callbacks );
