@@ -474,14 +474,14 @@ fprintf( stderr, "[DEBUG] cmd_buf=%lu; cara_vk.arr_framebuffers[%u].primary_comm
   SPALL_END();
   SPALL_BEGIN("vkCmdBindPipeline");
   vkCmdBindPipeline( pri_cmd_buf,
-      VK_PIPELINE_BIND_POINT_GRAPHICS, cara_vk.arr_pipelines[cs_main_render] );
+      VK_PIPELINE_BIND_POINT_GRAPHICS, cara_vk.arr_pipelines[cs_draw_opaq_objs] );
   SPALL_END();
 
-  // TODO cs_main_render
+  // TODO cs_draw_opaq_objs
 
 
   ////
-  //// Make barriers between cs_main_render and cs_copy_to_swapchain_img
+  //// Make barriers between cs_draw_opaq_objs and cs_copy_to_swapchain_img
   ////
   //VkImageMemoryBarrier2KHR img_bar;
   //img_bar.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2_KHR;
@@ -761,7 +761,7 @@ SDL_AppResult SDL_AppInit(
         "[Carbonara] The CPU does support AVX2, why did you executed SSE4.2 version?\n" );
     if ( x86_proc_info.sse42 ) {
       fprintf( stdout, "[Carbonara] launching the SSE4.2 version anyway. "
-          "You might experience suboptimal performance.\n" );
+          "You might see a different performance.\n" );
     } else {
       fprintf( stderr,
           "[Carbonara] It's weird that SSE4.2 is not supported while AVX2 is. aborting!\n" );
@@ -2708,7 +2708,7 @@ void jf_kickstart( struct cara_worker_state * p_ws )
   dsl_create_info.bindingCount = 0;
   dsl_create_info.pBindings = nullptr;
 
-  // Bindings for cs_main_render
+  // Bindings for cs_draw_opaq_objs
   VkDescriptorSetLayoutBinding arr_bindings_main_render[1];
   for ( unsigned int i = 0; i < _arr_elem_cnt( arr_bindings_main_render ); i++ ) {
     arr_bindings_main_render[i].binding = i;
@@ -2981,7 +2981,7 @@ void jf_kickstart( struct cara_worker_state * p_ws )
   plvis_create_info_depth_only.vertexAttributeDescriptionCount =
     _arr_elem_cnt( arr_via_desc_depth_only );
   plvis_create_info_depth_only.pVertexAttributeDescriptions = arr_via_desc_depth_only;
-  // Vertex input binding description for cs_main_render
+  // Vertex input binding description for cs_draw_opaq_objs
   VkVertexInputBindingDescription vib_desc_main_render;
   vib_desc_main_render.binding = 0;
   vib_desc_main_render.stride = sizeof(float)*3 + sizeof(float)*3;  // position and color
@@ -3144,9 +3144,9 @@ void jf_kickstart( struct cara_worker_state * p_ws )
   arr_pldss_create_info[cs_z_only].depthTestEnable = VK_TRUE;
   arr_pldss_create_info[cs_z_only].depthWriteEnable = VK_TRUE;
   arr_pldss_create_info[cs_z_only].depthCompareOp = VK_COMPARE_OP_GREATER;
-  arr_pldss_create_info[cs_main_render].depthTestEnable = VK_TRUE;
-  arr_pldss_create_info[cs_main_render].depthWriteEnable = VK_FALSE;
-  arr_pldss_create_info[cs_main_render].depthCompareOp = VK_COMPARE_OP_EQUAL;
+  arr_pldss_create_info[cs_draw_opaq_objs].depthTestEnable = VK_TRUE;
+  arr_pldss_create_info[cs_draw_opaq_objs].depthWriteEnable = VK_FALSE;
+  arr_pldss_create_info[cs_draw_opaq_objs].depthCompareOp = VK_COMPARE_OP_EQUAL;
   arr_pldss_create_info[cs_copy_to_swapchain_img].depthTestEnable = VK_FALSE;
   arr_pldss_create_info[cs_copy_to_swapchain_img].depthWriteEnable = VK_FALSE;
   arr_pldss_create_info[cs_copy_to_swapchain_img].depthCompareOp = VK_COMPARE_OP_EQUAL;
@@ -3326,22 +3326,22 @@ void jf_kickstart( struct cara_worker_state * p_ws )
                         // -1 value for the basePipelineIndex field. If we want to specify an index,
                         // we need to provide a VK_NULL_HANDLE value for basePipelineHandle
 
-  // cs_main_render pipeline
-  arr_gpl_create_infos[cs_main_render].stageCount = _arr_elem_cnt( main_render_plss_create_info );
-  arr_gpl_create_infos[cs_main_render].pStages = main_render_plss_create_info;
-  arr_gpl_create_infos[cs_main_render].pVertexInputState = &plvis_create_info_main_render;
-  arr_gpl_create_infos[cs_main_render].pInputAssemblyState = &plias_create_info;
-  arr_gpl_create_infos[cs_main_render].pTessellationState = nullptr;
-  arr_gpl_create_infos[cs_main_render].pViewportState = &plvps_create_info;
-  arr_gpl_create_infos[cs_main_render].pRasterizationState = &plrs_create_info;
-  arr_gpl_create_infos[cs_main_render].pMultisampleState = &plmss_create_info;
-  arr_gpl_create_infos[cs_main_render].pDepthStencilState = &arr_pldss_create_info[cs_main_render];
-  arr_gpl_create_infos[cs_main_render].pColorBlendState = &plcbs_create_info;
-  arr_gpl_create_infos[cs_main_render].pDynamicState = &plds_create_info;
-  arr_gpl_create_infos[cs_main_render].layout = cara_vk.pll_main_render;
-  arr_gpl_create_infos[cs_main_render].renderPass = cara_vk.render_pass;
-  arr_gpl_create_infos[cs_main_render].subpass = cs_main_render;
-  arr_gpl_create_infos[cs_main_render].basePipelineIndex = cs_z_only;
+  // cs_draw_opaq_objs pipeline
+  arr_gpl_create_infos[cs_draw_opaq_objs].stageCount = _arr_elem_cnt( main_render_plss_create_info );
+  arr_gpl_create_infos[cs_draw_opaq_objs].pStages = main_render_plss_create_info;
+  arr_gpl_create_infos[cs_draw_opaq_objs].pVertexInputState = &plvis_create_info_main_render;
+  arr_gpl_create_infos[cs_draw_opaq_objs].pInputAssemblyState = &plias_create_info;
+  arr_gpl_create_infos[cs_draw_opaq_objs].pTessellationState = nullptr;
+  arr_gpl_create_infos[cs_draw_opaq_objs].pViewportState = &plvps_create_info;
+  arr_gpl_create_infos[cs_draw_opaq_objs].pRasterizationState = &plrs_create_info;
+  arr_gpl_create_infos[cs_draw_opaq_objs].pMultisampleState = &plmss_create_info;
+  arr_gpl_create_infos[cs_draw_opaq_objs].pDepthStencilState = &arr_pldss_create_info[cs_draw_opaq_objs];
+  arr_gpl_create_infos[cs_draw_opaq_objs].pColorBlendState = &plcbs_create_info;
+  arr_gpl_create_infos[cs_draw_opaq_objs].pDynamicState = &plds_create_info;
+  arr_gpl_create_infos[cs_draw_opaq_objs].layout = cara_vk.pll_main_render;
+  arr_gpl_create_infos[cs_draw_opaq_objs].renderPass = cara_vk.render_pass;
+  arr_gpl_create_infos[cs_draw_opaq_objs].subpass = cs_draw_opaq_objs;
+  arr_gpl_create_infos[cs_draw_opaq_objs].basePipelineIndex = cs_z_only;
 
   // cs_copy_to_swapchain_img pipeline
   arr_gpl_create_infos[cs_copy_to_swapchain_img].stageCount =
@@ -3360,7 +3360,7 @@ void jf_kickstart( struct cara_worker_state * p_ws )
   arr_gpl_create_infos[cs_copy_to_swapchain_img].layout = cara_vk.pll_copy2sc;
   arr_gpl_create_infos[cs_copy_to_swapchain_img].renderPass = cara_vk.render_pass;
   arr_gpl_create_infos[cs_copy_to_swapchain_img].subpass = cs_copy_to_swapchain_img;
-  arr_gpl_create_infos[cs_copy_to_swapchain_img].basePipelineIndex = cs_main_render;
+  arr_gpl_create_infos[cs_copy_to_swapchain_img].basePipelineIndex = cs_draw_opaq_objs;
   // NOTE You might want to utilized a pipeline cache if you have a lot of pipelines to create
   SPALL_BEGIN("create_G_pl");
   vkCreateGraphicsPipelines( cara_vk.log_dev,

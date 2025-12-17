@@ -2621,11 +2621,11 @@ enum err_msg create_1st_renderpass_and_framebuffer( struct cara_vk_renderer * re
   arr_subpass_desc[cs_z_only].preserveAttachmentCount = 0;
   arr_subpass_desc[cs_z_only].pPreserveAttachments = nullptr;
 
-  arr_subpass_desc[cs_main_render].inputAttachmentCount = 0;
-  arr_subpass_desc[cs_main_render].pInputAttachments = nullptr;
-  arr_subpass_desc[cs_main_render].colorAttachmentCount = 1;
-  arr_subpass_desc[cs_main_render].pColorAttachments = &arr_att_refs[fb_cbuf];
-  arr_subpass_desc[cs_main_render].pResolveAttachments = nullptr;  // If any of the color
+  arr_subpass_desc[cs_draw_opaq_objs].inputAttachmentCount = 0;
+  arr_subpass_desc[cs_draw_opaq_objs].pInputAttachments = nullptr;
+  arr_subpass_desc[cs_draw_opaq_objs].colorAttachmentCount = 1;
+  arr_subpass_desc[cs_draw_opaq_objs].pColorAttachments = &arr_att_refs[fb_cbuf];
+  arr_subpass_desc[cs_draw_opaq_objs].pResolveAttachments = nullptr;  // If any of the color
                     // attachments should be resolved (changed from multisampled to single-sampled),
                     // specify a pointer to the first element of the array with same number of
                     // elements as pColorAttachments or use a nullptr value if no color attachments
@@ -2638,9 +2638,9 @@ enum err_msg create_1st_renderpass_and_framebuffer( struct cara_vk_renderer * re
           // A: Index of the attachment in the list of all render pass attachments for `attachment`.
           // B: A layout given image should be automatically transitioned to at the beginning of
           //   the subpass for `layout`.
-  arr_subpass_desc[cs_main_render].pDepthStencilAttachment = &arr_att_refs[fb_zbuf];
-  arr_subpass_desc[cs_main_render].preserveAttachmentCount = 0;
-  arr_subpass_desc[cs_main_render].pPreserveAttachments = nullptr;
+  arr_subpass_desc[cs_draw_opaq_objs].pDepthStencilAttachment = &arr_att_refs[fb_zbuf];
+  arr_subpass_desc[cs_draw_opaq_objs].preserveAttachmentCount = 0;
+  arr_subpass_desc[cs_draw_opaq_objs].pPreserveAttachments = nullptr;
 
   VkAttachmentReference2 input_att_ref = {
     .sType = VK_STRUCTURE_TYPE_ATTACHMENT_REFERENCE_2,
@@ -2675,12 +2675,12 @@ enum err_msg create_1st_renderpass_and_framebuffer( struct cara_vk_renderer * re
     sp_dep[dep_idx].sType = VK_STRUCTURE_TYPE_SUBPASS_DEPENDENCY_2;
     sp_dep[dep_idx].viewOffset = 0;
   }
-  // cs_depth_only - cs_main_render
+  // cs_depth_only - cs_draw_opaq_objs
   sp_dep[0].srcSubpass = cs_z_only;  // The index of a subpass from which ("producing")
                                          // operations should be finished before the second set of
                                          // ("consuming") operations (or a VK_SUBPASS_EXTERNAL value
                                          // for commands before the render pass).
-  sp_dep[0].dstSubpass = cs_main_render;  // The index of a subpass whose operations depend on the
+  sp_dep[0].dstSubpass = cs_draw_opaq_objs;  // The index of a subpass whose operations depend on the
                                           // previous set of commands (or a VK_SUBPASS_EXTERNAL
                                           // value for operations after the render pass).
   sp_dep[0].srcStageMask = VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT_KHR;  // The set of pipeline
@@ -2697,8 +2697,8 @@ enum err_msg create_1st_renderpass_and_framebuffer( struct cara_vk_renderer * re
                                    // dependency is global, which means that data for the whole
                                    // image must be generated before "consuming" commands can be
                                    // executed.
-  // cs_main_render - cs_copy_to_swapchain_img
-  sp_dep[1].srcSubpass = cs_main_render;
+  // cs_draw_opaq_objs - cs_copy_to_swapchain_img
+  sp_dep[1].srcSubpass = cs_draw_opaq_objs;
   sp_dep[1].dstSubpass = cs_copy_to_swapchain_img;
   sp_dep[1].srcStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT_KHR;
   sp_dep[1].dstStageMask = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT_KHR;

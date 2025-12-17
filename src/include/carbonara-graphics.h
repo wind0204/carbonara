@@ -41,9 +41,10 @@ enum cara_signs_born : uint64_t {
   csb_present_swapchain_img,
 };
 
+// cs_build_lowres_cluster_cull -> cs_z_only -> cs_build_cluster_cull -> cs_draw_opaq_objs -> cs_non_opaque_objs -> cs_copy_to_swapchain_img
 enum cara_subpass : unsigned char {
   cs_z_only = 0,
-  cs_main_render,
+  cs_draw_opaq_objs,
   cs_copy_to_swapchain_img,
   cara_nr_subpasses,
 };
