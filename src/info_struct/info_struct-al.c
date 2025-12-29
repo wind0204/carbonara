@@ -133,14 +133,14 @@ enum err_msg infos_al_grow(
 
   void * (*local_malloc)(void * userdata, size_t alignment, size_t size);
   local_malloc = custom_malloc ? custom_malloc : default_malloc;
-  assume( CACHELINE_LEN > ALIGN_FOR_AVX512 );
+  assume( CACHELINE_LEN >= ALIGN_FOR_AVX512 );
   void * restrict ptr = local_malloc( userdata, CACHELINE_LEN,
       sum_ooa_diff + sum_new_nodes_len + nr_nodes * sizeof(struct infos_singly_linked_list_node) );
   if ( !ptr ) {
     //ptr = default_malloc( userdata, CACHELINE_LEN,
     //    sum_ooa_diff + sum_new_nodes_len + sizeof(struct infos_singly_linked_list_node) );
     if ( !ptr ) {
-      return err_msg_out_of_memory;
+      return emsg_out_of_memory;
     }
   }
   if ( zero_all ) {
@@ -343,7 +343,7 @@ uint_fast8_t infos_multi_al_init_prealloc(
       ( (UINT64_C(1) << log2_node_size) + sizeof(struct infos_singly_linked_list_fh) )
       );
   if ( !ptr ) {
-    return err_msg_no_error;
+    return emsg_no_error;
   }
   if ( zero_all ) {
     memset( ptr, 0, UINT64_C(1) << log2_node_size << log2_nr_arr_lists );
@@ -396,14 +396,14 @@ enum err_msg infos_multi_al_grow( struct infos_multi_arr_list * restrict mal,
         out_of_align_diff1 +
         (1 << mal->log2_node_size) + arr_len * sizeof(struct infos_singly_linked_list_node) );
     if ( !ptr ) {
-      return err_msg_out_of_memory;
+      return emsg_out_of_memory;
     }
     if ( !ptr ) {
       //ptr = default_malloc( userdata, CACHELINE_LEN,
       //    out_of_align_diff1 +
       //    (1 << mal->log2_node_size) + sizeof(struct infos_singly_linked_list_node) );
       if ( !ptr ) {
-        return err_msg_out_of_memory;
+        return emsg_out_of_memory;
       }
     }
     if ( zero_all ) {

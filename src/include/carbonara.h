@@ -5,29 +5,12 @@
 #include <stdint.h>
 
 //#include "appdev_support-processor_map.h"
-#include "carbonara-mm.h"
 #include "err_msg.h"
 
 
 
 
 //-------------------------------------------------------------------------------------------------
-//struct carbonara_linked_buffer {
-//  struct infos_singly_linked_list buffers;
-//  uint32_t total_length;
-//};
-
-struct cara_worker_state {
-  alignas( CACHELINE_LEN )
-  struct cara_job_batch_desc_64 * current_batch;
-  //struct carbonara_malloc_helper_dynamic_bound * mhelper_dynamic_bound;
-  //struct carbonara_linked_buffer * buffer;
-  static_assert( alignof(void*) >= alignof(struct cara_malloc_helper), "Sort the struct members!" );
-  struct cara_malloc_helper malloc_helper;
-  static_assert( alignof(struct cara_malloc_helper) >= alignof(uint16_t) );
-  uint16_t worker_idx;
-};
-
 struct carbonara_scene {
   uint16_t idx_first_job;
   uint8_t flags;

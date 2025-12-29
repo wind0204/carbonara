@@ -162,7 +162,7 @@ enum err_msg infos_hashtable_insert(
       // Make another node.
       uint32_t indices_buckets[] = { bucket_idx };
       if ( infos_multi_al_grow(&table->keys, 0, 0, 1, indices_buckets, -7) ) {
-        return err_msg_out_of_memory;
+        return emsg_out_of_memory;
       }
     }
     node = node->next;
@@ -198,7 +198,7 @@ enum err_msg infos_hashtable_insert_u32_4(
       // Make another node.
       uint32_t indices_buckets[] = { bucket_idx };
       if ( infos_multi_al_grow(&table->keys, 0, 0, 1, indices_buckets, -7) ) {
-        return err_msg_out_of_memory;
+        return emsg_out_of_memory;
       }
     }
     node = node->next;
@@ -234,7 +234,7 @@ enum err_msg infos_hashtable_insert_u64_4(
       // Make another node.
       uint32_t indices_buckets[] = { bucket_idx };
       if ( infos_multi_al_grow(&table->keys, 0, 0, 1, indices_buckets, -7) ) {
-        return err_msg_out_of_memory;
+        return emsg_out_of_memory;
       }
     }
     node = node->next;
@@ -308,7 +308,7 @@ found_the_key_to_remove:
     }
 
     if ( !node->next ) {
-      return err_msg_no_such_entry;
+      return emsg_no_such_entry;
     }
     node = node->next;
     //node_idx++;

@@ -24,6 +24,8 @@ constexpr size_t ALIGN_FOR_NEON = 16;
   #define unreachable() __builtin_unreachable()
 #endif
 
+
+//-------------------------------------------------------------------------------------------------
 constexpr size_t page_sizes[] = {
   // 0:7
   0,
@@ -60,6 +62,12 @@ union union64 {
 #if UINTPTR_WIDTH/8 == 8
   void * ptr;
 #endif
+  uint32_t arr_u32[2];
+  uint16_t arr_u16[4];
+  uint8_t arr_u8[8];
+  int32_t arr_i32[2];
+  int16_t arr_i16[4];
+  int8_t arr_i8[8];
 };
 union union32 {
   uint32_t u;
@@ -67,6 +75,10 @@ union union32 {
   float f;
 #if UINTPTR_WIDTH/8 == 4
   void * ptr;
+  uint16_t arr_u16[2];
+  uint8_t arr_u8[4];
+  int16_t arr_i16[2];
+  int8_t arr_i8[4];
 #endif
 };
 union union16 {
@@ -75,6 +87,8 @@ union union16 {
 #if UINTPTR_WIDTH/8 == 2
   void * ptr;
 #endif
+  uint8_t arr_u8[2];
+  int8_t arr_i8[2];
 };
 union union8 {
   uint8_t u;
@@ -291,24 +305,27 @@ uint64_t init_util_c_lang(void);
 
 //-------------------------------------------------------------------------------------------------
 /**
- * \brief Obtain the number of elements in the given C array
- */
-#define _arr_elem_cnt(array) \
-  ( sizeof(array) / sizeof(array[0]) )
-
-//-------------------------------------------------------------------------------------------------
-/**
  * \brief Obtain the type of a field in a structure
  */
 #define _sizeof_arr_elem(array) \
-  ( sizeof( ((typeof(array))0)[0] ) )
+  ( sizeof( (*((typeof(array)*)0))[0] ) )
+//  ( sizeof( ((typeof(array))0)[0] ) )
 
 //-------------------------------------------------------------------------------------------------
 /**
  * \brief Obtain the type of a field in a structure
  */
 #define _alignof_arr_elem(array) \
-  ( alignof( ((typeof(array))0)[0] ) )
+  ( alignof( (*((typeof(array)*)0))[0] ) )
+//  ( alignof( ((typeof(array))0)[0] ) )
+
+//-------------------------------------------------------------------------------------------------
+/**
+ * \brief Obtain the number of elements in the given C array
+ */
+#define _arr_elem_cnt(array) \
+  ( sizeof(array) / _sizeof_arr_elem(array) )
+//  ( sizeof(array) / sizeof(array[0]) )
 
 //-------------------------------------------------------------------------------------------------
 /**

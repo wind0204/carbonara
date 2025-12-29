@@ -40,7 +40,7 @@ enum err_msg ma_init_arena(
          p_arena->head->prev == 0 ) {
       uint_fast8_t err = ma_end_arena(p_arena);
       if ( err ) {
-        return err_msg_get_rid_of_the_old_data_first;
+        return emsg_get_rid_of_the_old_data_first;
       }
     }
   }
@@ -73,7 +73,7 @@ enum err_msg ma_init_arena(
 unsigned int ma_end_arena( memorable_arena_t * arena )
 {
   if ( arena->id != ID_HEAD_OF_THE_POOL ) {
-    return err_msg_corrupted_data_detected;
+    return emsg_corrupted_data_detected;
   }
 
   struct ma_sub_arena * cur = arena->tail;
@@ -127,7 +127,7 @@ static struct ma_sub_arena * create_new_node(
 
     cur_len_sub_arena = cur_len_sub_arena - page_sizes[x86_proc_info.large_page_size_class];
     if ( cur_len_sub_arena < sub_arena_len - sub_arena_len/4 ) {
-      errno = err_msg_out_of_memory;
+      errno = emsg_out_of_memory;
       return 0;
     }
   }
@@ -257,7 +257,7 @@ unsigned int ma_add_sub_arena(
 enum err_msg ma_remove_sub_arena( memorable_arena_t * arena, uint8_t idx_sub_arena )
 {
   if ( arena->id != ID_HEAD_OF_THE_POOL ) {
-    return err_msg_corrupted_data_detected;
+    return emsg_corrupted_data_detected;
   }
 
   uint_fast8_t idx = 1;
@@ -268,7 +268,7 @@ enum err_msg ma_remove_sub_arena( memorable_arena_t * arena, uint8_t idx_sub_are
     next = cur->next;
 
     if ( cur->smm.total_space_left != cur->capacity >> LOG2_CACHELINE_LEN ) {
-      return err_msg_get_rid_of_the_old_data_first;
+      return emsg_get_rid_of_the_old_data_first;
     }
 
     if ( idx == idx_sub_arena ) {
@@ -285,15 +285,15 @@ enum err_msg ma_remove_sub_arena( memorable_arena_t * arena, uint8_t idx_sub_are
       }
 
       free(cur);
-      return err_msg_no_error;
+      return emsg_no_error;
     }
 
     if ( next == 0 ) {
-      return err_msg_out_of_index;
+      return emsg_out_of_index;
     }
 
     if ( !next ) {
-      return err_msg_not_found;
+      return emsg_not_found;
     }
     cur = next;
   }
@@ -315,7 +315,7 @@ struct ma_sub_arena * ma_get_sub_arena( memorable_arena_t * arena, uint8_t idx_s
     cur = cur->next;
 
     if ( !cur ) {
-      errno = err_msg_out_of_index;
+      errno = emsg_out_of_index;
       return 0;
     }
   }

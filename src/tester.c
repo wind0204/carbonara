@@ -282,7 +282,7 @@ int main( int argc, char * argv[] )
     for ( unsigned int i = 0; i < _arr_elem_cnt(arr); i++ ) {
       err = infos_hashtable_insert_u32( hashtable, i+1, arr[i] );
       if ( err ) {
-        fprintf( stderr, "Error: %s\n", err_msg_text[err] );
+        fprintf( stderr, "Error: %s\n", arr_emsg_txt[err] );
         return test_nr;
       }
     }
@@ -303,7 +303,7 @@ int main( int argc, char * argv[] )
     fprintf( stdout, "call infos_hashtable_remove( hashtable, 1 )\n" );
     err = infos_hashtable_remove( hashtable, 1 );
     if ( err ) {
-      fprintf( stderr, "Error: %s\n", err_msg_text[err] );
+      fprintf( stderr, "Error: %s\n", arr_emsg_txt[err] );
       return test_nr;
     }
     for ( unsigned int i = 1; i <= 8; i++ ) {
@@ -316,7 +316,7 @@ int main( int argc, char * argv[] )
     fprintf( stdout, "Trying to remove the item with key 2 from the hashtable..." );
     err = infos_hashtable_remove( hashtable, 2 );
     if ( err ) {
-      fprintf( stderr, "Error: %s\n", err_msg_text[err] );
+      fprintf( stderr, "Error: %s\n", arr_emsg_txt[err] );
       return test_nr;
     }
     for ( unsigned int i = 1; i <= 8; i++ ) {
@@ -329,10 +329,10 @@ int main( int argc, char * argv[] )
     err = infos_hashtable_remove( hashtable, 2 );
     fprintf( stdout, "Trying to remove the item with key 2 again... " );
     if ( err ) {
-      fprintf( stdout, "expected error: \"%s\"", err_msg_text[err] );
+      fprintf( stdout, "expected error: \"%s\"", arr_emsg_txt[err] );
     } else {
       fprintf( stderr, "The expected error \"%s\" didn't show up!",
-          err_msg_text[err_msg_no_such_entry] );
+          arr_emsg_txt[emsg_no_such_entry] );
       return test_nr;
     }
     fprintf( stdout, "\n" );
@@ -396,12 +396,12 @@ int main( int argc, char * argv[] )
   const __float128 timestamp_to_ns = 1.0 / ( (1.0 / 1000000000.0) * tsc_freq );
   if ( err ) {
     fprintf( stderr, "[ADS-timer] err_msg from init_appdev_support_timer = \"%s\"\n",
-        err_msg_text[err] );
+        arr_emsg_txt[err] );
     switch ( err ) {
-      case err_msg_not_found:
+      case emsg_not_found:
         fprintf( stderr, "  We could not find /dev/cpu/0/msr\n" );
         break;
-      case err_msg_permission_denied:
+      case emsg_permission_denied:
         fprintf( stderr, "  We could not determine the non-turbo frequency of the processor.\n" );
         break;
       default:

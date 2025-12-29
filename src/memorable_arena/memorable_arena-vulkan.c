@@ -23,7 +23,8 @@ enum err_msg ma_init_vk_mem_mgr(
   // Save numbers.
   p_vmm->heap_cnt = p_mem_properties->memoryProperties.memoryHeapCount;
   p_vmm->type_cnt = p_mem_properties->memoryProperties.memoryTypeCount;
-  p_vmm->len_non_coherent_atom = p_limits->nonCoherentAtomSize;
+  p_vmm->len_non_coherent_atom =  // Align to CACHELINE_LEN for multi-threaded loading
+    _align_to_power_of_two( p_limits->nonCoherentAtomSize, CACHELINE_LEN );
   p_vmm->buf_granularity = p_limits->bufferImageGranularity;
   assume( _is_power_of_two( p_limits->bufferImageGranularity) );
   assume( _is_power_of_two( p_limits->nonCoherentAtomSize) );
@@ -46,7 +47,7 @@ enum err_msg ma_init_vk_mem_mgr(
         0 )
       );
   if ( !p_vmm->arr_usages ) {
-    return err_msg_out_of_memory;
+    return emsg_out_of_memory;
   }
   p_vmm->arr_sizes = p_vmm->arr_usages + p_vmm->heap_cnt;
   p_vmm->arr_heap_indices = (void*)( p_vmm->arr_sizes + p_vmm->heap_cnt );
@@ -95,7 +96,7 @@ enum err_msg ma_init_vk_mem_mgr(
 
 
   // Return 0
-  return err_msg_no_error;
+  return emsg_no_error;
 }
 
 //-------------------------------------------------------------------------------------------------
@@ -157,15 +158,15 @@ void ma_destroy_vk_mem_mgr(
               case 0:
                 p_vmm->arr_usages[heap_idx] -= get_range_len(*p_malloc_range);
                 break;
-              case err_msg_no_such_entry:
+              case emsg_no_such_entry:
                 [[fallthrough]];
-              case err_msg_already_done:
+              case emsg_already_done:
                 [[fallthrough]];
-              case err_msg_out_of_memory:
+              case emsg_out_of_memory:
                 [[fallthrough]];
               default:
                 fprintf( stderr, "[MA] Error occured in infos_pm_return_via_ptr: %s\n",
-                    err_msg_text[err] );
+                    arr_emsg_txt[err] );
                 fprintf( stderr, "[MA] context: "
                     "type_idx=%u node_idx=%u malloc_idx=%u rnode_idx=? bind_idx=%u\n",
                     type_idx, node_idx, malloc_idx, bind_idx );
@@ -198,38 +199,14 @@ void ma_destroy_vk_mem_mgr(
 
   if ( p_vmm->p_staging_buf ) {
     vkUnmapMemory( logical_dev, p_vmm->staging_buf_malloc );
-    vkFreeMemory( logical_dev, p_vmm->staging_buf_malloc, &vk_alloc_callbacks ); 
-    //vkFreeMemory( logical_dev, vmm->staging_buf_malloc, nullptr ); 
+    vkFreeMemory( logical_dev, p_vmm->staging_buf_malloc, &vk_alloc_callbacks );
+    //vkFreeMemory( logical_dev, vmm->staging_buf_malloc, nullptr );
     vkDestroyBuffer( logical_dev, p_vmm->staging_buf, &vk_alloc_callbacks );
     //vkDestroyBuffer( logical_dev, vmm->staging_buf, nullptr );
     p_vmm->p_staging_buf = nullptr;
     p_vmm->staging_buf = 0;
     p_vmm->staging_buf_malloc = 0;
   }
-
-  //if ( vmm->uploads.al_vacancies.log2_node_size ) {
-  //  infos_pm_destroy( &vmm->uploads, userdata_free, custom_free );
-  //  vmm->uploads.al_vacancies.log2_node_size = 0;
-  //  vmm->uploads.al_rental_info.log2_node_size = 0;
-  //}
-
-  //if ( vmm->arr_trans_bufs ) {
-  //  // Destroy the transfer buffers and free the memory allocations
-  //  const uint32_t heap_idx = vmm->arr_heap_indices[ vmm->arr_best_mtype_idx[vk_buf_type_transfer] ];
-  //  auto idx_first_empty_element = vmm->arr_idx_next_unoccupied_elem[heap_idx];
-  //  struct infos_singly_linked_list_node * m_node = &vmm->mallocs.lists[heap_idx].head;
-  //  for ( typeof(vmm->tb_cnt) malloc_idx = 0; malloc_idx < vmm->tb_cnt; malloc_idx++ ) {
-  //    while ( idx_first_empty_element >= UINT64_C(1) << vmm->mallocs.log2_nr_elems ) {
-  //      idx_first_empty_element -= UINT64_C(1) << vmm->mallocs.log2_nr_elems;
-  //      m_node = m_node->next;
-  //    }
-  //    VkDeviceMemory * p_alloc = m_node->data + idx_first_empty_element * sizeof(VkDeviceMemory);
-  //    vkDestroyBuffer( logical_dev, vmm->arr_trans_bufs[malloc_idx], &cara_vk.vk_alloc_callbacks );
-  //    vkFreeMemory( logical_dev, *p_alloc, &cara_vk.vk_alloc_callbacks );
-  //  }
-  //  local_free( userdata_free, vmm->arr_trans_bufs );
-  //  vmm->arr_trans_bufs = nullptr;
-  //}
 
   p_vmm->arr_usages = nullptr;
   p_vmm->arr_sizes = nullptr;
@@ -262,7 +239,7 @@ enum err_msg ma_create_staging_buf(
       logical_dev, &buf_create_info, &vk_alloc_callbacks, &p_vmm->staging_buf
       );
   if ( result != VK_SUCCESS ) {
-    return err_msg_unknown;
+    return emsg_unknown;
   }
 
 
@@ -277,7 +254,7 @@ enum err_msg ma_create_staging_buf(
   tolerable_props = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
   const uint32_t type_idx = ma_pick_best_mtype(
       p_vmm, &req, required_props, preferred_props, tolerable_props );
-  p_vmm->arr_best_mtype_idx[vk_buf_type_transfer] = type_idx;
+  //p_vmm->arr_mtype_used[vk_buf_type_transfer] = type_idx;
 
 
   // Allocate memory for the buffer
@@ -292,7 +269,7 @@ enum err_msg ma_create_staging_buf(
   if ( result != VK_SUCCESS ) {
     vkDestroyBuffer( logical_dev, p_vmm->staging_buf, &vk_alloc_callbacks );
     p_vmm->staging_buf = 0;
-    return err_msg_out_of_memory;
+    return emsg_out_of_memory;
   }
 
 
@@ -303,7 +280,7 @@ enum err_msg ma_create_staging_buf(
     vkDestroyBuffer( logical_dev, p_vmm->staging_buf, &vk_alloc_callbacks );
     p_vmm->staging_buf = 0;
     p_vmm->staging_buf_malloc = 0;
-    return err_msg_unknown;
+    return emsg_unknown;
   }
 
 
@@ -315,7 +292,7 @@ enum err_msg ma_create_staging_buf(
     p_vmm->staging_buf = 0;
     p_vmm->staging_buf_malloc = 0;
     p_vmm->p_staging_buf = nullptr;
-    return err_msg_unknown;
+    return emsg_unknown;
   }
 
   // Have the OS actually prepare pages for the mapped memory range
@@ -328,185 +305,6 @@ enum err_msg ma_create_staging_buf(
 
   return 0;
 }
-
-
-//-------------------------------------------------------------------------------------------------
-/*
-enum err_msg prototype_create_vk_trans_bufs(
-    struct ma_vk_mem_mgr * vmm,
-    VkDevice logical_dev,
-    unsigned int max_nr_pages,
-    void * restrict userdata,
-    void * (*custom_malloc)(void * userdata, size_t alignment, size_t size)
-    //void * (*custom_realloc)(void * userdata, void * orig_ptr, size_t size, size_t alignment)
-    )
-{
-  constexpr unsigned int arr_elem_cnt = 1024*1024*1024 / sizeof(union vk_page);
-  VkBuffer arr_bufs[arr_elem_cnt];
-  max_nr_pages = max_nr_pages ? min( max_nr_pages, arr_elem_cnt ) : arr_elem_cnt;
-  typeof(vmm->tb_cnt) malloc_cnt = 0;
-
-  // Create the buffer for the first page
-  VkBufferCreateInfo buf_create_info;
-  buf_create_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-  buf_create_info.pNext = nullptr;
-  buf_create_info.flags = 0;
-  buf_create_info.size = sizeof(union vk_page);
-  buf_create_info.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
-  buf_create_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-  buf_create_info.queueFamilyIndexCount = 0;
-  buf_create_info.pQueueFamilyIndices = nullptr;
-  VkResult result = vkCreateBuffer(
-      logical_dev, &buf_create_info, &cara_vk.vk_alloc_callbacks, &arr_bufs[0] );
-  if ( result != VK_SUCCESS ) {
-    return err_msg_out_of_resource;
-  }
-
-  // Obtain the requirements
-  VkMemoryRequirements req;
-  vkGetBufferMemoryRequirements( logical_dev, arr_bufs[0], &req );
-  fprintf( stdout, "[MA-Debug] VkMemoryRequirements .foo=%lu .bar=%u, .size=%lu\n", req.alignment, req.memoryTypeBits, req.size );
-
-  // Choose the best memory type
-  VkMemoryPropertyFlags preferred_props, required_props, tolerable_props;
-  preferred_props = VK_MEMORY_PROPERTY_HOST_CACHED_BIT;
-  required_props =
-    VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-    VK_MEMORY_PROPERTY_HOST_COHERENT_BIT |
-    0;
-  tolerable_props = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
-  const uint32_t type_idx = ma_pick_best_mtype(
-      vmm, &req, required_props, preferred_props, tolerable_props );
-
-
-  // Allocate a memory page for the first memory object
-  VkMemoryAllocateInfo buf_malloc_info;
-  buf_malloc_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-  buf_malloc_info.pNext = nullptr;
-  buf_malloc_info.allocationSize = req.size;
-  buf_malloc_info.memoryTypeIndex = type_idx;
-
-  const uint32_t heap_idx = vmm->arr_heap_indices[type_idx];
-  auto idx_first_empty_element = vmm->arr_idx_next_unoccupied_elem[heap_idx];
-  struct infos_singly_linked_list_node * m_node = &vmm->mallocs.lists[heap_idx].head;
-  while ( idx_first_empty_element >= UINT64_C(1) << vmm->mallocs.log2_nr_elems ) {
-    idx_first_empty_element -= UINT64_C(1) << vmm->mallocs.log2_nr_elems;
-    if ( !m_node->next ) {
-      // Make another node.
-      uint16_t indices_buckets[] = { heap_idx };
-      if ( infos_multi_al_grow(&vmm->mallocs, 0, 0, 1, indices_buckets, 0) ) {
-        vkDestroyBuffer( logical_dev, arr_bufs[0], &cara_vk.vk_alloc_callbacks );
-        return err_msg_out_of_memory;
-      }
-    }
-    m_node = m_node->next;
-  }
-  VkDeviceMemory * p_alloc = m_node->data + idx_first_empty_element * sizeof(VkDeviceMemory);
-
-  result = vkAllocateMemory( logical_dev,
-      &buf_malloc_info, &cara_vk.vk_alloc_callbacks, p_alloc );
-  if ( result != VK_SUCCESS ) {
-    vkDestroyBuffer( logical_dev, arr_bufs[0], &cara_vk.vk_alloc_callbacks );
-    return err_msg_out_of_memory;
-  }
-
-
-  // Bind the first buffer to the first allocation
-  result = vkBindBufferMemory( logical_dev, arr_bufs[0], *p_alloc, 0 );
-  if ( result != VK_SUCCESS ) {
-    vkDestroyBuffer( logical_dev, arr_bufs[0], &cara_vk.vk_alloc_callbacks );
-    vkFreeMemory( logical_dev, *p_alloc, &cara_vk.vk_alloc_callbacks );
-    return err_msg_unknown;
-  }
-  malloc_cnt++;
-
-
-  // Create as many buffers and allocations as possible and bind the buffers to the allocations
-  while( malloc_cnt < max_nr_pages ) {
-    // Create the buffer for the next page
-    result = vkCreateBuffer(
-        logical_dev, &buf_create_info, &cara_vk.vk_alloc_callbacks, &arr_bufs[malloc_cnt] );
-    if ( result != VK_SUCCESS ) {
-      break;
-    }
-
-    idx_first_empty_element++;
-    while ( idx_first_empty_element >= UINT64_C(1) << vmm->mallocs.log2_nr_elems ) {
-      idx_first_empty_element -= UINT64_C(1) << vmm->mallocs.log2_nr_elems;
-      if ( !m_node->next ) {
-        // Make another node.
-        uint16_t indices_buckets[] = { heap_idx };
-        if ( infos_multi_al_grow(&vmm->mallocs, 0, 0, 1, indices_buckets, 0) ) {
-          vkDestroyBuffer( logical_dev, arr_bufs[malloc_cnt], &cara_vk.vk_alloc_callbacks );
-          // Release every resource
-          idx_first_empty_element = vmm->arr_idx_next_unoccupied_elem[heap_idx];
-          m_node = &vmm->mallocs.lists[heap_idx].head;
-          for ( typeof(malloc_cnt) malloc_idx = 0; malloc_idx < malloc_cnt; malloc_idx++ ) {
-            while ( idx_first_empty_element >= UINT64_C(1) << vmm->mallocs.log2_nr_elems ) {
-              idx_first_empty_element -= UINT64_C(1) << vmm->mallocs.log2_nr_elems;
-              m_node = m_node->next;
-            }
-            p_alloc = m_node->data + idx_first_empty_element * sizeof(VkDeviceMemory);
-            vkDestroyBuffer( logical_dev, arr_bufs[malloc_idx], &cara_vk.vk_alloc_callbacks );
-            vkFreeMemory( logical_dev, *p_alloc, &cara_vk.vk_alloc_callbacks );
-          }
-          return err_msg_out_of_memory;
-        }
-      }
-      m_node = m_node->next;
-    }
-    p_alloc = m_node->data + idx_first_empty_element * sizeof(VkDeviceMemory);
-    result = vkAllocateMemory( logical_dev,
-        &buf_malloc_info, &cara_vk.vk_alloc_callbacks, p_alloc );
-    if ( result != VK_SUCCESS ) {
-      // Destroy the buffer
-      vkDestroyBuffer( logical_dev, arr_bufs[malloc_cnt], &cara_vk.vk_alloc_callbacks );
-      break;
-    }
-
-    // Bind the buffer to the new allocation
-    result = vkBindBufferMemory( logical_dev, arr_bufs[malloc_cnt], *p_alloc, 0 );
-    if ( result != VK_SUCCESS ) {
-      vkDestroyBuffer( logical_dev, arr_bufs[malloc_cnt], &cara_vk.vk_alloc_callbacks );
-      vkFreeMemory( logical_dev, *p_alloc, &cara_vk.vk_alloc_callbacks );
-      break;
-    }
-    malloc_cnt++;
-  }
-
-
-  // Get memory allocation for the arrays
-  void * (*local_malloc)(void * userdata, size_t alignment, size_t size);
-  local_malloc = custom_malloc ? custom_malloc : default_malloc;
-  //void * (*local_realloc)(void * userdata, void * orig_ptr, size_t size, size_t alignment);
-  //local_realloc = custom_realloc ? custom_realloc : default_realloc;
-  VkBuffer * new_arr = local_malloc( userdata, alignof(*new_arr), malloc_cnt * sizeof(*new_arr) );
-  if ( !new_arr ) {
-    // Release every resource
-    idx_first_empty_element = vmm->arr_idx_next_unoccupied_elem[heap_idx];
-    m_node = &vmm->mallocs.lists[heap_idx].head;
-    for ( typeof(malloc_cnt) malloc_idx = 0; malloc_idx < malloc_cnt; malloc_idx++ ) {
-      while ( idx_first_empty_element >= UINT64_C(1) << vmm->mallocs.log2_nr_elems ) {
-        idx_first_empty_element -= UINT64_C(1) << vmm->mallocs.log2_nr_elems;
-        m_node = m_node->next;
-      }
-      p_alloc = m_node->data + idx_first_empty_element * sizeof(VkDeviceMemory);
-      vkDestroyBuffer( logical_dev, arr_bufs[malloc_idx], &cara_vk.vk_alloc_callbacks );
-      vkFreeMemory( logical_dev, *p_alloc, &cara_vk.vk_alloc_callbacks );
-    }
-    return err_msg_out_of_memory;
-  }
-
-  memcpy( new_arr, arr_bufs, sizeof(VkBuffer) * malloc_cnt );
-  vmm->arr_trans_bufs = new_arr;
-  vmm->tb_cnt = malloc_cnt;
-  vmm->arr_idx_next_unoccupied_elem[heap_idx] = idx_first_empty_element;
-  vmm->arr_best_mtype_idx[vk_buf_type_transfer] = type_idx;
-
-
-  return 0;
-}
-*/
 
 
 //-------------------------------------------------------------------------------------------------
@@ -577,7 +375,7 @@ enum err_msg ma_bind_img_to_malloc(
               [[fallthrough]];
             case VK_ERROR_OUT_OF_HOST_MEMORY:
               SPALL_END();
-              return err_msg_out_of_memory;
+              return emsg_out_of_memory;
 
             case VK_ERROR_INVALID_EXTERNAL_HANDLE:
               [[fallthrough]];
@@ -585,11 +383,11 @@ enum err_msg ma_bind_img_to_malloc(
               [[fallthrough]];
             case VK_ERROR_VALIDATION_FAILED:
               SPALL_END();
-              return err_msg_invalid_request;
+              return emsg_invalid_request;
 
             default:
               SPALL_END();
-              return err_msg_unknown;
+              return emsg_unknown;
           }
         }
 
@@ -597,7 +395,7 @@ enum err_msg ma_bind_img_to_malloc(
         err = infos_pm_init_prealloc( (struct infos_page_mgr*)p_pm, len_chunk_of_pages,
             userdata, local_malloc );
         if ( err ) {
-          fprintf( stderr, "Error occured in infos_pm_init_prealloc. (%s)\n", err_msg_text[err] );
+          fprintf( stderr, "Error occured in infos_pm_init_prealloc. (%s)\n", arr_emsg_txt[err] );
           SPALL_END();
           return err;
         }
@@ -608,7 +406,7 @@ enum err_msg ma_bind_img_to_malloc(
         err = infos_pm_init_prealloc( (struct infos_page_mgr*)p_pm, len_chunk_of_pages,
             userdata, local_malloc );
         if ( err ) {
-          fprintf( stderr, "Error occured in infos_pm_init_prealloc. (%s)\n", err_msg_text[err] );
+          fprintf( stderr, "Error occured in infos_pm_init_prealloc. (%s)\n", arr_emsg_txt[err] );
           SPALL_END();
           return err;
         }
@@ -635,7 +433,7 @@ enum err_msg ma_bind_img_to_malloc(
             p_rent->start );
         if ( err ) {
           fprintf( stderr, "[Carbonara] Could not return the rented pages!! "
-              "'%s'\n", err_msg_text[err] );
+              "'%s'\n", arr_emsg_txt[err] );
         } else {
           p_vmm->arr_usages[heap_idx] -= _align_to_power_of_two( size_to_req, req_alignment );
         }
@@ -644,15 +442,15 @@ enum err_msg ma_bind_img_to_malloc(
             [[fallthrough]];
           case VK_ERROR_OUT_OF_HOST_MEMORY:
             SPALL_END();
-            return err_msg_out_of_memory;
+            return emsg_out_of_memory;
 
           case VK_ERROR_VALIDATION_FAILED:
             SPALL_END();
-            return err_msg_invalid_request;
+            return emsg_invalid_request;
 
           default:
             SPALL_END();
-            return err_msg_unknown;
+            return emsg_unknown;
         }
       }
 
@@ -667,7 +465,7 @@ enum err_msg ma_bind_img_to_malloc(
           1, &type_idx,
           true );
       if ( err ) {
-        fprintf( stderr, "Error occured in infos_multi_al_grow. (%s)\n", err_msg_text[err] );
+        fprintf( stderr, "Error occured in infos_multi_al_grow. (%s)\n", arr_emsg_txt[err] );
         SPALL_END();
         return err;
       }
@@ -675,7 +473,7 @@ enum err_msg ma_bind_img_to_malloc(
           1, &type_idx,
           true );
       if ( err ) {
-        fprintf( stderr, "Error occured in infos_multi_al_grow. (%s)\n", err_msg_text[err] );
+        fprintf( stderr, "Error occured in infos_multi_al_grow. (%s)\n", arr_emsg_txt[err] );
         SPALL_END();
         return err;
       }
@@ -685,7 +483,174 @@ enum err_msg ma_bind_img_to_malloc(
           1, &type_idx,
           true );
       if ( err ) {
-        fprintf( stderr, "Error occured in infos_multi_al_grow. (%s)\n", err_msg_text[err] );
+        fprintf( stderr, "Error occured in infos_multi_al_grow. (%s)\n", arr_emsg_txt[err] );
+        SPALL_END();
+        return err;
+      }
+    }
+
+    m_node = m_node->next;
+    p_node = p_node->next;
+  }
+
+}
+
+//-------------------------------------------------------------------------------------------------
+enum err_msg ma_bind_buf_to_malloc(
+    struct ma_vk_mem_mgr * restrict p_vmm,
+    void * restrict userdata,
+    void * (*custom_malloc)(void * userdata, size_t alignment, size_t size),
+    VkDevice log_dev,
+    VkBuffer vk_buf,
+    uint32_t type_idx,
+    VkDeviceSize req_size,  // Required allocation size in bytes
+    VkDeviceSize req_alignment,  // Required allocation alignment in bytes
+    struct range_u32 ** pp_malloc_range
+    )
+{
+  SPALL_BEGIN("bind_buf_to_m");
+  VkDeviceSize size_to_req = _align_to_power_of_two( req_size, p_vmm->buf_granularity );
+  VkResult result;
+  enum err_msg err;
+  void * (*local_malloc)(void * userdata, size_t alignment, size_t size);
+  local_malloc = custom_malloc ? custom_malloc : default_malloc;
+
+  uint32_t heap_idx = p_vmm->arr_heap_indices[type_idx];
+  struct infos_singly_linked_list_node * m_node = &p_vmm->mallocs.lists[type_idx].head;
+  struct infos_singly_linked_list_node * p_node = &p_vmm->page_mgrs.lists[type_idx].head;
+  const uint32_t last_idx = 1 << p_vmm->mallocs.log2_nr_elems;
+  while(7) {
+    for ( uint32_t malloc_idx = 0; malloc_idx < last_idx; malloc_idx++ ) {
+      VkDeviceMemory * p_malloc = m_node->data + malloc_idx * sizeof(VkDeviceMemory);
+      struct infos_page_mgr_p2 * p_pm = p_node->data + malloc_idx * sizeof(*p_pm);
+      if ( *p_malloc == 0 ) {
+        // Create a new VkDeviceMemory
+        VkMemoryAllocateInfo buf_malloc_info;
+        buf_malloc_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+        buf_malloc_info.pNext = nullptr;
+        buf_malloc_info.allocationSize = len_chunk_of_pages;
+        buf_malloc_info.memoryTypeIndex = type_idx;
+        SPALL_BEGIN("alloc_mem");
+        result = vkAllocateMemory( log_dev,
+            &buf_malloc_info, &vk_alloc_callbacks, p_malloc );
+        SPALL_END();
+        if ( result != VK_SUCCESS ) {
+          fprintf( stderr, "[Carbonara] vkAllocateMemory failed. "
+              "'%s'\n", string_VkResult(result) );
+          switch ( result ) {
+            case VK_ERROR_OUT_OF_DEVICE_MEMORY:
+              [[fallthrough]];
+            case VK_ERROR_OUT_OF_HOST_MEMORY:
+              SPALL_END();
+              return emsg_out_of_memory;
+
+            case VK_ERROR_INVALID_EXTERNAL_HANDLE:
+              [[fallthrough]];
+            case VK_ERROR_INVALID_OPAQUE_CAPTURE_ADDRESS_KHR:
+              [[fallthrough]];
+            case VK_ERROR_VALIDATION_FAILED:
+              SPALL_END();
+              return emsg_invalid_request;
+
+            default:
+              SPALL_END();
+              return emsg_unknown;
+          }
+        }
+
+        // Init struct infos_page_mgr_p2
+        err = infos_pm_init_prealloc( (struct infos_page_mgr*)p_pm, len_chunk_of_pages,
+            userdata, local_malloc );
+        if ( err ) {
+          fprintf( stderr, "Error occured in infos_pm_init_prealloc. (%s)\n", arr_emsg_txt[err] );
+          SPALL_END();
+          return err;
+        }
+      }
+
+      // We must've failed to init struct infos_page_mgr_p2 before this call
+      if ( !p_pm->al_vacancies.list.nr_nodes ) {
+        err = infos_pm_init_prealloc( (struct infos_page_mgr*)p_pm, len_chunk_of_pages,
+            userdata, local_malloc );
+        if ( err ) {
+          fprintf( stderr, "Error occured in infos_pm_init_prealloc. (%s)\n", arr_emsg_txt[err] );
+          SPALL_END();
+          return err;
+        }
+      }
+
+      // Check if there is enough space
+      struct range_u32 * p_rent;
+      p_rent = infos_pm_rent_aligned( (struct infos_page_mgr*)p_pm, userdata, local_malloc,
+          _align_to_power_of_two(size_to_req, req_alignment),
+          req_alignment );
+      if ( !p_rent ) {
+        continue;
+      }
+      p_vmm->arr_usages[heap_idx] += _align_to_power_of_two( size_to_req, req_alignment );
+
+      // Bind the buffer with *p_malloc
+      SPALL_BEGIN("bind_buf_mem");
+      result = vkBindBufferMemory( log_dev, vk_buf, *p_malloc, p_rent->start );
+      SPALL_END();
+      if( result != VK_SUCCESS ) {
+        fprintf( stderr, "[Carbonara] Could not bind buffer to malloc. "
+            "'%s'\n", string_VkResult(result) );
+        err = infos_pm_return( (struct infos_page_mgr*)p_pm, userdata, local_malloc,
+            p_rent->start );
+        if ( err ) {
+          fprintf( stderr, "[Carbonara] Could not return the rented pages!! "
+              "'%s'\n", arr_emsg_txt[err] );
+        } else {
+          p_vmm->arr_usages[heap_idx] -= _align_to_power_of_two( size_to_req, req_alignment );
+        }
+        switch ( result ) {
+          case VK_ERROR_OUT_OF_DEVICE_MEMORY:
+            [[fallthrough]];
+          case VK_ERROR_OUT_OF_HOST_MEMORY:
+            SPALL_END();
+            return emsg_out_of_memory;
+
+          case VK_ERROR_VALIDATION_FAILED:
+            SPALL_END();
+            return emsg_invalid_request;
+
+          default:
+            SPALL_END();
+            return emsg_unknown;
+        }
+      }
+
+      *pp_malloc_range = p_rent;
+      SPALL_END();
+      return 0;
+    }
+
+    if ( !m_node->next ) {
+      // We need to create one more node
+      err = infos_multi_al_grow( &p_vmm->mallocs, userdata, local_malloc,
+          1, &type_idx,
+          true );
+      if ( err ) {
+        fprintf( stderr, "Error occured in infos_multi_al_grow. (%s)\n", arr_emsg_txt[err] );
+        SPALL_END();
+        return err;
+      }
+      err = infos_multi_al_grow( &p_vmm->page_mgrs, userdata, local_malloc,
+          1, &type_idx,
+          true );
+      if ( err ) {
+        fprintf( stderr, "Error occured in infos_multi_al_grow. (%s)\n", arr_emsg_txt[err] );
+        SPALL_END();
+        return err;
+      }
+    } else if ( !p_node->next ) {
+      // We must've failed to grow page_mgrs
+      err = infos_multi_al_grow( &p_vmm->page_mgrs, userdata, local_malloc,
+          1, &type_idx,
+          true );
+      if ( err ) {
+        fprintf( stderr, "Error occured in infos_multi_al_grow. (%s)\n", arr_emsg_txt[err] );
         SPALL_END();
         return err;
       }
@@ -707,6 +672,8 @@ enum err_msg ma_report_vk_malloc_rel(
     struct range_u32 * p_malloc_range
     )
 {
+  assume( p_malloc_range );
+
   void * (*local_malloc)(void * userdata, size_t alignment, size_t size);
   local_malloc = custom_malloc ? custom_malloc : default_malloc;
 
@@ -722,14 +689,14 @@ enum err_msg ma_report_vk_malloc_rel(
     for ( uint32_t idx = 0; idx < last_idx; idx++ ) {
       struct infos_page_mgr_p2 * p_pm = p_node->data + idx * sizeof(*p_pm);
       if ( !p_pm->al_vacancies.list.nr_nodes ) {
-        return err_msg_no_such_entry;
+        return emsg_no_such_entry;
       }
 
       err = infos_pm_return_via_ptr( (struct infos_page_mgr*)p_pm, userdata, local_malloc,
           p_malloc_range );
 
       switch ( err ) {
-        case err_msg_no_such_entry:
+        case emsg_no_such_entry:
           continue;
         case 0:
           p_vmm->arr_usages[heap_idx] -= get_range_len(*p_malloc_range);
@@ -738,9 +705,9 @@ enum err_msg ma_report_vk_malloc_rel(
           assume( *p_malloc );
 #endif
           [[fallthrough]];
-        case err_msg_already_done:
+        case emsg_already_done:
           [[fallthrough]];
-        case err_msg_out_of_memory:
+        case emsg_out_of_memory:
           [[fallthrough]];
         default:
           return err;
@@ -748,7 +715,7 @@ enum err_msg ma_report_vk_malloc_rel(
     }
 
     if ( !p_node->next ) {
-      return err_msg_no_such_entry;
+      return emsg_no_such_entry;
     }
 
 #if !defined( ARE_WE_SHIPPING_IT )

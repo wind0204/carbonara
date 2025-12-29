@@ -1,4 +1,3 @@
-#include "carbonara.h"
 #if !defined CARBONARA_JOB_H_
 # define CARBONARA_JOB_H_
 
@@ -14,6 +13,8 @@
 
 #include "appdev_support-processor_map.h"
 #include "util-c_lang-basic.h"
+#include "carbonara-asset.h"
+#include "carbonara-mm.h"
 
 
 //-------------------------------------------------------------------------------------------------
@@ -58,6 +59,20 @@ enum job_flag : unsigned char {
   job_flag_contact_gpu = 0x01,
   job_flag_contact_nic = 0x02,
   job_flag_foremans_task = 0x04,
+};
+
+
+//-------------------------------------------------------------------------------------------------
+struct cara_worker_state {
+  struct cara_io_worker io_work;
+  static_assert( alignof(struct cara_io_worker) >= alignof(void*) );
+  struct cara_job_batch_desc_64 * current_batch;
+  //struct carbonara_malloc_helper_dynamic_bound * mhelper_dynamic_bound;
+  //struct carbonara_linked_buffer * buffer;
+  static_assert( alignof(void*) >= alignof(struct cara_malloc_helper) );
+  struct cara_malloc_helper malloc_helper;
+  static_assert( alignof(struct cara_malloc_helper) >= alignof(uint16_t) );
+  uint16_t worker_idx;
 };
 
 //-------------------------------------------------------------------------------------------------

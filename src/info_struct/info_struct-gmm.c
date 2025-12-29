@@ -71,10 +71,10 @@ void * infos_gmm_rent( struct infos_growing_mem_manager * restrict manager,
       }
 
       switch ( err ) {
-        case err_msg_out_of_memory:
+        case emsg_out_of_memory:
           errno = ENOMEM;
           break;
-        case err_msg_wrong_name_given:
+        case emsg_wrong_name_given:
           errno = EBADR;
           break;
         default:
@@ -116,10 +116,10 @@ void * infos_gmm_rent_aligned(struct infos_growing_mem_manager * restrict manage
       }
 
       switch ( err ) {
-        case err_msg_out_of_memory:
+        case emsg_out_of_memory:
           errno = ENOMEM;
           break;
-        case err_msg_wrong_name_given:
+        case emsg_wrong_name_given:
           errno = EBADR;
           break;
         default:
@@ -149,7 +149,7 @@ enum err_msg infos_gmm_return( struct infos_growing_mem_manager * restrict manag
 
     node = node->next;
     if ( !node ) {
-      return err_msg_wrong_name_given;
+      return emsg_wrong_name_given;
     }
   }
 }
@@ -170,7 +170,7 @@ uint_fast8_t infos_gmm_grow( struct infos_growing_mem_manager * restrict manager
         growth + sizeof(struct infos_simple_mem_mgr) +
         sizeof(struct infos_singly_linked_list_node) );
     if ( tail->next )
-      return err_msg_out_of_memory;
+      return emsg_out_of_memory;
 
     if ( alignof(struct infos_simple_mem_mgr)
         > alignof(struct infos_singly_linked_list_node) ) {
@@ -192,7 +192,7 @@ uint_fast8_t infos_gmm_grow( struct infos_growing_mem_manager * restrict manager
 
   }
 
-  return err_msg_wrong_name_given;
+  return emsg_wrong_name_given;
 }
 
 
@@ -219,10 +219,10 @@ void * infos_gmm_realloc( struct infos_growing_mem_manager * restrict manager,
       if ( growth ) {
         uint8_t err = infos_gmm_grow(manager, 0, 0, growth);
         switch ( err ) {
-          case err_msg_out_of_memory:
+          case emsg_out_of_memory:
             errno = ENOMEM;
             return 0;
-          case err_msg_wrong_name_given:
+          case emsg_wrong_name_given:
             errno = EBADSLT;
             return 0;
           case 0:

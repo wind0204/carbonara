@@ -10,7 +10,7 @@ enum salumi_pack_flag : unsigned char {
   salumi_pack_includes_s3tc = 0x0002,
 };
 
-enum asset_type : unsigned char {
+enum todo_replace_it : unsigned char {
   asset_type_diffuse_map = 1,
 };
 

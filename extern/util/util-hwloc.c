@@ -13,7 +13,7 @@ uint8_t u_hwloc_bitmap_init(struct u_hwloc_bitmap_s * set) {
   set->ulongs = (unsigned long *) malloc(HWLOC_BITMAP_PREALLOC_ULONGS * sizeof(unsigned long));
   if (!set->ulongs) {
     //free(set);
-    return err_msg_out_of_memory;
+    return emsg_out_of_memory;
   }
 
   set->ulongs[0] = HWLOC_SUBBITMAP_ZERO;

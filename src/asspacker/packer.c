@@ -17,7 +17,7 @@
 #include "info_struct.h"
 
 #include "asspacker.h"
-#include "carbonara-texture.h"
+#include "carbonara-asset.h"
 
 enum options : unsigned char {
   option_output = 'o',
@@ -98,11 +98,11 @@ int main(int argc, char * argv[]) {
           switch ( argv[idx_arg][0] ) {
             case 'a':
             case 'A':
-              texture_format = texture_format_astc;
+              texture_format = tf_astc;
               break;
             case 's':
             case 'S':
-              texture_format = texture_format_s3tc;
+              texture_format = tf_s3tc;
               break;
             default:
               fprintf(stderr, "Unknown texture format: %s\n", argv[idx_arg]);
@@ -232,7 +232,7 @@ failed_to_compile_regex:;
     return 1;
   }
   switch ( texture_format ) {
-    case texture_format_astc:
+    case tf_astc:
       regex_three_chan_comp_filename = arr_regex_structs + 0;
       regex_two_chan_comp_filename = arr_regex_structs + 0;
       ret = regcomp(arr_regex_structs, ".+\\.astc$", REG_NOSUB | REG_EXTENDED );
@@ -240,7 +240,7 @@ failed_to_compile_regex:;
         goto failed_to_compile_regex;
       }
       break;
-    case texture_format_s3tc:
+    case tf_s3tc:
       regex_three_chan_comp_filename = arr_regex_structs + 0;
       regex_two_chan_comp_filename = arr_regex_structs + 1;
       ret = regcomp(regex_three_chan_comp_filename, ".+\\.bc[137]$", REG_NOSUB | REG_EXTENDED );
@@ -372,7 +372,7 @@ stream_more:;
             DIR * cache_dir;
             struct dirent * entry;
             switch ( texture_format ) {
-              case texture_format_astc:
+              case tf_astc:
                 loc_separator = get_idx_of_char(local_cursor, ',');
                 if ( loc_separator == UINT32_MAX ) {
                   goto stream_more;
@@ -717,7 +717,7 @@ stream_more:;
 
                 break;
 
-              case texture_format_s3tc:
+              case tf_s3tc:
                 // TODO support s3tc texture format
                 break;
             }

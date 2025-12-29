@@ -32,5 +32,5 @@ VertexShaderOutput vert_main(
 float4 frag_main( VertexShaderOutput input ) : SV_TARGET
 {
   //output.pos = mul( ubo.model_to_clip, float4(input.position.xyz, 1.0) );
-  return float4(input.col, 1);
+  return float4(input.col, 1.0);
 }

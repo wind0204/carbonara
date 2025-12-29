@@ -2,7 +2,7 @@
 
 
 //-------------------------------------------------------------------------------------------------
-const char * const err_msg_text[] = {
+const char * const arr_emsg_txt[] = {
   "",
   "A deadlock was detected.",  // 1
   "The system is not supported by this application.",
@@ -19,7 +19,7 @@ const char * const err_msg_text[] = {
   "It's too long.",
   "The extension is not supported.",
   "Connection is refused.",
-  "Failed to load the shared library.",
+  "Failed to load the shared library.",  // 16
   "Connection is aborted.",
   "The connection has been reset by the peer.",
   "Already connected.",

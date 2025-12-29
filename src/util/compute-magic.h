@@ -41,10 +41,10 @@ static void unsigned_division_magic_64(struct unsigned_division_magic_64 * mag, 
   add = 0;
   nc = ~0 - (-divisor)%divisor;
   p = 64 - 1;
-  q1 = (1ull << p) / nc;
-  r1 = (1ull << p) - q1*nc;
-  q2 = ((1ull << p) - 1) / divisor;
-  r2 = ((1ull << p) - 1) - q2*divisor;
+  q1 = (UINT64_C(1) << p) / nc;
+  r1 = (UINT64_C(1) << p) - q1*nc;
+  q2 = ((UINT64_C(1) << p) - 1) / divisor;
+  r2 = ((UINT64_C(1) << p) - 1) - q2*divisor;
   do {
     p = p + 1;
     if ( r1 >= nc - r1 ) {
@@ -55,12 +55,12 @@ static void unsigned_division_magic_64(struct unsigned_division_magic_64 * mag, 
       r1 = 2 * r1;
     }
     if ( r2 + 1 >= divisor - r2 ) {
-      if ( q2 >= (1ull << (64-1)) - 1 )
+      if ( q2 >= (UINT64_C(1) << (64-1)) - 1 )
         add = ~0;
       q2 = 2 * q2 + 1;
       r2 = 2 * r2 + 1 - divisor;
     } else {
-      if ( q2 >= 1ull << (64-1) )
+      if ( q2 >= UINT64_C(1) << (64-1) )
         add = ~0;
       q2 = 2 * q2;
       r2 = 2 * r2 + 1;
@@ -88,10 +88,10 @@ static void unsigned_division_magic_32(struct unsigned_division_magic_32 * mag, 
   add = 0;
   nc = ~0 - (-divisor)%divisor;
   p = 32 - 1;
-  q1 = (1ull << p) / nc;
-  r1 = (1ull << p) - q1*nc;
-  q2 = ((1ull << p) - 1) / divisor;
-  r2 = ((1ull << p) - 1) - q2*divisor;
+  q1 = (UINT32_C(1) << p) / nc;
+  r1 = (UINT32_C(1) << p) - q1*nc;
+  q2 = ((UINT32_C(1) << p) - 1) / divisor;
+  r2 = ((UINT32_C(1) << p) - 1) - q2*divisor;
   do {
     p = p + 1;
     if ( r1 >= nc - r1 ) {
@@ -102,12 +102,12 @@ static void unsigned_division_magic_32(struct unsigned_division_magic_32 * mag, 
       r1 = 2 * r1;
     }
     if ( r2 + 1 >= divisor - r2 ) {
-      if ( q2 >= (1ull << (32-1)) - 1 )
+      if ( q2 >= (UINT32_C(1) << (32-1)) - 1 )
         add = ~0;
       q2 = 2 * q2 + 1;
       r2 = 2 * r2 + 1 - divisor;
     } else {
-      if ( q2 >= 1ull << (32-1) )
+      if ( q2 >= UINT32_C(1) << (32-1) )
         add = ~0;
       q2 = 2 * q2;
       r2 = 2 * r2 + 1;

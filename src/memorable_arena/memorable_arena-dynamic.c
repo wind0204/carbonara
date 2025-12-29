@@ -146,7 +146,7 @@ void ma_free_simple_ptr( memorable_arena_t * restrict arena, uint8_t idx_user, v
           //sub_arena->nr_free_chunks += nr_chunks_released;
 
           switch ( err ) {
-            case err_msg_no_such_entry:
+            case emsg_no_such_entry:
               fprintf( stdout, "[MA-Debug] ptr = %#018lx\n", ptr2ui(ptr) );
               fprintf( stdout, "[MA-Debug] sub_arena->smm.data = %#018lx\n",
                   ptr2ui(sub_arena->smm.data) );
@@ -155,10 +155,10 @@ void ma_free_simple_ptr( memorable_arena_t * restrict arena, uint8_t idx_user, v
               fprintf( stdout, "[MA-Debug] data+data_len-ptr = %lu\n", ptr2ui(sub_arena->smm.data) + sub_arena->smm.data_len*CACHELINE_LEN - ptr2ui(ptr) );
               default_free( nullptr, ptr );
               break;
-            case err_msg_no_error:
+            case emsg_no_error:
               break;
             default:
-              fprintf( stderr, "[MA] ma_free_simple_ptr failed. (%s)\n", err_msg_text[err] );
+              fprintf( stderr, "[MA] ma_free_simple_ptr failed. (%s)\n", arr_emsg_txt[err] );
               // Unlock the sub_arena
               atomic_store_explicit(&sub_arena->lock, 0, memory_order_release);
               return;
@@ -181,7 +181,7 @@ void ma_free_simple_ptr( memorable_arena_t * restrict arena, uint8_t idx_user, v
         //sub_arena->nr_free_chunks += nr_chunks_released;
 
         switch ( err ) {
-          case err_msg_no_such_entry:
+          case emsg_no_such_entry:
             fprintf( stdout, "[MA-Debug] ptr = %#018lx\n", ptr2ui(ptr) );
             fprintf( stdout, "[MA-Debug] sub_arena->smm.data = %#018lx\n",
                 ptr2ui(sub_arena->smm.data) );
@@ -190,10 +190,10 @@ void ma_free_simple_ptr( memorable_arena_t * restrict arena, uint8_t idx_user, v
             fprintf( stdout, "[MA-Debug] data+data_len-ptr = %lu\n", ptr2ui(sub_arena->smm.data) + sub_arena->smm.data_len*CACHELINE_LEN - ptr2ui(ptr) );
             default_free( nullptr, ptr );
             break;
-          case err_msg_no_error:
+          case emsg_no_error:
             break;
           default:
-            fprintf( stderr, "[MA] ma_free_simple_ptr failed. (%s)\n", err_msg_text[err] );
+            fprintf( stderr, "[MA] ma_free_simple_ptr failed. (%s)\n", arr_emsg_txt[err] );
             return;
         }
 
@@ -220,7 +220,7 @@ void ma_free_assuming_lock_has_been_obtained( struct ma_sub_arena * restrict sub
       sub_arena, ma_internal_malloc, ptr, nullptr, LOG2_CACHELINE_LEN );
   //    sub_arena, ma_internal_malloc, ptr, &nr_chunks_released, LOG2_CACHELINE_LEN );
   switch ( err ) {
-    case err_msg_no_such_entry:
+    case emsg_no_such_entry:
       fprintf( stdout, "[MA-Debug] ptr = %#018lx\n", ptr2ui(ptr) );
       fprintf( stdout, "[MA-Debug] sub_arena->smm.data = %#018lx\n",
           ptr2ui(sub_arena->smm.data) );
@@ -229,11 +229,11 @@ void ma_free_assuming_lock_has_been_obtained( struct ma_sub_arena * restrict sub
       fprintf( stdout, "[MA-Debug] data+data_len-ptr = %lu\n", ptr2ui(sub_arena->smm.data) + sub_arena->smm.data_len*CACHELINE_LEN - ptr2ui(ptr) );
       default_free( nullptr, ptr );
       break;
-    case err_msg_no_error:
+    case emsg_no_error:
       break;
     default:
       fprintf( stderr, "[MA] ma_free_assuming_lock_has_been_obtained failed. (%s)\n",
-          err_msg_text[err] );
+          arr_emsg_txt[err] );
       return;
   }
   //sub_arena->nr_free_chunks += nr_chunks_released;
@@ -331,16 +331,16 @@ static void release_all( struct ma_sub_arena * restrict sub_arena, uint8_t idx_u
       enum err_msg err = infos_smm_return_chunks_ofs( &sub_arena->smm, sub_arena,
           ma_internal_malloc, mrr->first_few[i], &nr_chunks_released, LOG2_CACHELINE_LEN );
       switch ( err ) {
-        case err_msg_no_error:
+        case emsg_no_error:
           break;
-        case err_msg_no_such_entry:
+        case emsg_no_such_entry:
           fprintf( stderr, "[MA-Debug] smm_return_chunks failed. in release_all (%s)\n",
-              err_msg_text[err] );
+              arr_emsg_txt[err] );
           default_free( nullptr, sub_arena->smm.data + mrr->first_few[i] );
           break;
         default:
           fprintf( stderr, "[MA-Debug] smm_return_chunks failed. in release_all (%s)\n",
-              err_msg_text[err] );
+              arr_emsg_txt[err] );
           break;
       }
       //total_nr_chunks += nr_chunks_released;
@@ -372,16 +372,16 @@ static void release_all( struct ma_sub_arena * restrict sub_arena, uint8_t idx_u
         err = infos_smm_return_chunks_ofs( &sub_arena->smm, sub_arena, ma_internal_malloc,
             lrm->released_memories[i], &nr_chunks_released, LOG2_CACHELINE_LEN );
         switch ( err ) {
-          case err_msg_no_error:
+          case emsg_no_error:
             break;
-          case err_msg_no_such_entry:
+          case emsg_no_such_entry:
             fprintf( stderr, "[MA-Debug] smm_return_chunks failed. in release_all (%s)\n",
-                err_msg_text[err] );
+                arr_emsg_txt[err] );
             default_free( nullptr, sub_arena->smm.data + lrm->released_memories[i] );
             break;
           default:
             fprintf( stderr, "[MA-Debug] smm_return_chunks failed. in release_all (%s)\n",
-                err_msg_text[err] );
+                arr_emsg_txt[err] );
             break;
         }
         //total_nr_chunks += nr_chunks_released;
@@ -393,16 +393,16 @@ static void release_all( struct ma_sub_arena * restrict sub_arena, uint8_t idx_u
     err = infos_smm_return_chunks_ofs( &sub_arena->smm,
         sub_arena, ma_internal_malloc, lrm->ofs_next, &nr_chunks_released, LOG2_CACHELINE_LEN );
     switch ( err ) {
-      case err_msg_no_error:
+      case emsg_no_error:
         break;
-      case err_msg_no_such_entry:
+      case emsg_no_such_entry:
         fprintf( stderr, "[MA-Debug] smm_return_chunks(ofs_next) failed. in release_all (%s)\n",
-            err_msg_text[err] );
+            arr_emsg_txt[err] );
         default_free( nullptr, sub_arena->smm.data + lrm->ofs_next );
         break;
       default:
         fprintf( stderr, "[MA-Debug] smm_return_chunks(ofs_next) failed. in release_all (%s)\n",
-            err_msg_text[err] );
+            arr_emsg_txt[err] );
         break;
     }
     //total_nr_chunks += nr_chunks_released;

@@ -38,7 +38,7 @@ __attribute__ ((optimize("s")))
 enum err_msg init_appdev_support_thread(void)
 {
   if ( thread_attr.__align ) {
-    return err_msg_already_done;
+    return emsg_already_done;
   }
 
 #if defined(__linux)
@@ -51,9 +51,9 @@ enum err_msg init_appdev_support_thread(void)
   if ( (err = pthread_attr_init(&thread_attr)) ) {
     switch ( err ) {
       case ENOMEM:
-        return err_msg_out_of_memory;
+        return emsg_out_of_memory;
       default:
-        return err_msg_unknown;
+        return emsg_unknown;
     }
   }
 
@@ -114,13 +114,13 @@ enum err_msg create_thread_( const struct create_thread_params params[static 1] 
   if ( err ) {
     switch ( err ) {
       case EAGAIN:
-        return err_msg_out_of_resource;
+        return emsg_out_of_resource;
       case EINVAL:
-        return err_msg_invalid_request;
+        return emsg_invalid_request;
       case EPERM:
-        return err_msg_permission_denied;
+        return emsg_permission_denied;
       default:
-        return err_msg_unknown;
+        return emsg_unknown;
     }
   }
 
@@ -138,19 +138,19 @@ enum err_msg join_thread(thread thread, void ** retval) {
   err = pthread_join(thread, retval);
   switch ( err ) {
     case EDEADLK:
-      return err_msg_deadlock_detected;
+      return emsg_deadlock_detected;
     case EINVAL:
-      return err_msg_invalid_request;
+      return emsg_invalid_request;
     case ESRCH:
-      return err_msg_wrong_name_given;
+      return emsg_wrong_name_given;
     default:
-      return err_msg_unknown;
-    case err_msg_no_error:
+      return emsg_unknown;
+    case emsg_no_error:
       break;
   }
 
 #elif defined(_WIN32)
   // TODO: the Windows counterpart of POSIX thread
 #endif
-  return err_msg_no_error;
+  return emsg_no_error;
 }

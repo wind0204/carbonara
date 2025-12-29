@@ -6,6 +6,7 @@
 #include <stdint.h>
 #include <stddef.h>
 #include <vulkan/vulkan_core.h>
+#include <SDL3/SDL_asyncio.h>
 
 #include "util-c_lang-basic.h"
 #include "info_struct.h"
@@ -213,7 +214,7 @@ void * ma_realloc_aligned( struct ma_sub_arena * sub_arena,
  * You don't need to call this if you want an n-byte aligned position whre n is
  * less than or equal to the size of a cacheline.
  * You must lock \a sub_arena before requesting a memory allocation.
- * 
+ *
  * \param alignment The number of bytes to align the position right after the returned
  *     colored_string, it MUST be a power of two.
  *     It should also not be greater than UINT8_MAX since the type of the offset field
@@ -268,12 +269,20 @@ void ma_free_amap( memorable_arena_t * arena, uint8_t idx_user );
 
 
 
+
+
+//
+// Why do we have graphics stuff here?
+//
+
 //-------------------------------------------------------------------------------------------------
 
 enum vk_buf_types : unsigned int {
   vk_buf_type_unknown = 0,
-  vk_buf_type_transfer,
-  vk_buf_type_tex8_2048,
+  vk_buf_type_texarr_2048,
+  //vk_buf_type_transfer,
+  //vk_buf_type_vert_buf,
+  //vk_buf_type_ind_buf,
   vk_buf_type_cnt,
 };
 struct vk_upload {
@@ -310,7 +319,7 @@ struct ma_vk_mem_mgr {
   uint16_t len_non_coherent_atom;  ///< The size and alignment in bytes that bounds concurrent
                                    ///<  access to host-mapped device memory. The value must be a
                                    ///<  power of two.
-  uint8_t arr_best_mtype_idx[vk_buf_type_cnt];
+  uint8_t arr_mtype_used[vk_buf_type_cnt];
 };
 constexpr size_t len_chunk_of_pages = 1024ul * 1024 * 64;
 constexpr size_t mallocs_node_size = 1024ul * 1024 * 1024 * 8 / len_chunk_of_pages *
@@ -371,6 +380,17 @@ enum err_msg ma_bind_img_to_malloc(
     void * (*custom_malloc)(void * userdata, size_t alignment, size_t size),
     VkDevice log_dev,
     VkImage vk_img,
+    uint32_t type_idx,
+    VkDeviceSize req_size,  // Required allocation size in bytes
+    VkDeviceSize req_alignment,  // Required allocation alignment in bytes
+    struct range_u32 ** pp_malloc_range
+    );
+enum err_msg ma_bind_buf_to_malloc(
+    struct ma_vk_mem_mgr * restrict p_vmm,
+    void * restrict userdata,
+    void * (*custom_malloc)(void * userdata, size_t alignment, size_t size),
+    VkDevice log_dev,
+    VkBuffer vk_buf,
     uint32_t type_idx,
     VkDeviceSize req_size,  // Required allocation size in bytes
     VkDeviceSize req_alignment,  // Required allocation alignment in bytes

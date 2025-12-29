@@ -1,4 +1,3 @@
-#include "info_struct.h"
 #include <stdatomic.h>
 #include <stdint.h>
 
@@ -22,12 +21,13 @@
 //#include <vulkan/vulkan_android.h>
 //#endif
 
+#include "info_struct.h"
 #include "appdev_support-processor_map.h"
 #include "carbonara-config.h"
 #include "carbonara-mm.h"
 #include "carbonara-singleton.h"
 #include "carbonara-graphics.h"
-#include "carbonara-texture.h"
+#include "carbonara-asset.h"
 #include "util-c_lang-basic.h"
 //#include "vulkan_functions.h"
 #include "memorable_arena.h"
@@ -47,9 +47,6 @@
 #if defined( DEBUG_MODE )
     "VK_LAYER_LUNARG_api_dump",
 #endif
-    //"VK_LAYER_LUNARG_crash_diagnostic",  // I can't use this somehow. vkCreateDevice will complain
-                                         // about requesting a feature that is not present in the
-                                         // driver.
   };
 #endif
 
@@ -64,13 +61,12 @@ static const char * const names_instance_extensions_required[] = {
 
 static const char * const names_device_extensions_required[] = {
   VK_KHR_SWAPCHAIN_EXTENSION_NAME,  // To draw image on screen
-
-  VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME,  // https://github.com/KhronosGroup/Vulkan-Guide/blob/main/chapters/extensions/VK_KHR_synchronization2.adoc
-                                            //  VkPhysicalDeviceVulkan13Features::synchronization2
-
-  //VK_KHR_MAINTENANCE1_EXTENSION_NAME,  // For various stuff https://docs.vulkan.org/refpages/latest/refpages/source/VK_KHR_maintenance1.html
+  VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME,  // VkPhysicalDeviceVulkan13Features::synchronization2
+  //VK_KHR_MAINTENANCE1_EXTENSION_NAME,  // Do we need this?
   VK_KHR_MAINTENANCE_8_EXTENSION_NAME,  // To make src/dst sync scopes to work when doing a queue
                                         //  family ownership transfer.
+  VK_EXT_SCALAR_BLOCK_LAYOUT_EXTENSION_NAME,  //\
+                                            //VkPhysicalDeviceVulkan12Features::scalarBlockLayout
 };
 
 // TODO remove these below
@@ -89,9 +85,7 @@ thread_local VkAllocationCallbacks vk_alloc_callbacks;
 
 
 //-------------------------------------------------------------------------------------------------
-//void init_graphics(void)
-//{
-//}
+static enum err_msg create_2nd_renderpass( struct cara_vk_renderer * renderer );
 
 
 //-------------------------------------------------------------------------------------------------
@@ -247,8 +241,8 @@ uint8_t init_vulkan(
   //
   // Prepare VkAllocationCallbacks after a clean-up
   //
-  auto the_texture = cara_vk.stone_texture;
-  auto the_texture2 = cara_vk.sand_texture;
+  auto the_texture = cara_vk.alb_stone;
+  auto the_texture2 = cara_vk.alb_sand;
   auto len_2048_bc7 = cara_vk.asset_size;
   auto vert_shader = cara_vk.spv_simple_vert;
   auto len_vert_shader = cara_vk.len_simple_vert;
@@ -258,13 +252,13 @@ uint8_t init_vulkan(
   auto len_depth_only_shader = cara_vk.len_z_only;
   auto depth_only_frag_shader = cara_vk.spv_z_only_frag;
   auto len_depth_only_frag_shader = cara_vk.len_z_only_frag;
-  auto cp2sc_frag_shader = cara_vk.spv_copy2sc_vert;
-  auto len_cp2sc_frag_shader = cara_vk.len_copy2sc_vert;
-  auto cp2sc_vert_shader = cara_vk.spv_copy2sc_frag;
-  auto len_cp2sc_vert_shader = cara_vk.len_copy2sc_frag;
+  auto sc_frag_shader = cara_vk.spv_swapchain_vert;
+  auto len_sc_frag_shader = cara_vk.len_swapchain_vert;
+  auto sc_vert_shader = cara_vk.spv_swapchain_frag;
+  auto len_sc_vert_shader = cara_vk.len_swapchain_frag;
   memset( &cara_vk, 0, sizeof(struct cara_vk_renderer) );
-  cara_vk.stone_texture = the_texture;
-  cara_vk.sand_texture = the_texture2;
+  cara_vk.alb_stone = the_texture;
+  cara_vk.alb_sand = the_texture2;
   cara_vk.asset_size = len_2048_bc7;
   cara_vk.spv_simple_vert = vert_shader;
   cara_vk.len_simple_vert = len_vert_shader;
@@ -274,10 +268,10 @@ uint8_t init_vulkan(
   cara_vk.len_z_only = len_depth_only_shader;
   cara_vk.spv_z_only_frag = depth_only_frag_shader;
   cara_vk.len_z_only_frag = len_depth_only_frag_shader;
-  cara_vk.spv_copy2sc_vert = cp2sc_vert_shader;
-  cara_vk.len_copy2sc_vert = len_cp2sc_vert_shader;
-  cara_vk.spv_copy2sc_frag = cp2sc_frag_shader;
-  cara_vk.len_copy2sc_frag = len_cp2sc_frag_shader;
+  cara_vk.spv_swapchain_vert = sc_vert_shader;
+  cara_vk.len_swapchain_vert = len_sc_vert_shader;
+  cara_vk.spv_swapchain_frag = sc_frag_shader;
+  cara_vk.len_swapchain_frag = len_sc_frag_shader;
 
 
   //
@@ -472,8 +466,8 @@ uint8_t init_vulkan(
     vk13_features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;
     vk13_features.pNext = &vk12_features;
 
-    // pNext chain includes a VkPhysicalDeviceVulkan12Features structure, then it must not include a
-    //  VkPhysicalDeviceTimelineSemaphoreFeatures structure. The features in
+    // pNext chain includes a VkPhysicalDeviceVulkan12Features structure, then it must not include
+    //  a VkPhysicalDeviceTimelineSemaphoreFeatures structure.  The features in
     //  VkPhysicalDeviceTimelineSemaphoreFeatures were promoted in Vulkan 1.2 and is also found in
     //  VkPhysicalDeviceVulkan12Features.  To prevent one feature setting something to VK_TRUE and
     //  the other to VK_FALSE, only one struct containing the feature is allowed.
@@ -555,6 +549,16 @@ uint8_t init_vulkan(
       fprintf( stdout, "[Vulkan] %s doesn't support %s.\n",
           arr_device_props[idx_phys_dev].properties.deviceName,
           "separateDepthStencilLayouts"
+          );
+#endif
+      arr_phys_devices[idx_phys_dev] = 0;
+      continue;
+    }
+    if ( !vk12_features.scalarBlockLayout ) {
+#ifdef DEBUG_MODE
+      fprintf( stdout, "[Vulkan] %s doesn't support %s.\n",
+          arr_device_props[idx_phys_dev].properties.deviceName,
+          "scalarBlockLayout"
           );
 #endif
       arr_phys_devices[idx_phys_dev] = 0;
@@ -753,7 +757,8 @@ error_after_window_early:
   constexpr uint_fast8_t dedicated_transfer = 1 << 1;  // VK_QUEUE_TRANSFER_BIT without graphics
   constexpr uint_fast8_t very_dedicated_transfer = 1 << 2;  ///< VK_QUEUE_TRANSFER_BIT without
                                                             ///<  graphics and compute
-  constexpr VkQueueFlags required_q_flags = VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_TRANSFER_BIT;
+  constexpr VkQueueFlags required_q_flags =
+    VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT | VK_QUEUE_TRANSFER_BIT;
 
   uint_fast8_t dedicated_qfam_availability[nr_phys_devices];
   for ( unsigned int i = 0; i < nr_phys_devices; i++ ) {
@@ -822,17 +827,17 @@ error_after_window_early:
 
     // See if this physical device has got all the capabilities required
     VkQueueFlags q_flags_not_found_yet = required_q_flags;
-    for ( uint_fast8_t idx_q_fam_props = 0;
-        idx_q_fam_props < nr_q_fams[idx_phys_dev]; idx_q_fam_props++ ) {
-      VkQueueFlags q_flags = arr_qfam_props[idx_q_fam_props].queueFamilyProperties.queueFlags;
+    for ( uint_fast8_t q_fam_props_idx = 0;
+        q_fam_props_idx < nr_q_fams[idx_phys_dev]; q_fam_props_idx++ ) {
+      VkQueueFlags q_flags = arr_qfam_props[q_fam_props_idx].queueFamilyProperties.queueFlags;
 
       // We need a queue family that supports presentation to the specific surface created via SDL
       // for VK_QUEUE_GRAPHICS_BIT
       VkBool32 supports_presentation;
       vkGetPhysicalDeviceSurfaceSupportKHR( arr_phys_devices[idx_phys_dev],
-          idx_q_fam_props, presentation_surface, &supports_presentation );
+          q_fam_props_idx, presentation_surface, &supports_presentation );
       if ( VK_QUEUE_GRAPHICS_BIT &
-          arr_qfam_props[idx_q_fam_props].queueFamilyProperties.queueFlags &&
+          arr_qfam_props[q_fam_props_idx].queueFamilyProperties.queueFlags &&
           supports_presentation != VK_TRUE ) {
         q_flags = q_flags & ~VK_QUEUE_GRAPHICS_BIT;
       }
@@ -901,10 +906,13 @@ error_after_window_early:
   uint_fast8_t idx_phys_deviced_picked = UINT_FAST8_MAX;
   VkDeviceQueueCreateInfo * arr_q_create_info = nullptr;
   VkQueueFamilyProperties2 * arr_qfam_props = nullptr;
-  //uint32_t max_q_count = 0;  // We probably don't need to care about queueCount
   uint_fast8_t nr_q_fams_picked = 0;
   const uint_fast8_t prefer_discrete_gpus = nr_discrete_gpus;
-  uint_fast8_t idx_transfer_q = ~0, idx_graphics_q = ~0, idx_compute_q = ~0;
+  constexpr unsigned int graphics = 3;
+  constexpr unsigned int compute = 2;
+  constexpr unsigned int transfer = 1;
+  constexpr unsigned int loader = 0;
+  unsigned int arr_q_fam_idx[4];
   for ( uint_fast8_t idx_phys_dev = 0;
       idx_phys_dev < nr_phys_devices; idx_phys_dev++ ) {
 
@@ -933,58 +941,305 @@ error_after_window_early:
       fprintf( stdout, "[Vulkan] Could not acquire the properties of the queue families of '%s'.\n",
           arr_device_props[idx_phys_dev].properties.deviceName );
       // arr_phys_devices[idx_phys_dev] = 0;
-      ma_free( cara_single.mem_arena,
-          worker_state->worker_idx, arr_qfam_props );
+      ma_free( cara_single.mem_arena, worker_state->worker_idx, arr_qfam_props );
       continue;
     }
 
     // Populate arr_q_create_info
-    nr_q_fams_picked = 0;
-    //VkQueueFlags flags_matched = 0;
-    VkQueueFlags q_flags_not_found_yet = required_q_flags;
-    for ( uint_fast8_t idx_q_fam_props = 0;
-        idx_q_fam_props < nr_q_fams[idx_phys_dev]; idx_q_fam_props++ ) {
-      VkQueueFlags q_flags = arr_qfam_props[idx_q_fam_props].queueFamilyProperties.queueFlags;
+    unsigned int nr_graphics_q_fams_found = 0, nr_trans_q_fams_found = 0, nr_comp_q_fams_found = 0;
+    constexpr unsigned int nr_memory_slots = 8;
+    unsigned int q_fams_with_graphics[nr_memory_slots];
+    unsigned int q_fams_with_transfer[nr_memory_slots];
+    unsigned int q_fams_with_compute[nr_memory_slots];
+    for ( unsigned int slot_idx = 0; slot_idx < nr_memory_slots; slot_idx++ ) {
+      q_fams_with_graphics[slot_idx] = UINT_MAX_(q_fams_with_graphics[0]);
+      q_fams_with_transfer[slot_idx] = UINT_MAX_(q_fams_with_transfer[0]);
+      q_fams_with_compute[slot_idx] = UINT_MAX_(q_fams_with_compute[0]);
+    }
+    for ( uint_fast8_t q_fam_props_idx = 0;
+        q_fam_props_idx < nr_q_fams[idx_phys_dev]; q_fam_props_idx++ ) {
       VkBool32 supports_presentation;
       vkGetPhysicalDeviceSurfaceSupportKHR(arr_phys_devices[idx_phys_dev],
-          idx_q_fam_props, presentation_surface, &supports_presentation);
+          q_fam_props_idx, presentation_surface, &supports_presentation);
+      VkQueueFlags q_flags = arr_qfam_props[q_fam_props_idx].queueFamilyProperties.queueFlags;
       // We need a queue family that supports presentation to the specific surface created via SDL
       // for VK_QUEUE_GRAPHICS_BIT
-      if ( VK_QUEUE_GRAPHICS_BIT &
-          arr_qfam_props[idx_q_fam_props].queueFamilyProperties.queueFlags &&
-          supports_presentation != VK_TRUE ) {
-        q_flags = q_flags & ~VK_QUEUE_GRAPHICS_BIT;
+      if ( VK_QUEUE_GRAPHICS_BIT & q_flags && supports_presentation == VK_TRUE ) {
+        q_fams_with_graphics[nr_graphics_q_fams_found] = q_fam_props_idx;
+        nr_graphics_q_fams_found++;
+        assume( nr_graphics_q_fams_found < nr_memory_slots );
       }
-
-      if ( q_flags & VK_QUEUE_COMPUTE_BIT && q_flags & VK_QUEUE_GRAPHICS_BIT ) {
-        if ( dedicated_qfam_availability[idx_phys_dev] & dedicated_compute ) {
-          q_flags &= ~VK_QUEUE_COMPUTE_BIT;
-        }
+      if ( VK_QUEUE_COMPUTE_BIT & q_flags ) {
+        q_fams_with_compute[nr_comp_q_fams_found] = q_fam_props_idx;
+        nr_comp_q_fams_found++;
+        assume( nr_comp_q_fams_found < nr_memory_slots );
       }
-
-      if ( q_flags & VK_QUEUE_TRANSFER_BIT ) {
-        if ( dedicated_qfam_availability[idx_phys_dev] & very_dedicated_transfer ) {
-          if ( q_flags & VK_QUEUE_GRAPHICS_BIT || q_flags & VK_QUEUE_COMPUTE_BIT ) {
-            q_flags &= ~VK_QUEUE_TRANSFER_BIT;
-          }
-        } else if ( dedicated_qfam_availability[idx_phys_dev] & dedicated_transfer ) {
-          if ( q_flags & VK_QUEUE_GRAPHICS_BIT ) {
-            q_flags &= ~VK_QUEUE_TRANSFER_BIT;
-          }
-        }
-      }
-
-      if ( q_flags_not_found_yet & q_flags ) {
-        nr_q_fams_picked++;
-        //if ( max_q_count < arr_queue_families[idx_q_fam_props].queueCount ) {
-        //  max_q_count = arr_queue_families[idx_q_fam_props].queueCount;
-        //}
-        q_flags_not_found_yet = q_flags_not_found_yet & ~q_flags;
-      }
-      if ( !q_flags_not_found_yet ) {
-        break;
+      if ( VK_QUEUE_TRANSFER_BIT & q_flags ) {
+        q_fams_with_transfer[nr_trans_q_fams_found] = q_fam_props_idx;
+        nr_trans_q_fams_found++;
+        assume( nr_trans_q_fams_found < nr_memory_slots );
       }
     }
+
+    for ( unsigned int i = 0; i < _arr_elem_cnt(arr_q_fam_idx); i++ ) {
+      arr_q_fam_idx[i] = UINT_MAX_(arr_q_fam_idx[0]);
+    }
+    unsigned int loader_ded_lv = 0;
+    unsigned int trans_ded_lv = 0;
+    constexpr unsigned int ded_lv_highest = 3;
+    constexpr unsigned int ded_lv_moderate = 2;
+    constexpr unsigned int ded_lv_low = 1;
+    bool try_to_make_a_separate_loader_q = true;
+    // Look for a queue family with VK_QUEUE_TRANSFER_BIT capability
+    if ( dedicated_qfam_availability[idx_phys_dev] & very_dedicated_transfer ) {
+      loader_ded_lv = trans_ded_lv = ded_lv_highest;
+look_for_very_dedicated_transfer_q_fam:
+      for ( unsigned int idx = 0; idx < nr_trans_q_fams_found; idx++ ) {
+        VkQueueFlags q_flags =
+          arr_qfam_props[q_fams_with_transfer[idx]].queueFamilyProperties.queueFlags;
+        if ( q_flags & VK_QUEUE_GRAPHICS_BIT || q_flags & VK_QUEUE_COMPUTE_BIT ) {
+          continue;
+        }
+        if ( arr_q_fam_idx[loader] == UINT_MAX_(arr_q_fam_idx[loader]) ) {
+          arr_q_fam_idx[loader] = q_fams_with_transfer[idx];
+          if ( try_to_make_a_separate_loader_q &&
+              arr_qfam_props[q_fams_with_transfer[idx]].queueFamilyProperties.queueCount < 2 ) {
+            continue;
+          }
+          arr_q_fam_idx[transfer] = q_fams_with_transfer[idx];
+          goto look_for_dedicated_compute_q_fam;
+        } else {
+          arr_q_fam_idx[transfer] = q_fams_with_transfer[idx];
+          goto look_for_dedicated_compute_q_fam;
+        }
+      }
+      if ( arr_q_fam_idx[transfer] == UINT_MAX_(arr_q_fam_idx[transfer]) ) {
+        trans_ded_lv = ded_lv_moderate;
+        goto look_for_moderately_dedicated_transfer_q_fam;
+      }
+    } else if ( dedicated_qfam_availability[idx_phys_dev] & dedicated_transfer ) {
+      loader_ded_lv = trans_ded_lv = ded_lv_moderate;
+look_for_moderately_dedicated_transfer_q_fam:
+      for ( unsigned int idx = 0; idx < nr_trans_q_fams_found; idx++ ) {
+        VkQueueFlags q_flags =
+          arr_qfam_props[q_fams_with_transfer[idx]].queueFamilyProperties.queueFlags;
+        if ( q_flags & VK_QUEUE_GRAPHICS_BIT ) {
+          continue;
+        }
+        if ( arr_q_fam_idx[loader] == UINT_MAX_(arr_q_fam_idx[loader]) ) {
+          arr_q_fam_idx[loader] = q_fams_with_transfer[idx];
+          if ( try_to_make_a_separate_loader_q &&
+              arr_qfam_props[q_fams_with_transfer[idx]].queueFamilyProperties.queueCount < 2 ) {
+            continue;
+          }
+          arr_q_fam_idx[transfer] = q_fams_with_transfer[idx];
+          goto look_for_dedicated_compute_q_fam;
+        } else {
+          if ( arr_q_fam_idx[loader] == q_fams_with_transfer[idx] &&
+            arr_qfam_props[q_fams_with_transfer[idx]].queueFamilyProperties.queueCount < 2 &&
+            try_to_make_a_separate_loader_q ) {
+            continue;
+          }
+          arr_q_fam_idx[transfer] = q_fams_with_transfer[idx];
+          goto look_for_dedicated_compute_q_fam;
+        }
+      }
+      if ( arr_q_fam_idx[transfer] == UINT_MAX_(arr_q_fam_idx[transfer]) ) {
+        trans_ded_lv = ded_lv_low;
+        goto look_for_generalist_transfer_q_fam;
+      }
+    } else {
+      loader_ded_lv = trans_ded_lv = ded_lv_low;
+look_for_generalist_transfer_q_fam:
+      for ( unsigned int idx = 0; idx < nr_trans_q_fams_found; idx++ ) {
+        if ( arr_q_fam_idx[loader] == UINT_MAX_(arr_q_fam_idx[loader]) ) {
+          arr_q_fam_idx[loader] = q_fams_with_transfer[idx];
+          if ( try_to_make_a_separate_loader_q &&
+              arr_qfam_props[q_fams_with_transfer[idx]].queueFamilyProperties.queueCount < 2 ) {
+            continue;
+          }
+          arr_q_fam_idx[transfer] = q_fams_with_transfer[idx];
+          goto look_for_dedicated_compute_q_fam;
+        } else {
+          if ( arr_q_fam_idx[loader] == q_fams_with_transfer[idx] &&
+            arr_qfam_props[q_fams_with_transfer[idx]].queueFamilyProperties.queueCount < 2 &&
+            try_to_make_a_separate_loader_q ) {
+            continue;
+          }
+          arr_q_fam_idx[transfer] = q_fams_with_transfer[idx];
+          goto look_for_dedicated_compute_q_fam;
+        }
+      }
+      if ( arr_q_fam_idx[transfer] == UINT_MAX_(arr_q_fam_idx[transfer]) ) {
+        if ( loader_ded_lv == ded_lv_highest && trans_ded_lv == ded_lv_highest ) {
+          trans_ded_lv = ded_lv_moderate;
+          goto look_for_moderately_dedicated_transfer_q_fam;
+        }
+        if ( loader_ded_lv == ded_lv_moderate && trans_ded_lv == ded_lv_moderate ) {
+          trans_ded_lv = ded_lv_low;
+          goto look_for_generalist_transfer_q_fam;
+        }
+        for ( unsigned int i = 0; i < _arr_elem_cnt(arr_q_fam_idx); i++ ) {
+          arr_q_fam_idx[i] = UINT_MAX_(arr_q_fam_idx[0]);
+        }
+        if ( loader_ded_lv == ded_lv_highest ) {
+          loader_ded_lv = trans_ded_lv = ded_lv_moderate;
+          goto look_for_moderately_dedicated_transfer_q_fam;
+        } else if ( loader_ded_lv == ded_lv_moderate ) {
+          loader_ded_lv = trans_ded_lv = ded_lv_low;
+          goto look_for_generalist_transfer_q_fam;
+        } else if ( loader_ded_lv == ded_lv_low ) {
+          loader_ded_lv = trans_ded_lv = ded_lv_highest;
+          try_to_make_a_separate_loader_q = false;
+          goto look_for_generalist_transfer_q_fam;
+        }
+      }
+    }  // look_for_generalist_transfer_q_fam:
+
+look_for_dedicated_compute_q_fam:
+    if ( !(required_q_flags & VK_QUEUE_COMPUTE_BIT) ) {
+      goto look_for_graphics_q_fam;
+    }
+    if ( dedicated_qfam_availability[idx_phys_dev] & dedicated_compute ) {
+      // Look for a dedicated compute queue family
+      for ( unsigned int idx = 0; idx < nr_comp_q_fams_found; idx++ ) {
+        VkQueueFlags q_flags =
+          arr_qfam_props[q_fams_with_compute[idx]].queueFamilyProperties.queueFlags;
+        if ( q_flags & VK_QUEUE_GRAPHICS_BIT ) {
+          continue;
+        }
+        if ( arr_q_fam_idx[compute] == UINT_MAX_(arr_q_fam_idx[compute]) ) {
+          if ( arr_q_fam_idx[loader] == q_fams_with_compute[idx] ) {
+            if ( arr_qfam_props[q_fams_with_compute[idx]].queueFamilyProperties.queueCount < 2 &&
+                try_to_make_a_separate_loader_q ) {
+              continue;
+            }
+          }
+          arr_q_fam_idx[compute] = q_fams_with_compute[idx];
+          goto look_for_graphics_q_fam;
+        }
+      }
+      if ( arr_q_fam_idx[compute] == UINT_MAX_(arr_q_fam_idx[compute]) ) {
+        goto look_for_generalist_compute_q_fam;
+      }
+    } else {
+look_for_generalist_compute_q_fam:
+      for ( unsigned int idx = 0; idx < nr_comp_q_fams_found; idx++ ) {
+        if ( arr_q_fam_idx[compute] == UINT_MAX_(arr_q_fam_idx[compute]) ) {
+          if ( arr_q_fam_idx[loader] == q_fams_with_compute[idx] ) {
+            if ( arr_qfam_props[q_fams_with_compute[idx]].queueFamilyProperties.queueCount < 2 &&
+                try_to_make_a_separate_loader_q ) {
+              continue;
+            }
+          }
+          arr_q_fam_idx[compute] = q_fams_with_compute[idx];
+          goto look_for_graphics_q_fam;
+        }
+      }
+      if ( arr_q_fam_idx[compute] == UINT_MAX_(arr_q_fam_idx[compute]) ) {
+        if ( loader_ded_lv == ded_lv_highest && trans_ded_lv == ded_lv_highest ) {
+          trans_ded_lv = ded_lv_moderate;
+          arr_q_fam_idx[transfer] = UINT_MAX_( arr_q_fam_idx[0] );
+          goto look_for_moderately_dedicated_transfer_q_fam;
+        }
+        if ( loader_ded_lv == ded_lv_moderate && trans_ded_lv == ded_lv_moderate ) {
+          trans_ded_lv = ded_lv_low;
+          arr_q_fam_idx[transfer] = UINT_MAX_( arr_q_fam_idx[0] );
+          goto look_for_generalist_transfer_q_fam;
+        }
+        for ( unsigned int i = 0; i < _arr_elem_cnt(arr_q_fam_idx); i++ ) {
+          arr_q_fam_idx[i] = UINT_MAX_(arr_q_fam_idx[0]);
+        }
+        if ( loader_ded_lv == ded_lv_highest ) {
+          loader_ded_lv = trans_ded_lv = ded_lv_moderate;
+          goto look_for_moderately_dedicated_transfer_q_fam;
+        } else if ( loader_ded_lv == ded_lv_moderate ) {
+          loader_ded_lv = trans_ded_lv = ded_lv_low;
+          goto look_for_generalist_transfer_q_fam;
+        } else if ( loader_ded_lv == ded_lv_low ) {
+          loader_ded_lv = trans_ded_lv = ded_lv_highest;
+          try_to_make_a_separate_loader_q = false;
+          goto look_for_very_dedicated_transfer_q_fam;
+        } else {
+          fprintf( stdout, "[Vulkan] Could not choose a queue family with "
+              " VK_QUEUE_COMPUTE_BIT capability from '%s'\n",
+              arr_device_props[idx_phys_dev].properties.deviceName );
+          // arr_phys_devices[idx_phys_dev] = 0;
+          ma_free( cara_single.mem_arena, worker_state->worker_idx, arr_qfam_props );
+          continue;
+        }
+      }
+    }  // look_for_generalist_compute_q_fam:
+
+    // Look for a queue family with VK_QUEUE_GRAPHICS_BIT capability
+look_for_graphics_q_fam:
+    for ( unsigned int idx = 0; idx < nr_graphics_q_fams_found; idx++ ) {
+      if ( arr_q_fam_idx[loader] == q_fams_with_graphics[idx] ) {
+        if ( arr_qfam_props[q_fams_with_graphics[idx]].queueFamilyProperties.queueCount < 2 &&
+            try_to_make_a_separate_loader_q ) {
+          continue;
+        }
+      }
+      arr_q_fam_idx[graphics] = q_fams_with_graphics[idx];
+      break;
+    }
+
+    if ( arr_q_fam_idx[graphics] == UINT_MAX_(arr_q_fam_idx[graphics]) ) {
+      if ( loader_ded_lv == ded_lv_highest && trans_ded_lv == ded_lv_highest ) {
+        trans_ded_lv = ded_lv_moderate;
+        arr_q_fam_idx[transfer] = UINT_MAX_( arr_q_fam_idx[0] );
+        arr_q_fam_idx[compute] = UINT_MAX_( arr_q_fam_idx[0] );
+        arr_q_fam_idx[graphics] = UINT_MAX_( arr_q_fam_idx[0] );
+        goto look_for_moderately_dedicated_transfer_q_fam;
+      }
+      if ( loader_ded_lv == ded_lv_moderate && trans_ded_lv == ded_lv_moderate ) {
+        trans_ded_lv = ded_lv_low;
+        arr_q_fam_idx[transfer] = UINT_MAX_( arr_q_fam_idx[0] );
+        arr_q_fam_idx[compute] = UINT_MAX_( arr_q_fam_idx[0] );
+        arr_q_fam_idx[graphics] = UINT_MAX_( arr_q_fam_idx[0] );
+        goto look_for_generalist_transfer_q_fam;
+      }
+      for ( unsigned int i = 0; i < _arr_elem_cnt(arr_q_fam_idx); i++ ) {
+        arr_q_fam_idx[i] = UINT_MAX_(arr_q_fam_idx[0]);
+      }
+      if ( loader_ded_lv == ded_lv_highest ) {
+        loader_ded_lv = trans_ded_lv = ded_lv_moderate;
+        goto look_for_moderately_dedicated_transfer_q_fam;
+      } else if ( loader_ded_lv == ded_lv_moderate ) {
+        loader_ded_lv = trans_ded_lv = ded_lv_low;
+        goto look_for_generalist_transfer_q_fam;
+      } else if ( loader_ded_lv == ded_lv_low ) {
+        loader_ded_lv = trans_ded_lv = ded_lv_highest;
+        try_to_make_a_separate_loader_q = false;
+        goto look_for_very_dedicated_transfer_q_fam;
+      } else {
+        fprintf( stdout, "[Vulkan] Could not choose a queue family with "
+            " VK_QUEUE_GRAPHICS_BIT capability from '%s'\n",
+            arr_device_props[idx_phys_dev].properties.deviceName );
+        // arr_phys_devices[idx_phys_dev] = 0;
+        ma_free( cara_single.mem_arena, worker_state->worker_idx, arr_qfam_props );
+        continue;
+      }
+    }
+
+    nr_q_fams_picked = 0;
+    typeof(arr_q_fam_idx) arr_uniq_q_fams;
+    unsigned int nr_uniq_q_fams = 0;
+    for ( unsigned int i = 0; i < _arr_elem_cnt(arr_q_fam_idx); i++ ) {
+      if ( arr_q_fam_idx[i] == UINT_MAX_(arr_q_fam_idx[0]) ) {
+        // We didn't even look for this capability in the first place
+        continue;
+      }
+      for ( unsigned int j = 0; j < nr_uniq_q_fams; j++ ) {
+        if ( arr_q_fam_idx[i] == arr_uniq_q_fams[j] ) {
+          goto we_have_already_recorded_that_q_fam;
+        }
+      }
+      arr_uniq_q_fams[nr_uniq_q_fams] = arr_q_fam_idx[i];
+      nr_uniq_q_fams++;
+we_have_already_recorded_that_q_fam:
+    }
+    nr_q_fams_picked = nr_uniq_q_fams;
 
 
     //
@@ -1000,13 +1255,11 @@ error_after_window_early:
       old_value = 0;
     }
 
-    constexpr size_t nr_queues_from_each_qfam = 1;
     static_assert( alignof(VkDeviceQueueCreateInfo) >= alignof(float), "should be aligned." );
     arr_q_create_info = (void*) ma_malloc(
         cara_single.mem_arena->head,
         _get_nr_units_to_cover(
-          sizeof(VkDeviceQueueCreateInfo) * nr_q_fams_picked + sizeof(float) *
-          nr_queues_from_each_qfam,
+          sizeof(VkDeviceQueueCreateInfo) * nr_q_fams_picked,
           CACHELINE_LEN ),
         nullptr, nullptr
        );
@@ -1014,74 +1267,28 @@ error_after_window_early:
     // Unlock the sub_arena after allocation
     atomic_store_explicit(&cara_single.mem_arena->head->lock, 0, memory_order_release);
 
-    // `pQueuePriorities` is a pointer to an array of `queueCount` normalized floating-point values
-    // , specifying priorities of work that will be submitted to each created queue.
-    // See Queue Priority for more information. (follow the link below to learn about the priority)
-    // https://docs.vulkan.org/spec/latest/chapters/devsandqueues.html#devsandqueues-priority
-    float * restrict const array_of_1s = (void*)( arr_q_create_info + nr_q_fams_picked );
-    for ( uint_fast8_t idx = 0; idx < nr_queues_from_each_qfam; idx++ ) array_of_1s[idx] = 1.0f;
-
-    q_flags_not_found_yet = required_q_flags;
-    for ( uint_fast8_t idx_q_fam_props = 0, idx_q_create_info = 0;
-        idx_q_fam_props < nr_q_fams[idx_phys_dev]; idx_q_fam_props++ ) {
-      VkQueueFlags q_flags = arr_qfam_props[idx_q_fam_props].queueFamilyProperties.queueFlags;
-
-      // We need a queue family that supports presentation to the specific surface created via SDL
-      // for VK_QUEUE_GRAPHICS_BIT
-      VkBool32 supports_presentation;
-      vkGetPhysicalDeviceSurfaceSupportKHR(arr_phys_devices[idx_phys_dev],
-          idx_q_fam_props, presentation_surface, &supports_presentation);
-      if ( VK_QUEUE_GRAPHICS_BIT &
-          arr_qfam_props[idx_q_fam_props].queueFamilyProperties.queueFlags &&
-          supports_presentation != VK_TRUE ) {
-        q_flags = q_flags & ~VK_QUEUE_GRAPHICS_BIT;
-      }
-
-      if ( q_flags & VK_QUEUE_COMPUTE_BIT && q_flags & VK_QUEUE_GRAPHICS_BIT ) {
-        if ( dedicated_qfam_availability[idx_phys_dev] & dedicated_compute ) {
-          q_flags &= ~VK_QUEUE_COMPUTE_BIT;
+    for ( uint_fast8_t q_create_info_idx = 0;
+        q_create_info_idx < nr_q_fams_picked; q_create_info_idx++ ) {
+      unsigned int nr_queues_from_same_q_fam = 0;
+      for ( uint_fast8_t i = 0; i < _arr_elem_cnt(arr_q_fam_idx); i++ ) {
+        if ( arr_uniq_q_fams[q_create_info_idx] == arr_q_fam_idx[i] ) {
+          nr_queues_from_same_q_fam++;
         }
       }
-
-      if ( q_flags & VK_QUEUE_TRANSFER_BIT ) {
-        if ( dedicated_qfam_availability[idx_phys_dev] & very_dedicated_transfer ) {
-          if ( q_flags & VK_QUEUE_GRAPHICS_BIT || q_flags & VK_QUEUE_COMPUTE_BIT ) {
-            q_flags &= ~VK_QUEUE_TRANSFER_BIT;
-          }
-        } else if ( dedicated_qfam_availability[idx_phys_dev] & dedicated_transfer ) {
-          if ( q_flags & VK_QUEUE_GRAPHICS_BIT ) {
-            q_flags &= ~VK_QUEUE_TRANSFER_BIT;
-          }
-        }
-      }
-
-      if ( q_flags_not_found_yet & q_flags ) {
-        if ( q_flags & VK_QUEUE_GRAPHICS_BIT ) {
-          idx_graphics_q = idx_q_create_info;
-        }
-        if ( q_flags & VK_QUEUE_COMPUTE_BIT ) {
-          idx_compute_q = idx_q_create_info;
-        }
-        if ( q_flags & VK_QUEUE_TRANSFER_BIT ) {
-          idx_transfer_q = idx_q_create_info;
-        }
-        arr_q_create_info[idx_q_create_info].sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
-        arr_q_create_info[idx_q_create_info].pNext = 0;
-        arr_q_create_info[idx_q_create_info].flags = 0;
-        arr_q_create_info[idx_q_create_info].queueFamilyIndex = idx_q_fam_props;
-        arr_q_create_info[idx_q_create_info].queueCount = nr_queues_from_each_qfam;
-          //arr_queue_families[idx_q_fam_props].queueCount;
-        arr_q_create_info[idx_q_create_info].pQueuePriorities = array_of_1s;
-        idx_q_create_info++;
-
-        q_flags_not_found_yet = q_flags_not_found_yet & ~q_flags;
-      }
-      if ( !q_flags_not_found_yet ) {
-        break;
-      }
-
+      arr_q_create_info[q_create_info_idx].sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+      arr_q_create_info[q_create_info_idx].pNext = 0;
+      arr_q_create_info[q_create_info_idx].flags = 0;
+      arr_q_create_info[q_create_info_idx].queueFamilyIndex = arr_uniq_q_fams[q_create_info_idx];
+      arr_q_create_info[q_create_info_idx].queueCount = nr_queues_from_same_q_fam;
+      arr_q_create_info[q_create_info_idx].pQueuePriorities = nr_queues_from_same_q_fam == 4 ?
+        (float[]){1.0f, 1.0f, 1.0f, 1.0f} : nr_queues_from_same_q_fam == 3 ?
+        (float[]){1.0f, 1.0f, 1.0f} : nr_queues_from_same_q_fam == 2 ?
+        (float[]){1.0f, 1.0f} : (float[]){1.0f};
+      // `pQueuePriorities` is a pointer to an array of `queueCount` normalized floating-point
+      //  values, specifying priorities of work that will be submitted to each created queue.
+      //  Follow the link below to learn about the priority
+      //  https://docs.vulkan.org/spec/latest/chapters/devsandqueues.html#devsandqueues-priority
     }
-    assume( q_flags_not_found_yet == 0 );
 
     // XXX Other candidates are ignored?
     idx_phys_deviced_picked = idx_phys_dev;
@@ -1117,6 +1324,7 @@ error_after_window_early:
   vk12_features.drawIndirectCount = VK_TRUE;
   vk12_features.imagelessFramebuffer = VK_TRUE;
   vk12_features.separateDepthStencilLayouts = VK_TRUE;
+  vk12_features.scalarBlockLayout = VK_TRUE;
   VkPhysicalDeviceVulkan13Features vk13_features = {0};
   vk13_features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;
   vk13_features.pNext = &vk12_features;
@@ -1184,23 +1392,34 @@ error_after_window_early:
   //
   // Acquire the handles of device queues
   //
-  for ( uint_fast8_t idx_q_create_info = 0;
-      idx_q_create_info < nr_q_fams_picked; idx_q_create_info++ ) {
-    const VkDeviceQueueCreateInfo * const q_create_info = arr_q_create_info + idx_q_create_info;
+  for ( uint_fast8_t q_create_info_idx = 0;
+      q_create_info_idx < nr_q_fams_picked; q_create_info_idx++ ) {
+    const VkDeviceQueueCreateInfo * const q_create_info = arr_q_create_info + q_create_info_idx;
+    VkQueue new_queue[4];
+    for ( unsigned int q_idx = 0; q_idx < q_create_info->queueCount; q_idx++ ) {
+      vkGetDeviceQueue( new_log_dev, q_create_info->queueFamilyIndex, q_idx, &new_queue[q_idx] );
+    }
+    unsigned int nr_queues_assigned = 0;
 
-    VkQueue new_queue;
-    vkGetDeviceQueue( new_log_dev, q_create_info->queueFamilyIndex, 0, &new_queue );
-    if ( idx_q_create_info == idx_graphics_q ) {
-      cara_vk.graphics_q = new_queue;
+    if ( arr_q_create_info[q_create_info_idx].queueFamilyIndex == arr_q_fam_idx[graphics] ) {
+      cara_vk.graphics_q = new_queue[nr_queues_assigned];
       cara_vk.graphics_q_fam_idx = q_create_info->queueFamilyIndex;
+      nr_queues_assigned++;
     }
-    if ( idx_q_create_info == idx_transfer_q ) {
-      cara_vk.transfer_q = new_queue;
-      cara_vk.trans_q_fam_idx = q_create_info->queueFamilyIndex;
-    }
-    if ( idx_q_create_info == idx_compute_q ) {
-      cara_vk.compute_q = new_queue;
+    if ( arr_q_create_info[q_create_info_idx].queueFamilyIndex == arr_q_fam_idx[compute] ) {
+      cara_vk.compute_q = new_queue[nr_queues_assigned];
       cara_vk.compute_q_fam_idx = q_create_info->queueFamilyIndex;
+      nr_queues_assigned++;
+    }
+    if ( arr_q_create_info[q_create_info_idx].queueFamilyIndex == arr_q_fam_idx[transfer] ) {
+      cara_vk.transfer_q = new_queue[nr_queues_assigned];
+      cara_vk.transfer_q_fam_idx = q_create_info->queueFamilyIndex;
+      nr_queues_assigned++;
+    }
+    if ( arr_q_create_info[q_create_info_idx].queueFamilyIndex == arr_q_fam_idx[loader] ) {
+      cara_vk.loader_q = new_queue[nr_queues_assigned];
+      cara_vk.loader_q_fam_idx = q_create_info->queueFamilyIndex;
+      nr_queues_assigned++;
     }
   }
 
@@ -1435,36 +1654,35 @@ error_after_window_early:
   //  old_swapchain = VK_NULL_HANDLE;
   //}
 
-  VkSwapchainCreateInfoKHR swapchain_create_info;
-  swapchain_create_info.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
-  swapchain_create_info.pNext = nullptr;
-  swapchain_create_info.flags = 0;
-  swapchain_create_info.surface = presentation_surface;
-  swapchain_create_info.minImageCount = nr_swapchain_imgs;
-  swapchain_create_info.imageFormat = present_img_fmt;
-  swapchain_create_info.imageColorSpace = color_space;
-  swapchain_create_info.imageExtent = image_size;
-  swapchain_create_info.imageArrayLayers = 1;
-  swapchain_create_info.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
-  swapchain_create_info.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
-  swapchain_create_info.queueFamilyIndexCount = 0;
-  swapchain_create_info.pQueueFamilyIndices = nullptr;
-  swapchain_create_info.preTransform = surface_capabilities.currentTransform;
-  swapchain_create_info.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
-  swapchain_create_info.presentMode = chosen_present_mode;
-  swapchain_create_info.clipped = VK_TRUE;  // Applications should set this value to VK_TRUE if
-                                            //  they do not expect to read back the content of
-                                            //  presentable images before presenting them or after
-                                            //  reacquiring them, and if their fragment shaders do
-                                            //  not have any side effects that require them to run
-                                            //  for all pixels in the presentable image.
-  swapchain_create_info.oldSwapchain = old_swapchain;
+  VkSwapchainCreateInfoKHR swapchain_create_info = {
+    .sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
+    .pNext = nullptr,
+    .flags = 0,
+    .surface = presentation_surface,
+    .minImageCount = nr_swapchain_imgs,
+    .imageFormat = present_img_fmt,
+    .imageColorSpace = color_space,
+    .imageExtent = image_size,
+    .imageArrayLayers = 1,
+    .imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+    .imageSharingMode = VK_SHARING_MODE_EXCLUSIVE,
+    .queueFamilyIndexCount = 0,
+    .pQueueFamilyIndices = nullptr,
+    .preTransform = surface_capabilities.currentTransform,
+    .compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
+    .presentMode = chosen_present_mode,
+    .clipped = VK_TRUE,  // Applications should set this value to VK_TRUE if they do not expect to
+                         // read back the content of presentable images before presenting them or
+                         // after reacquiring them, and if their fragment shaders do not have any
+                         // side effects that require them to run for all pixels in the presentable
+                         // image.
+    .oldSwapchain = old_swapchain,
+  };
 
   result = vkCreateSwapchainKHR(
       new_log_dev,
       &swapchain_create_info,
       &vk_alloc_callbacks,
-      //nullptr,
       &swapchain );
   if ( result != VK_SUCCESS || swapchain == VK_NULL_HANDLE ) {
     fprintf( stderr, "[Vulkan] Could not create a swapchain.\n" );
@@ -1520,6 +1738,7 @@ error_after_window_early:
     arr_swapchain_img_views[i] = VK_NULL_HANDLE;
   }
 
+  SPALL_BEGIN("vk_create_swapchain_ivs");
   for ( unsigned int i = 0; i < nr_swapchain_imgs; i++ ) {
     iv_create_info.image = arr_swapchain_images[i];
     result = vkCreateImageView( new_log_dev, &iv_create_info, &vk_alloc_callbacks,
@@ -1530,6 +1749,7 @@ error_after_window_early:
       goto error_after_swapchain_images;
     }
   }
+  SPALL_END();
 
 
 
@@ -1537,8 +1757,8 @@ error_after_window_early:
   // Prepare command buffers
   //
 
-  // Prepare graphics command buffers
-  cara_vk.arr_frame_infos[0].arr_cmd_pools =
+  // Prepare graphics command buffers  (1 buffer per 1 subpass in the first renderpass)
+  cara_vk.arr_graphics_cmdbuf_sets[0].arr_cmd_pools =
     cara_malloc( &worker_state->malloc_helper,
       alignof(VkCommandPool),
       cara_max_nr_fif * (
@@ -1546,7 +1766,7 @@ error_after_window_early:
         sizeof(VkCommandBuffer) *
         (cara_nr_subpasses * cara_single.proc_map->nr_processors) )
       );
-  memset( cara_vk.arr_frame_infos[0].arr_cmd_pools,
+  memset( cara_vk.arr_graphics_cmdbuf_sets[0].arr_cmd_pools,
       0,
       cara_max_nr_fif * (
         sizeof(VkCommandPool) * (1 + cara_single.proc_map->nr_processors) +
@@ -1555,8 +1775,8 @@ error_after_window_early:
       );
   for ( unsigned int cmd_center_idx = 1;
       cmd_center_idx < cara_max_nr_fif; cmd_center_idx++ ) {
-    cara_vk.arr_frame_infos[cmd_center_idx].arr_cmd_pools =
-      cara_vk.arr_frame_infos[cmd_center_idx-1].arr_cmd_pools +
+    cara_vk.arr_graphics_cmdbuf_sets[cmd_center_idx].arr_cmd_pools =
+      cara_vk.arr_graphics_cmdbuf_sets[cmd_center_idx-1].arr_cmd_pools +
       1 + cara_single.proc_map->nr_processors;
   }
   static_assert( alignof(VkCommandPool) >= alignof(VkCommandBuffer),
@@ -1580,32 +1800,30 @@ error_after_window_early:
   cmd_pool_create_info.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
   cmd_pool_create_info.pNext = nullptr;
   cmd_pool_create_info.flags = parameters;
-  cmd_pool_create_info.queueFamilyIndex = arr_q_create_info[idx_graphics_q].queueFamilyIndex;
+  cmd_pool_create_info.queueFamilyIndex = cara_vk.graphics_q_fam_idx;
 
   // Prepare a template
-  VkCommandBufferAllocateInfo cmd_buf_alloc_info;
-  cmd_buf_alloc_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-  cmd_buf_alloc_info.pNext = nullptr;
-  //cmd_buf_alloc_info.commandPool = CREATE_A_POOL_FIRST;
-  cmd_buf_alloc_info.commandBufferCount = cara_nr_subpasses;
-  cmd_buf_alloc_info.level = VK_COMMAND_BUFFER_LEVEL_SECONDARY;  // - Primary command buffers can be
-                                                        // directly submitted to queues. They can
+  VkCommandBufferAllocateInfo cmd_buf_alloc_info = {
+    .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+    .pNext = nullptr,
+  };
+  for ( uint_fast8_t fif_idx = 0; fif_idx < cara_max_nr_fif; fif_idx++ ) {
+    cmd_buf_alloc_info.level = VK_COMMAND_BUFFER_LEVEL_SECONDARY;  // - Primary command buffers can
+                                                        // be directly submitted to queues. They can
                                                         // also execute (call) secondary command
                                                         // buffers.
                                                         // - Secondary command buffers can only be
                                                         // executed from primary command buffers,
                                                         // and we are not allowed to submit them.
-  for ( uint_fast8_t fb_idx = 0; fb_idx < cara_max_nr_fif; fb_idx++ ) {
+    cmd_buf_alloc_info.commandBufferCount = cara_nr_subpasses;
 
     for ( uint_fast8_t worker_idx = 0;
         worker_idx < cara_single.proc_map->nr_processors; worker_idx++ ) {
-
       result = vkCreateCommandPool(
           new_log_dev,
           &cmd_pool_create_info,
           &vk_alloc_callbacks,
-          //nullptr,
-          &cara_vk.arr_frame_infos[fb_idx].arr_cmd_pools[worker_idx]
+          &cara_vk.arr_graphics_cmdbuf_sets[fif_idx].arr_cmd_pools[worker_idx]
           );
       if ( result != VK_SUCCESS ) {
         fprintf( stderr, "[Vulkan] Could not prepare a Vulkan command pool for graphics commands. "
@@ -1613,17 +1831,13 @@ error_after_window_early:
         goto error_after_swapchain_images;
       }
 
-      cmd_buf_alloc_info.commandPool =
-        cara_vk.arr_frame_infos[fb_idx].arr_cmd_pools[worker_idx];
+      cmd_buf_alloc_info.commandPool = cara_vk.arr_graphics_cmdbuf_sets[fif_idx].arr_cmd_pools[worker_idx];
       result = vkAllocateCommandBuffers(
           new_log_dev,
           &cmd_buf_alloc_info,
-          &cara_get_arr_cmd_buf_for_graphics(
-            cara_single.proc_map->nr_processors, fb_idx
-            )[fb_idx * cara_single.proc_map->nr_processors * cara_nr_subpasses +
-            worker_idx * cara_nr_subpasses]
+          cara_get_arr_cmd_bufs_for_graphics(cara_single.proc_map->nr_processors, fif_idx) +
+            worker_idx * cara_nr_subpasses
           );
-
       if ( result != VK_SUCCESS ) {
         fprintf( stderr, "[Vulkan] Failed to allocate command buffers. (%s)\n",
             string_VkResult(result) );
@@ -1631,14 +1845,12 @@ error_after_window_early:
       }
 #ifdef DEBUG_MODE
       fprintf( stderr, "[Vulkan-Debug] G fb_idx=%u worker_idx=%u new_cmd_buf=%#018lx\n",
-          fb_idx,
+          fif_idx,
           worker_idx,
-          ptr2ui(cara_get_arr_cmd_buf_for_graphics(
-            cara_single.proc_map->nr_processors, fb_idx
-            )[fb_idx * cara_single.proc_map->nr_processors * cara_nr_subpasses +
-            worker_idx * cara_nr_subpasses]) );
+          ptr2ui( cara_get_arr_cmd_bufs_for_graphics(cara_single.proc_map->nr_processors, fif_idx)[
+            worker_idx * cara_nr_subpasses] )
+          );
 #endif
-
     }
 
     // Prepare one primary command buffer for graphics commands
@@ -1646,8 +1858,8 @@ error_after_window_early:
         new_log_dev,
         &cmd_pool_create_info,
         &vk_alloc_callbacks,
-        //nullptr,
-        &cara_vk.arr_frame_infos[fb_idx].arr_cmd_pools[cara_single.proc_map->nr_processors]
+        &cara_vk.arr_graphics_cmdbuf_sets[fif_idx].arr_cmd_pools[
+          cara_single.proc_map->nr_processors ]
         );
     if ( result != VK_SUCCESS ) {
       fprintf( stderr, "[Vulkan] Could not prepare a Vulkan command pool. (%s)\n",
@@ -1658,16 +1870,13 @@ error_after_window_early:
     cmd_buf_alloc_info.commandBufferCount = 1;
     cmd_buf_alloc_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
     cmd_buf_alloc_info.commandPool =
-      cara_vk.arr_frame_infos[fb_idx].arr_cmd_pools[cara_single.proc_map->nr_processors];
+      cara_vk.arr_graphics_cmdbuf_sets[fif_idx].arr_cmd_pools[cara_single.proc_map->nr_processors];
 
     result = vkAllocateCommandBuffers(
         new_log_dev,
         &cmd_buf_alloc_info,
-        &cara_vk.arr_frame_infos[fb_idx].primary_cmd_buf
+        &cara_vk.arr_graphics_cmdbuf_sets[fif_idx].primary_cmd_buf
         );
-    cmd_buf_alloc_info.commandBufferCount = cara_nr_subpasses;
-    cmd_buf_alloc_info.level = VK_COMMAND_BUFFER_LEVEL_SECONDARY;
-
     if ( result != VK_SUCCESS ) {
       fprintf( stderr, "[Vulkan] Failed to allocate a command buffer. (%s)\n",
           string_VkResult(result) );
@@ -1675,99 +1884,91 @@ error_after_window_early:
     }
 #ifdef DEBUG_MODE
     fprintf( stderr, "[Vulkan-Debug] GP fb_idx=%u new_cmd_buf=%#018lx\n",
-        fb_idx,
-        ptr2ui(cara_vk.arr_frame_infos[fb_idx].primary_cmd_buf) );
+        fif_idx,
+        ptr2ui(cara_vk.arr_graphics_cmdbuf_sets[fif_idx].primary_cmd_buf) );
 #endif
 
-  }
+  }  // for ( uint_fast8_t fif_idx = 0; fif_idx < cara_max_nr_fif; fif_idx++ )
 
 
-  // Prepare transfer command buffers
-  cmd_pool_create_info.queueFamilyIndex = arr_q_create_info[idx_transfer_q].queueFamilyIndex;
-  cmd_buf_alloc_info.commandBufferCount = 1;
+  for ( uint_fast8_t set_idx = 0; set_idx < nr_trans_cmd_pool_sets + 1; set_idx++ ) {
+    // Prepare transfer command buffers
+    cmd_pool_create_info.queueFamilyIndex = set_idx < nr_trans_cmd_pool_sets ?
+      cara_vk.transfer_q_fam_idx : cara_vk.loader_q_fam_idx;
 
-  static_assert( alignof(VkCommandPool) >= alignof(VkCommandBuffer),
-      "should be aligned in order." );
-  cara_vk.trans_buf.arr_cmd_pools =
-    cara_malloc( &worker_state->malloc_helper,
-      alignof(VkCommandPool),
-      sizeof(VkCommandPool) * (1 + cara_single.proc_map->nr_processors) +
-      sizeof(VkCommandBuffer) * cara_single.proc_map->nr_processors );
-  memset( cara_vk.trans_buf.arr_cmd_pools,
-      0,
-      sizeof(VkCommandPool) * (1 + cara_single.proc_map->nr_processors) +
-      sizeof(VkCommandBuffer) * cara_single.proc_map->nr_processors );
+    static_assert( alignof(VkCommandPool) >= alignof(VkCommandBuffer),
+        "should be aligned in order." );
+    cara_vk.arr_trans_cmdbuf_sets[set_idx].arr_cmd_pools =
+      cara_malloc( &worker_state->malloc_helper,
+        alignof(VkCommandPool),
+        sizeof(VkCommandPool) * (1 + cara_single.proc_map->nr_processors) +
+        sizeof(VkCommandBuffer) * cara_single.proc_map->nr_processors );
+    memset( cara_vk.arr_trans_cmdbuf_sets[set_idx].arr_cmd_pools,
+        0,
+        sizeof(VkCommandPool) * (1 + cara_single.proc_map->nr_processors) +
+        sizeof(VkCommandBuffer) * cara_single.proc_map->nr_processors );
 
-  for ( uint_fast8_t worker_idx = 0;
-      worker_idx < cara_single.proc_map->nr_processors; worker_idx++ ) {
+    for ( uint_fast8_t worker_idx = 0;
+        worker_idx < cara_single.proc_map->nr_processors; worker_idx++ ) {
+      result = vkCreateCommandPool(
+          new_log_dev,
+          &cmd_pool_create_info,
+          &vk_alloc_callbacks,
+          &cara_vk.arr_trans_cmdbuf_sets[set_idx].arr_cmd_pools[worker_idx]
+          );
+      if ( result != VK_SUCCESS ) {
+        fprintf( stderr, "[Vulkan] Could not prepare a Vulkan command pool for transfer commands."
+            "(%s)\n", string_VkResult(result) );
+        goto error_after_swapchain_images;
+      }
 
+      cmd_buf_alloc_info.level = VK_COMMAND_BUFFER_LEVEL_SECONDARY;
+      cmd_buf_alloc_info.commandBufferCount = 1;
+      cmd_buf_alloc_info.commandPool =
+        cara_vk.arr_trans_cmdbuf_sets[set_idx].arr_cmd_pools[worker_idx];
+      result = vkAllocateCommandBuffers(
+          new_log_dev,
+          &cmd_buf_alloc_info,
+          cara_get_arr_cmd_bufs_for_transfer(cara_single.proc_map->nr_processors, set_idx) +
+            worker_idx
+          );
+      if ( result != VK_SUCCESS ) {
+        fprintf( stderr, "[Vulkan] Failed to allocate command buffers. (%s)\n",
+            string_VkResult(result) );
+        goto error_after_swapchain_images;
+      }
+    }
+
+    // Prepare one primary command buffer for transfer commands
     result = vkCreateCommandPool(
         new_log_dev,
         &cmd_pool_create_info,
         &vk_alloc_callbacks,
-        //nullptr,
-        &cara_vk.trans_buf.arr_cmd_pools[worker_idx]
+        &cara_vk.arr_trans_cmdbuf_sets[set_idx].arr_cmd_pools[cara_single.proc_map->nr_processors]
         );
     if ( result != VK_SUCCESS ) {
-      fprintf( stderr, "[Vulkan] Could not prepare a Vulkan command pool for transfer commands. "
-          "(%s)\n", string_VkResult(result) );
-      goto error_after_swapchain_images;
-    }
-#ifdef DEBUG_MODE
-    fprintf( stderr, "[Vulkan-Debug] T worker_idx=%u new_cmd_buf=%#018lx\n",
-        worker_idx,
-        ptr2ui(cara_vk.trans_buf.arr_cmd_pools[worker_idx]) );
-#endif
-
-    cmd_buf_alloc_info.commandPool =
-      cara_vk.trans_buf.arr_cmd_pools[worker_idx];
-    result = vkAllocateCommandBuffers(
-        new_log_dev,
-        &cmd_buf_alloc_info,
-        &cara_get_arr_cmd_bufs_for_transfer( cara_single.proc_map->nr_processors )[worker_idx]
-        );
-
-    if ( result != VK_SUCCESS ) {
-      fprintf( stderr, "[Vulkan] Failed to allocate command buffers. (%s)\n",
+      fprintf( stderr, "[Vulkan] Could not prepare a Vulkan command pool. (%s)\n",
           string_VkResult(result) );
       goto error_after_swapchain_images;
     }
 
-  }
+    cmd_buf_alloc_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    cmd_buf_alloc_info.commandBufferCount = 1;
+    cmd_buf_alloc_info.commandPool =
+      cara_vk.arr_trans_cmdbuf_sets[set_idx].arr_cmd_pools[cara_single.proc_map->nr_processors];
 
-  // Prepare one primary command buffer for transfer commands
-  result = vkCreateCommandPool(
-      new_log_dev,
-      &cmd_pool_create_info,
-      &vk_alloc_callbacks,
-      //nullptr,
-      &cara_vk.trans_buf.arr_cmd_pools[cara_single.proc_map->nr_processors]
-      );
-  if ( result != VK_SUCCESS ) {
-    fprintf( stderr, "[Vulkan] Could not prepare a Vulkan command pool. (%s)\n",
-        string_VkResult(result) );
-    goto error_after_swapchain_images;
-  }
+    result = vkAllocateCommandBuffers(
+        new_log_dev,
+        &cmd_buf_alloc_info,
+        &cara_vk.arr_trans_cmdbuf_sets[set_idx].primary_cmd_buf
+        );
+    if ( result != VK_SUCCESS ) {
+      fprintf( stderr, "[Vulkan] Failed to allocate a command buffer. (%s)\n",
+          string_VkResult(result) );
+      goto error_after_swapchain_images;
+    }
+  }  // for ( uint_fast8_t set_idx = 0; set_idx < cara_max_nr_fif; set_idx++ )
 
-  cmd_buf_alloc_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-  cmd_buf_alloc_info.commandPool =
-    cara_vk.trans_buf.arr_cmd_pools[cara_single.proc_map->nr_processors];
-
-  result = vkAllocateCommandBuffers(
-      new_log_dev,
-      &cmd_buf_alloc_info,
-      &cara_vk.trans_buf.primary_cmd_buf
-      );
-
-  if ( result != VK_SUCCESS ) {
-    fprintf( stderr, "[Vulkan] Failed to allocate a command buffer. (%s)\n",
-        string_VkResult(result) );
-    goto error_after_swapchain_images;
-  }
-#ifdef DEBUG_MODE
-  fprintf( stderr, "[Vulkan-Debug] TP new_cmd_buf=%#018lx\n",
-      ptr2ui(cara_vk.trans_buf.primary_cmd_buf) );
-#endif
 
 
   //
@@ -1799,7 +2000,7 @@ error_after_window_early:
       fprintf( stderr, "[Vulkan] (main_semaphore_before_A)\n" );
       goto error_after_swapchain_images;
     }
-    cara_vk.arr_semaphore_before_A[fif_idx] = semaphore;
+    cara_vk.arr_semaphore_tr[fif_idx] = semaphore;
   }
 
   for ( unsigned int fif_idx = 0; fif_idx < cara_max_nr_fif; fif_idx++ ) {
@@ -1814,18 +2015,18 @@ error_after_window_early:
       fprintf( stderr, "[Vulkan] (main_semaphore_after_A)\n" );
       goto error_after_swapchain_images;
     }
-    cara_vk.arr_semaphore_after_A[fif_idx] = semaphore;
+    cara_vk.arr_semaphore_gr[fif_idx] = semaphore;
   }
 
   // We need binary semaphores for WSI functions
   semaphore_create_info.pNext = nullptr;
-  cara_vk.arr_wsi_present_semaphores = cara_malloc( &worker_state->malloc_helper,
+  cara_vk.arr_sc_present_semaphores = cara_malloc( &worker_state->malloc_helper,
         alignof(VkSemaphore), sizeof(VkSemaphore) * nr_swapchain_imgs );
-  if ( !cara_vk.arr_wsi_present_semaphores ) {
-    fprintf( stderr, "[Vulkan] %s\n", err_msg_text[err_msg_out_of_memory] );
+  if ( !cara_vk.arr_sc_present_semaphores ) {
+    fprintf( stderr, "[Vulkan] %s\n", arr_emsg_txt[emsg_out_of_memory] );
     goto error_after_swapchain_images;
   }
-  memset( cara_vk.trans_buf.arr_cmd_pools, 0, sizeof(VkSemaphore) * nr_swapchain_imgs );
+  memset( cara_vk.arr_sc_present_semaphores, 0, sizeof(VkSemaphore) * nr_swapchain_imgs );
   for ( unsigned int swapchain_img_idx = 0;
       swapchain_img_idx < nr_swapchain_imgs; swapchain_img_idx++ ) {
     result = vkCreateSemaphore( new_log_dev,
@@ -1839,7 +2040,7 @@ error_after_window_early:
       fprintf( stderr, "[Vulkan] (wsi_semaphore_present)\n" );
       goto error_after_swapchain_images;
     }
-    cara_vk.arr_wsi_present_semaphores[swapchain_img_idx] = semaphore;
+    cara_vk.arr_sc_present_semaphores[swapchain_img_idx] = semaphore;
   }
 
   for ( unsigned int fif_idx = 0; fif_idx < cara_max_nr_fif; fif_idx++ ) {
@@ -1854,7 +2055,7 @@ error_after_window_early:
       fprintf( stderr, "[Vulkan] (wsi_semaphore_acquire)\n" );
       goto error_after_swapchain_images;
     }
-    cara_vk.arr_acquire_semaphores[fif_idx] = semaphore;
+    cara_vk.arr_sc_acquire_semaphores[fif_idx] = semaphore;
   }
 
   VkPhysicalDeviceMemoryProperties2 memory_properties;
@@ -1864,7 +2065,7 @@ error_after_window_early:
       arr_phys_devices[idx_phys_deviced_picked], &memory_properties );
   if ( ma_init_vk_mem_mgr(&cara_vk.vmm, &memory_properties,
         &arr_device_props[idx_phys_deviced_picked].properties.limits,
-        &worker_state->malloc_helper, cara_malloc) != err_msg_no_error ) {
+        &worker_state->malloc_helper, cara_malloc) != emsg_no_error ) {
     cara_vk.vmm.arr_sizes = nullptr;
     goto error_after_swapchain_images;
   }
@@ -1927,7 +2128,7 @@ error_after_window_early:
   all_formats_are_supported = false;
 
   if ( all_formats_are_supported ) {
-    cara_vk.texture_format_chosen = texture_format_astc;
+    cara_vk.tex_fmt_chosen = tf_astc;
   } else {
 #ifdef DEBUG_MODE
     fprintf( stdout,
@@ -1969,40 +2170,40 @@ error_after_window_early:
     }
 
     if ( all_formats_are_supported ) {
-      cara_vk.texture_format_chosen = texture_format_s3tc;
+      cara_vk.tex_fmt_chosen = tf_s3tc;
     } else {
       fprintf( stderr,
           "[Vulkan] %s doesn't support optimal operations on compressed texture data.\n",
           arr_device_props[idx_phys_deviced_picked].properties.deviceName );
 error_after_swapchain_images:
       for ( unsigned int fif_idx = 0; fif_idx < cara_max_nr_fif; fif_idx++ ) {
-        if( cara_vk.arr_acquire_semaphores[fif_idx] != VK_NULL_HANDLE ) {
-          vkDestroySemaphore( cara_vk.log_dev, cara_vk.arr_acquire_semaphores[fif_idx], nullptr );
-          cara_vk.arr_acquire_semaphores[fif_idx] = VK_NULL_HANDLE;
+        if( cara_vk.arr_sc_acquire_semaphores[fif_idx] != VK_NULL_HANDLE ) {
+          vkDestroySemaphore( cara_vk.log_dev, cara_vk.arr_sc_acquire_semaphores[fif_idx], nullptr );
+          cara_vk.arr_sc_acquire_semaphores[fif_idx] = VK_NULL_HANDLE;
         }
       }
-      if( cara_vk.arr_wsi_present_semaphores != nullptr ) {
+      if( cara_vk.arr_sc_present_semaphores != nullptr ) {
         for ( unsigned int swapchain_img_idx = 0;
             swapchain_img_idx < nr_swapchain_imgs; swapchain_img_idx++ ) {
-          if( cara_vk.arr_wsi_present_semaphores[swapchain_img_idx] != VK_NULL_HANDLE ) {
+          if( cara_vk.arr_sc_present_semaphores[swapchain_img_idx] != VK_NULL_HANDLE ) {
             vkDestroySemaphore( cara_vk.log_dev,
-                cara_vk.arr_wsi_present_semaphores[swapchain_img_idx],
+                cara_vk.arr_sc_present_semaphores[swapchain_img_idx],
                 nullptr );
-            cara_vk.arr_wsi_present_semaphores[swapchain_img_idx] = VK_NULL_HANDLE;
+            cara_vk.arr_sc_present_semaphores[swapchain_img_idx] = VK_NULL_HANDLE;
           }
         }
         ma_free( cara_single.mem_arena, worker_state->worker_idx,
-            cara_vk.arr_wsi_present_semaphores );
-        cara_vk.arr_wsi_present_semaphores = nullptr;
+            cara_vk.arr_sc_present_semaphores );
+        cara_vk.arr_sc_present_semaphores = nullptr;
       }
       for ( unsigned int fif_idx = 0; fif_idx < cara_max_nr_fif; fif_idx++ ) {
-        if( cara_vk.arr_semaphore_before_A[fif_idx] != VK_NULL_HANDLE ) {
-          vkDestroySemaphore( cara_vk.log_dev, cara_vk.arr_semaphore_before_A[fif_idx], nullptr );
-          cara_vk.arr_semaphore_before_A[fif_idx] = VK_NULL_HANDLE;
+        if( cara_vk.arr_semaphore_tr[fif_idx] != VK_NULL_HANDLE ) {
+          vkDestroySemaphore( cara_vk.log_dev, cara_vk.arr_semaphore_tr[fif_idx], nullptr );
+          cara_vk.arr_semaphore_tr[fif_idx] = VK_NULL_HANDLE;
         }
-        if( cara_vk.arr_semaphore_after_A[fif_idx] != VK_NULL_HANDLE ) {
-          vkDestroySemaphore( cara_vk.log_dev, cara_vk.arr_semaphore_after_A[fif_idx], nullptr );
-          cara_vk.arr_semaphore_after_A[fif_idx] = VK_NULL_HANDLE;
+        if( cara_vk.arr_semaphore_gr[fif_idx] != VK_NULL_HANDLE ) {
+          vkDestroySemaphore( cara_vk.log_dev, cara_vk.arr_semaphore_gr[fif_idx], nullptr );
+          cara_vk.arr_semaphore_gr[fif_idx] = VK_NULL_HANDLE;
         }
       }
       ma_free( cara_single.mem_arena,
@@ -2019,37 +2220,41 @@ error_after_swapchain_images:
             arr_swapchain_img_views );
       }
 error_after_logical_device:
-      if ( cara_vk.trans_buf.arr_cmd_pools ) {
-        for ( uint_fast8_t idx_command_pool = 0;
-            idx_command_pool <= cara_single.proc_map->nr_processors; idx_command_pool++ )
-        {
-          if ( cara_vk.trans_buf.arr_cmd_pools[idx_command_pool] )
-          {
-            vkDestroyCommandPool( cara_vk.log_dev,
-                cara_vk.trans_buf.arr_cmd_pools[idx_command_pool],
-                &vk_alloc_callbacks
-                //nullptr
-                );
+      for ( uint_fast8_t set_idx = 0; set_idx < nr_trans_cmd_pool_sets + 1; set_idx++ ) {
+        if ( cara_vk.arr_trans_cmdbuf_sets[set_idx].arr_cmd_pools ) {
+          for ( uint_fast8_t cmd_pool_idx = 0;
+              cmd_pool_idx <= cara_single.proc_map->nr_processors; cmd_pool_idx++ ) {
+            if ( cara_vk.arr_trans_cmdbuf_sets[set_idx].arr_cmd_pools[cmd_pool_idx] ) {
+              vkDestroyCommandPool( cara_vk.log_dev,
+                  cara_vk.arr_trans_cmdbuf_sets[set_idx].arr_cmd_pools[cmd_pool_idx],
+                  &vk_alloc_callbacks
+                  );
 
-            cara_vk.trans_buf.arr_cmd_pools[idx_command_pool] = 0;
+              cara_vk.arr_trans_cmdbuf_sets[set_idx].arr_cmd_pools[cmd_pool_idx] = 0;
+            }
           }
+          ma_free( cara_single.mem_arena, worker_state->worker_idx,
+              cara_vk.arr_trans_cmdbuf_sets[set_idx].arr_cmd_pools );
+          cara_vk.arr_trans_cmdbuf_sets[set_idx].arr_cmd_pools = nullptr;
         }
       }
 
-      for ( uint_fast8_t idx_framebuffer = 0;
-          idx_framebuffer < cara_max_nr_fif; idx_framebuffer++ ) {
-        for ( uint_fast8_t worker_idx = 0;
-            worker_idx <= cara_single.proc_map->nr_processors; worker_idx++ ) {
-          if ( cara_vk.arr_frame_infos[idx_framebuffer].arr_cmd_pools[worker_idx] ) {
-            vkDestroyCommandPool(
-                new_log_dev,
-                cara_vk.arr_frame_infos[idx_framebuffer].arr_cmd_pools[worker_idx],
-                &vk_alloc_callbacks
-                //nullptr
-                );
+      for ( uint_fast8_t fif_idx = 0; fif_idx < cara_max_nr_fif; fif_idx++ ) {
+        if ( cara_vk.arr_graphics_cmdbuf_sets[fif_idx].arr_cmd_pools ) {
+          for ( uint_fast8_t cmd_pool_idx = 0;
+              cmd_pool_idx <= cara_single.proc_map->nr_processors; cmd_pool_idx++ ) {
+            if ( cara_vk.arr_graphics_cmdbuf_sets[fif_idx].arr_cmd_pools[cmd_pool_idx] ) {
+              vkDestroyCommandPool( new_log_dev,
+                  cara_vk.arr_graphics_cmdbuf_sets[fif_idx].arr_cmd_pools[cmd_pool_idx],
+                  &vk_alloc_callbacks
+                  );
 
-            cara_vk.arr_frame_infos[idx_framebuffer].arr_cmd_pools[worker_idx] = 0;
+              cara_vk.arr_graphics_cmdbuf_sets[fif_idx].arr_cmd_pools[cmd_pool_idx] = 0;
+            }
           }
+          ma_free( cara_single.mem_arena, worker_state->worker_idx,
+              cara_vk.arr_graphics_cmdbuf_sets[fif_idx].arr_cmd_pools );
+          cara_vk.arr_graphics_cmdbuf_sets[fif_idx].arr_cmd_pools = nullptr;
         }
       }
 
@@ -2142,11 +2347,12 @@ error_after_presentation_surface:
   cara_vk.max_win_size_avail.parts.width = surface_capabilities.maxImageExtent.width;
   cara_vk.max_win_size_avail.parts.height = surface_capabilities.maxImageExtent.height;
   cara_vk.vk_surface_transform_flags = surface_capabilities.currentTransform;
-  cara_vk.vk_present_mode = chosen_present_mode;
+  cara_vk.present_mode = chosen_present_mode;
   cara_vk.max_anisotropy = min(
       arr_device_props[idx_phys_deviced_picked].properties.limits.maxSamplerAnisotropy, 8.0f );
   cara_vk.swapchain_img_fmt = present_img_fmt;
-  cara_vk.vk_color_space = color_space;
+  cara_vk.swapchain_color_space = color_space;
+  cara_vk.presentation_surface = presentation_surface;
 
   ma_free(cara_single.mem_arena, worker_state->worker_idx, arr_q_create_info);
   ma_free(cara_single.mem_arena, worker_state->worker_idx, arr_qfam_props);
@@ -2204,92 +2410,97 @@ void destroy_vk_objs( _typeof_member(struct ms_worker_info, idx_self) worker_idx
         &vk_alloc_callbacks );
     cara_vk.sm_z_only_frag = VK_NULL_HANDLE;
   }
-  if ( cara_vk.sm_copy2sc_vert ) {
-    vkDestroyShaderModule( cara_vk.log_dev, cara_vk.sm_copy2sc_vert, &vk_alloc_callbacks );
-    cara_vk.sm_copy2sc_vert = VK_NULL_HANDLE;
+  if ( cara_vk.sm_cp2sc_vert ) {
+    vkDestroyShaderModule( cara_vk.log_dev, cara_vk.sm_cp2sc_vert, &vk_alloc_callbacks );
+    cara_vk.sm_cp2sc_vert = VK_NULL_HANDLE;
   }
-  if ( cara_vk.sm_copy2sc_frag ) {
-    vkDestroyShaderModule( cara_vk.log_dev, cara_vk.sm_copy2sc_frag, &vk_alloc_callbacks );
-    cara_vk.sm_copy2sc_frag = VK_NULL_HANDLE;
-  }
-
-  if ( cara_vk.framebuffer ) {
-    vkDestroyFramebuffer( cara_vk.log_dev, cara_vk.framebuffer, &vk_alloc_callbacks );
-    cara_vk.framebuffer = VK_NULL_HANDLE;
+  if ( cara_vk.sm_cp2sc_frag ) {
+    vkDestroyShaderModule( cara_vk.log_dev, cara_vk.sm_cp2sc_frag, &vk_alloc_callbacks );
+    cara_vk.sm_cp2sc_frag = VK_NULL_HANDLE;
   }
 
-  for ( unsigned int fb_idx = fb_zbuf; fb_idx <= fb_cbuf; fb_idx++ ) {
-    if ( cara_vk.zbuf_n_cbuf[fb_idx] == VK_NULL_HANDLE ) {
-      continue;
-    }
-    // Should I just write down the memory type when binding to a memory object?
-    VkMemoryRequirements req;
-    vkGetImageMemoryRequirements( cara_vk.log_dev, cara_vk.zbuf_n_cbuf[fb_idx], &req );
-    VkMemoryPropertyFlags preferred_props, required_props, tolerable_props;
-    preferred_props = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
-    required_props = 0;
-    tolerable_props = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT;
-    enum err_msg err = ma_report_vk_malloc_rel( &cara_vk.vmm,
-        &vk_alloc_callbacks, vk_malloc_wrapper,
-        ma_pick_best_mtype(&cara_vk.vmm, &req, required_props, preferred_props, tolerable_props),
-        cara_vk.p_malloc_range_zbuf_and_cbuf[fb_idx] );
-    if ( err ) {
-      fprintf( stderr, "[Carbonara] Failure occurred in ma_report_vk_malloc_rel!! "
-          "'%s'\n", err_msg_text[err] );
-      switch ( err ) {
-        case err_msg_already_done:
-          [[fallthrough]];
-        case err_msg_unknown:  // VkDeviceMemory object is somehow missing
-          cara_vk.p_malloc_range_zbuf_and_cbuf[fb_idx] = nullptr;
-          vkDestroyImage( cara_vk.log_dev, cara_vk.zbuf_n_cbuf[fb_idx], &vk_alloc_callbacks );
-          cara_vk.zbuf_n_cbuf[fb_idx] = VK_NULL_HANDLE;
-          cara_vk.p_malloc_range_zbuf_and_cbuf[fb_idx] = nullptr;
-          break;
-        default:
-          break;
+  for ( unsigned int fif_idx = 0; fif_idx < cara_max_nr_fif; fif_idx++ ) {
+    for ( unsigned int rp_idx = 0; rp_idx < cara_nr_renderpasses; rp_idx++ ) {
+      // vkDestroyFramebuffer
+      if ( cara_vk.arr_framebuffers[fif_idx][rp_idx] ) {
+        vkDestroyFramebuffer( cara_vk.log_dev,
+            cara_vk.arr_framebuffers[fif_idx][rp_idx], &vk_alloc_callbacks );
+        cara_vk.arr_framebuffers[fif_idx][rp_idx] = VK_NULL_HANDLE;
       }
-    } else {
-      cara_vk.p_malloc_range_zbuf_and_cbuf[fb_idx] = nullptr;
-      vkDestroyImage( cara_vk.log_dev, cara_vk.zbuf_n_cbuf[fb_idx], &vk_alloc_callbacks );
-      cara_vk.zbuf_n_cbuf[fb_idx] = VK_NULL_HANDLE;
-      cara_vk.p_malloc_range_zbuf_and_cbuf[fb_idx] = nullptr;
     }
   }
 
-  for ( unsigned int fb_idx = fb_zbuf; fb_idx <= fb_cbuf; fb_idx++ ) {
-    if ( cara_vk.zbuf_n_cbuf_iv[fb_idx] == VK_NULL_HANDLE ) {
-      continue;
+  for ( unsigned int fif_idx = 0; fif_idx < cara_max_nr_fif; fif_idx++ ) {
+    for ( unsigned int fb_idx = fb_zbuf; fb_idx <= fb_cbuf; fb_idx++ ) {
+      // vkDestroyImage
+      if ( cara_vk.zbuf_n_cbuf[fif_idx][fb_idx] == VK_NULL_HANDLE ) {
+        continue;
+      }
+      // Should I just write down the memory type when binding to a memory object?
+      VkMemoryRequirements req;
+      vkGetImageMemoryRequirements( cara_vk.log_dev, cara_vk.zbuf_n_cbuf[fif_idx][fb_idx], &req );
+      VkMemoryPropertyFlags preferred_props, required_props, tolerable_props;
+      preferred_props = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+      required_props = 0;
+      tolerable_props = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT;
+      enum err_msg err = ma_report_vk_malloc_rel( &cara_vk.vmm,
+          &vk_alloc_callbacks, vk_malloc_wrapper,
+          ma_pick_best_mtype(&cara_vk.vmm, &req, required_props, preferred_props, tolerable_props),
+          cara_vk.p_malloc_range_zbuf_and_cbuf[fif_idx][fb_idx] );
+      if ( err ) {
+        fprintf( stderr, "[Carbonara] Failure occurred in ma_report_vk_malloc_rel!! "
+            "'%s'\n", arr_emsg_txt[err] );
+        switch ( err ) {
+          case emsg_already_done:
+            [[fallthrough]];
+          case emsg_unknown:  // VkDeviceMemory object is somehow missing
+            vkDestroyImage( cara_vk.log_dev, cara_vk.zbuf_n_cbuf[fif_idx][fb_idx], &vk_alloc_callbacks );
+            cara_vk.zbuf_n_cbuf[fif_idx][fb_idx] = VK_NULL_HANDLE;
+            cara_vk.p_malloc_range_zbuf_and_cbuf[fif_idx][fb_idx] = nullptr;
+            break;
+          default:
+            break;
+        }
+      } else {
+        vkDestroyImage( cara_vk.log_dev, cara_vk.zbuf_n_cbuf[fif_idx][fb_idx], &vk_alloc_callbacks );
+        cara_vk.zbuf_n_cbuf[fif_idx][fb_idx] = VK_NULL_HANDLE;
+        cara_vk.p_malloc_range_zbuf_and_cbuf[fif_idx][fb_idx] = nullptr;
+      }
+
+      // vkDestroyImageView
+      if ( cara_vk.zbuf_n_cbuf_iv[fif_idx][fb_idx] == VK_NULL_HANDLE ) {
+        continue;
+      }
+      vkDestroyImageView( cara_vk.log_dev,
+          cara_vk.zbuf_n_cbuf_iv[fif_idx][fb_idx], &vk_alloc_callbacks );
+      cara_vk.zbuf_n_cbuf_iv[fif_idx][fb_idx] = VK_NULL_HANDLE;
     }
-    vkDestroyImageView( cara_vk.log_dev, cara_vk.zbuf_n_cbuf_iv[fb_idx], &vk_alloc_callbacks );
-    cara_vk.zbuf_n_cbuf_iv[fb_idx] = VK_NULL_HANDLE;
   }
 
-  if ( cara_vk.render_pass ) {
-    vkDestroyRenderPass( cara_vk.log_dev, cara_vk.render_pass, &vk_alloc_callbacks );
-    //vkDestroyRenderPass( cara_vk.log_dev, cara_vk.render_pass, nullptr );
-    cara_vk.render_pass = VK_NULL_HANDLE;
+  for ( unsigned int rp_idx = 0; rp_idx < cara_nr_renderpasses; rp_idx++ ) {
+    if ( cara_vk.arr_renderpasses[rp_idx] ) {
+      vkDestroyRenderPass( cara_vk.log_dev, cara_vk.arr_renderpasses[rp_idx], &vk_alloc_callbacks );
+      cara_vk.arr_renderpasses[rp_idx] = VK_NULL_HANDLE;
+    }
   }
 
   if ( cara_vk.pll_z_only ) {
     vkDestroyPipelineLayout( cara_vk.log_dev, cara_vk.pll_z_only,
         &vk_alloc_callbacks
-        //nullptr
         );
     cara_vk.pll_z_only = VK_NULL_HANDLE;
   }
   if ( cara_vk.pll_main_render ) {
     vkDestroyPipelineLayout( cara_vk.log_dev, cara_vk.pll_main_render,
         &vk_alloc_callbacks
-        //nullptr
         );
     cara_vk.pll_main_render = VK_NULL_HANDLE;
   }
-  if ( cara_vk.pll_copy2sc ) {
-    vkDestroyPipelineLayout( cara_vk.log_dev, cara_vk.pll_copy2sc,
+  if ( cara_vk.pll_cp2sc ) {
+    vkDestroyPipelineLayout( cara_vk.log_dev, cara_vk.pll_cp2sc,
         &vk_alloc_callbacks
-        //nullptr
         );
-    cara_vk.pll_copy2sc = VK_NULL_HANDLE;
+    cara_vk.pll_cp2sc = VK_NULL_HANDLE;
   }
 
   for ( unsigned int sp_idx = 0; sp_idx < cara_nr_subpasses; sp_idx++ ) {
@@ -2298,68 +2509,138 @@ void destroy_vk_objs( _typeof_member(struct ms_worker_info, idx_self) worker_idx
       cara_vk.arr_pipelines[sp_idx] = VK_NULL_HANDLE;
     }
   }
+  for ( unsigned int sp_idx = 0; sp_idx < cara_nr_subpasses_in_2nd_rp; sp_idx++ ) {
+    if ( cara_vk.arr_pipelines2[sp_idx] ) {
+      vkDestroyPipeline( cara_vk.log_dev, cara_vk.arr_pipelines2[sp_idx], &vk_alloc_callbacks );
+      cara_vk.arr_pipelines2[sp_idx] = VK_NULL_HANDLE;
+    }
+  }
 
   if ( cara_vk.ds_main_render ) {
-    vkResetDescriptorPool( cara_vk.log_dev, cara_vk.dp_main_render, 0 );
+    vkResetDescriptorPool( cara_vk.log_dev, cara_vk.descriptor_pool, 0 );
     cara_vk.ds_main_render = VK_NULL_HANDLE;
   }
 
-  if ( cara_vk.dp_main_render ) {
-    vkDestroyDescriptorPool( cara_vk.log_dev, cara_vk.dp_main_render, &vk_alloc_callbacks );
-    //vkDestroyDescriptorPool( cara_vk.log_dev, cara_vk.dp_first, nullptr );
-    cara_vk.dp_main_render = VK_NULL_HANDLE;
+  if ( cara_vk.descriptor_pool ) {
+    vkDestroyDescriptorPool( cara_vk.log_dev, cara_vk.descriptor_pool, &vk_alloc_callbacks );
+    cara_vk.descriptor_pool = VK_NULL_HANDLE;
   }
 
   if ( cara_vk.dsl_z_only ) {
     vkDestroyDescriptorSetLayout( cara_vk.log_dev, cara_vk.dsl_z_only,
         &vk_alloc_callbacks );
-        //nullptr );
     cara_vk.dsl_z_only = VK_NULL_HANDLE;
   }
   if ( cara_vk.dsl_main_render ) {
     vkDestroyDescriptorSetLayout( cara_vk.log_dev, cara_vk.dsl_main_render,
         &vk_alloc_callbacks );
-        //nullptr );
     cara_vk.dsl_main_render = VK_NULL_HANDLE;
   }
-  if ( cara_vk.dsl_copy2sc ) {
-    vkDestroyDescriptorSetLayout( cara_vk.log_dev, cara_vk.dsl_copy2sc,
+  if ( cara_vk.dsl_cp2sc ) {
+    vkDestroyDescriptorSetLayout( cara_vk.log_dev, cara_vk.dsl_cp2sc,
         &vk_alloc_callbacks );
-        //nullptr );
-    cara_vk.dsl_copy2sc = VK_NULL_HANDLE;
+    cara_vk.dsl_cp2sc = VK_NULL_HANDLE;
   }
 
-  if ( cara_vk.sampler8_2048 ) {
-    vkDestroySampler( cara_vk.log_dev, cara_vk.sampler8_2048, &vk_alloc_callbacks );
-    cara_vk.sampler8_2048 = VK_NULL_HANDLE;
+  if ( cara_vk.albmap_sampler ) {
+    vkDestroySampler( cara_vk.log_dev, cara_vk.albmap_sampler, &vk_alloc_callbacks );
+    cara_vk.albmap_sampler = VK_NULL_HANDLE;
   }
-  if ( cara_vk.tex8_2048_iv ) {
-    vkDestroyImageView( cara_vk.log_dev, cara_vk.tex8_2048_iv, &vk_alloc_callbacks );
-    cara_vk.tex8_2048_iv = VK_NULL_HANDLE;
+  for ( unsigned int img_id = 0; img_id < _arr_elem_cnt(cara_vk.albmaps); img_id++ ) {
+    if ( cara_vk.albmap_ivs[img_id] ) {
+      vkDestroyImageView( cara_vk.log_dev, cara_vk.albmap_ivs[img_id], &vk_alloc_callbacks );
+      cara_vk.albmap_ivs[img_id] = VK_NULL_HANDLE;
+    }
+    if ( cara_vk.albmaps[img_id] ) {
+      enum err_msg err = ma_report_vk_malloc_rel( &cara_vk.vmm,
+          &vk_alloc_callbacks, vk_malloc_wrapper,
+          cara_vk.vmm.arr_mtype_used[vk_buf_type_texarr_2048],
+          cara_vk.p_malloc_range_albmaps );
+      if ( err ) {
+        fprintf( stderr, "[Carbonara] Failure occurred in ma_report_vk_malloc_rel!! "
+            "'%s'\n", arr_emsg_txt[err] );
+        switch ( err ) {
+          case emsg_already_done:
+            [[fallthrough]];
+          case emsg_unknown:  // VkDeviceMemory object is somehow missing
+            cara_vk.p_malloc_range_albmaps = nullptr;
+            vkDestroyImage( cara_vk.log_dev, cara_vk.albmaps[img_id], &vk_alloc_callbacks );
+            cara_vk.albmaps[img_id] = VK_NULL_HANDLE;
+            break;
+          default:
+            break;
+        }
+      } else {
+        cara_vk.p_malloc_range_albmaps = nullptr;
+        vkDestroyImage( cara_vk.log_dev, cara_vk.albmaps[img_id], &vk_alloc_callbacks );
+        cara_vk.albmaps[img_id] = VK_NULL_HANDLE;
+      }
+    }
   }
-  if ( cara_vk.tex8_2048 ) {
+
+  if ( cara_vk.vert_buf ) {
+    VkMemoryRequirements req;
+    vkGetBufferMemoryRequirements( cara_vk.log_dev, cara_vk.vert_buf, &req );
+    VkMemoryPropertyFlags preferred_props = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+    VkMemoryPropertyFlags required_props = 0;
+    VkMemoryPropertyFlags tolerable_props = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT;
+    uint32_t mtype_idx = ma_pick_best_mtype(
+      &cara_vk.vmm, &req, required_props, preferred_props, tolerable_props );
     enum err_msg err = ma_report_vk_malloc_rel( &cara_vk.vmm,
         &vk_alloc_callbacks, vk_malloc_wrapper,
-        cara_vk.vmm.arr_best_mtype_idx[vk_buf_type_tex8_2048],
-        cara_vk.p_malloc_range_tex8_2048 );
+        mtype_idx,
+        cara_vk.p_malloc_range_vbuf );
     if ( err ) {
       fprintf( stderr, "[Carbonara] Failure occurred in ma_report_vk_malloc_rel!! "
-          "'%s'\n", err_msg_text[err] );
+          "'%s'\n", arr_emsg_txt[err] );
       switch ( err ) {
-        case err_msg_already_done:
+        case emsg_already_done:
           [[fallthrough]];
-        case err_msg_unknown:  // VkDeviceMemory object is somehow missing
-          cara_vk.p_malloc_range_tex8_2048 = nullptr;
-          vkDestroyImage( cara_vk.log_dev, cara_vk.tex8_2048, &vk_alloc_callbacks );
-          cara_vk.tex8_2048 = VK_NULL_HANDLE;
+        case emsg_unknown:  // VkDeviceMemory object is somehow missing
+          cara_vk.p_malloc_range_vbuf = nullptr;
+          vkDestroyBuffer( cara_vk.log_dev, cara_vk.vert_buf, &vk_alloc_callbacks );
+          cara_vk.vert_buf = VK_NULL_HANDLE;
           break;
         default:
           break;
       }
     } else {
-      cara_vk.p_malloc_range_tex8_2048 = nullptr;
-      vkDestroyImage( cara_vk.log_dev, cara_vk.tex8_2048, &vk_alloc_callbacks );
-      cara_vk.tex8_2048 = VK_NULL_HANDLE;
+      cara_vk.p_malloc_range_vbuf = nullptr;
+      vkDestroyBuffer( cara_vk.log_dev, cara_vk.vert_buf, &vk_alloc_callbacks );
+      cara_vk.vert_buf = VK_NULL_HANDLE;
+    }
+  }
+
+  if ( cara_vk.ind_buf ) {
+    VkMemoryRequirements req;
+    vkGetBufferMemoryRequirements( cara_vk.log_dev, cara_vk.ind_buf, &req );
+    VkMemoryPropertyFlags preferred_props = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+    VkMemoryPropertyFlags required_props = 0;
+    VkMemoryPropertyFlags tolerable_props = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT;
+    uint32_t mtype_idx = ma_pick_best_mtype(
+      &cara_vk.vmm, &req, required_props, preferred_props, tolerable_props );
+    enum err_msg err = ma_report_vk_malloc_rel( &cara_vk.vmm,
+        &vk_alloc_callbacks, vk_malloc_wrapper,
+        mtype_idx,
+        cara_vk.p_malloc_range_ibuf );
+    if ( err ) {
+      fprintf( stderr, "[Carbonara] Failure occurred in ma_report_vk_malloc_rel!! "
+          "'%s'\n", arr_emsg_txt[err] );
+      switch ( err ) {
+        case emsg_already_done:
+          [[fallthrough]];
+        case emsg_unknown:  // VkDeviceMemory object is somehow missing
+          cara_vk.p_malloc_range_ibuf = nullptr;
+          vkDestroyBuffer( cara_vk.log_dev, cara_vk.ind_buf, &vk_alloc_callbacks );
+          cara_vk.ind_buf = VK_NULL_HANDLE;
+          break;
+        default:
+          break;
+      }
+    } else {
+      cara_vk.p_malloc_range_ibuf = nullptr;
+      vkDestroyBuffer( cara_vk.log_dev, cara_vk.ind_buf, &vk_alloc_callbacks );
+      cara_vk.ind_buf = VK_NULL_HANDLE;
     }
   }
 
@@ -2371,37 +2652,38 @@ void destroy_vk_objs( _typeof_member(struct ms_worker_info, idx_self) worker_idx
 
   // FIXME Host access to `semaphore` must be externally synchronized (vkDestroySemaphore)
   for ( unsigned int fif_idx = 0; fif_idx < cara_max_nr_fif; fif_idx++ ) {
-    if( cara_vk.arr_acquire_semaphores[fif_idx] != VK_NULL_HANDLE ) {
-      vkDestroySemaphore( cara_vk.log_dev, cara_vk.arr_acquire_semaphores[fif_idx],
+    if( cara_vk.arr_sc_acquire_semaphores[fif_idx] != VK_NULL_HANDLE ) {
+      vkDestroySemaphore( cara_vk.log_dev, cara_vk.arr_sc_acquire_semaphores[fif_idx],
           &vk_alloc_callbacks
           //nullptr
           );
-      cara_vk.arr_acquire_semaphores[fif_idx] = VK_NULL_HANDLE;
+      cara_vk.arr_sc_acquire_semaphores[fif_idx] = VK_NULL_HANDLE;
     }
   }
-  if( cara_vk.arr_wsi_present_semaphores != nullptr ) {
+  if( cara_vk.arr_sc_present_semaphores != nullptr ) {
     for ( unsigned int swapchain_img_idx = 0;
-        swapchain_img_idx < cara_vk.nr_swapchain_imgs; swapchain_img_idx++ ) {
-      if( cara_vk.arr_wsi_present_semaphores[swapchain_img_idx] != VK_NULL_HANDLE ) {
+        swapchain_img_idx < cara_vk.nr_swapchain_imgs;
+        swapchain_img_idx++ ) {
+      if( cara_vk.arr_sc_present_semaphores[swapchain_img_idx] != VK_NULL_HANDLE ) {
         vkDestroySemaphore( cara_vk.log_dev,
-            cara_vk.arr_wsi_present_semaphores[swapchain_img_idx],
+            cara_vk.arr_sc_present_semaphores[swapchain_img_idx],
             &vk_alloc_callbacks
             //nullptr
             );
-        cara_vk.arr_wsi_present_semaphores[swapchain_img_idx] = VK_NULL_HANDLE;
+        cara_vk.arr_sc_present_semaphores[swapchain_img_idx] = VK_NULL_HANDLE;
       }
     }
-    ma_free( cara_single.mem_arena, worker_idx, cara_vk.arr_wsi_present_semaphores );
-    cara_vk.arr_wsi_present_semaphores = nullptr;
+    ma_free( cara_single.mem_arena, worker_idx, cara_vk.arr_sc_present_semaphores );
+    cara_vk.arr_sc_present_semaphores = nullptr;
   }
   for ( unsigned int fif_idx = 0; fif_idx < cara_max_nr_fif; fif_idx++ ) {
-    if( cara_vk.arr_semaphore_before_A[fif_idx] != VK_NULL_HANDLE ) {
-      vkDestroySemaphore( cara_vk.log_dev, cara_vk.arr_acquire_semaphores[fif_idx], nullptr );
-      cara_vk.arr_semaphore_before_A[fif_idx] = VK_NULL_HANDLE;
+    if( cara_vk.arr_semaphore_tr[fif_idx] != VK_NULL_HANDLE ) {
+      vkDestroySemaphore( cara_vk.log_dev, cara_vk.arr_sc_acquire_semaphores[fif_idx], nullptr );
+      cara_vk.arr_semaphore_tr[fif_idx] = VK_NULL_HANDLE;
     }
-    if( cara_vk.arr_semaphore_after_A[fif_idx] != VK_NULL_HANDLE ) {
-      vkDestroySemaphore( cara_vk.log_dev, cara_vk.arr_acquire_semaphores[fif_idx], nullptr );
-      cara_vk.arr_semaphore_after_A[fif_idx] = VK_NULL_HANDLE;
+    if( cara_vk.arr_semaphore_gr[fif_idx] != VK_NULL_HANDLE ) {
+      vkDestroySemaphore( cara_vk.log_dev, cara_vk.arr_sc_acquire_semaphores[fif_idx], nullptr );
+      cara_vk.arr_semaphore_gr[fif_idx] = VK_NULL_HANDLE;
     }
   }
 
@@ -2431,44 +2713,44 @@ void destroy_vk_objs( _typeof_member(struct ms_worker_info, idx_self) worker_idx
     }
   }
 
-  if ( cara_vk.trans_buf.arr_cmd_pools ) {
-    for ( uint_fast8_t idx_command_pool = 0;
-        idx_command_pool <= cara_single.proc_map->nr_processors; idx_command_pool++ ) {
-      if ( cara_vk.trans_buf.arr_cmd_pools[idx_command_pool] ) {
-        //fprintf( stdout, "trans_bufs.arr_cmd_pools[%u] = %#018lx\n", idx_command_pool,
-        //    ptr2ui(cara_vk.trans_bufs.arr_cmd_pools[idx_command_pool]) );
-        // FIXME Host access to `commandPool` must be externally synchronized
-        vkDestroyCommandPool( cara_vk.log_dev,
-            cara_vk.trans_buf.arr_cmd_pools[idx_command_pool],
-            &vk_alloc_callbacks
-            //nullptr
-            );
-       }
+  for ( uint_fast8_t set_idx = 0; set_idx < nr_trans_cmd_pool_sets + 1; set_idx++ ) {
+    if ( cara_vk.arr_trans_cmdbuf_sets[set_idx].arr_cmd_pools ) {
+      for ( uint_fast8_t cmd_pool_idx = 0;
+          cmd_pool_idx <= cara_single.proc_map->nr_processors; cmd_pool_idx++ ) {
+        if ( cara_vk.arr_trans_cmdbuf_sets[set_idx].arr_cmd_pools[cmd_pool_idx] ) {
+          vkDestroyCommandPool( cara_vk.log_dev,
+              cara_vk.arr_trans_cmdbuf_sets[set_idx].arr_cmd_pools[cmd_pool_idx],
+              &vk_alloc_callbacks
+              );
+
+          cara_vk.arr_trans_cmdbuf_sets[set_idx].arr_cmd_pools[cmd_pool_idx] = 0;
+        }
+      }
+      ma_free( cara_single.mem_arena, worker_idx,
+          cara_vk.arr_trans_cmdbuf_sets[set_idx].arr_cmd_pools );
+      cara_vk.arr_trans_cmdbuf_sets[set_idx].arr_cmd_pools = nullptr;
     }
-    ma_free( cara_single.mem_arena, worker_idx, cara_vk.trans_buf.arr_cmd_pools );
-    cara_vk.trans_buf.arr_cmd_pools = nullptr;
   }
 
-  if ( cara_vk.arr_frame_infos[0].arr_cmd_pools ) {
-    for ( uint_fast8_t idx_framebuffer = 0;
-        idx_framebuffer < cara_max_nr_fif; idx_framebuffer++ ) {
+  if ( cara_vk.arr_graphics_cmdbuf_sets[0].arr_cmd_pools ) {
+    for ( uint_fast8_t fif_idx = 0; fif_idx < cara_max_nr_fif; fif_idx++ ) {
       for ( uint_fast8_t idx_command_pool = 0;
           idx_command_pool <= cara_single.proc_map->nr_processors; idx_command_pool++ ) {
-        if ( cara_vk.arr_frame_infos[idx_framebuffer].arr_cmd_pools[idx_command_pool] ) {
+        if ( cara_vk.arr_graphics_cmdbuf_sets[fif_idx].arr_cmd_pools[idx_command_pool] ) {
           //fprintf( stdout, "framebufs[%u].arr_cmd_pools[%u] = %#018lx\n",
           //    idx_framebuffer,
           //    idx_command_pool,
           //    ptr2ui(cara_vk.arr_framebufs[idx_framebuffer].arr_cmd_pools[idx_command_pool]) );
           vkDestroyCommandPool( cara_vk.log_dev,
-              cara_vk.arr_frame_infos[idx_framebuffer].arr_cmd_pools[idx_command_pool],
+              cara_vk.arr_graphics_cmdbuf_sets[fif_idx].arr_cmd_pools[idx_command_pool],
               &vk_alloc_callbacks
               //nullptr
               );
         }
       }
     }
-    ma_free( cara_single.mem_arena, worker_idx, cara_vk.arr_frame_infos[0].arr_cmd_pools );
-    cara_vk.arr_frame_infos[0].arr_cmd_pools = nullptr;
+    ma_free( cara_single.mem_arena, worker_idx, cara_vk.arr_graphics_cmdbuf_sets[0].arr_cmd_pools );
+    cara_vk.arr_graphics_cmdbuf_sets[0].arr_cmd_pools = nullptr;
   }
 
   if ( cara_vk.presentation_surface ) {
@@ -2512,17 +2794,15 @@ void destroy_vk_objs( _typeof_member(struct ms_worker_info, idx_self) worker_idx
 
 
 
-
 //-------------------------------------------------------------------------------------------------
-enum err_msg create_1st_renderpass_and_framebuffer( struct cara_vk_renderer * renderer )
+static enum err_msg create_2nd_renderpass( struct cara_vk_renderer * renderer )
 {
   //
   // Define attachments
   //
 
-
   // The color attachment
-  VkAttachmentDescription2 arr_att_descs[3];
+  VkAttachmentDescription2 arr_att_descs[2];
   // NOTE Consider chaining VkAttachmentDescriptionStencilLayout in the pNext field in order to
   // set stencilInitialLayout and stencilFinalLayout
   for ( unsigned int att_idx = 0; att_idx < _arr_elem_cnt( arr_att_descs ); att_idx++ ) {
@@ -2542,7 +2822,167 @@ enum err_msg create_1st_renderpass_and_framebuffer( struct cara_vk_renderer * re
   //  and sub-pass layouts). But if queues used for the presentation and graphics operations come
   //  from two different families, we must perform ownership transfer. This cannot be done
   //  implicitly—for this we need to set up an image memory barrier.
-  arr_att_descs[fb_swapchain].initialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+  // I guess setting VkAttachmentDescription2.initialLayout and VkAttachmentReference2.layout are
+  //  enough to make the implicit transition happen
+
+  // The depth buffer
+  arr_att_descs[0].format = renderer->zbuf_fmt;
+  arr_att_descs[0].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+  arr_att_descs[0].storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+  arr_att_descs[0].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+  arr_att_descs[0].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+  arr_att_descs[0].finalLayout = has_stencil_buf( renderer->zbuf_fmt ) ?
+    VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL : VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
+
+  // The swapchain image
+  arr_att_descs[1].format = renderer->swapchain_img_fmt;
+  arr_att_descs[1].loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+  arr_att_descs[1].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+  arr_att_descs[1].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+  arr_att_descs[1].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+  arr_att_descs[1].finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;  // We are rendering
+                                                                 // directly into a swapchain image
+                                                                 // and we want to display it on
+                                                                 // screen; We should use a
+                                                                 // PRESENT_SRC layout.
+
+  // Prepare the array of VkAttachmentReference2
+  VkAttachmentReference2 arr_att_refs[cara_nr_framebuffers];
+  for ( unsigned int att_idx = 0; att_idx < _arr_elem_cnt( arr_att_refs ); att_idx++ ) {
+    arr_att_refs[att_idx].sType = VK_STRUCTURE_TYPE_ATTACHMENT_REFERENCE_2;
+    arr_att_refs[att_idx].pNext = nullptr;
+  }
+
+  // The depth buffer
+  arr_att_refs[fb_zbuf].attachment = fb_zbuf;
+  arr_att_refs[fb_zbuf].layout = has_stencil_buf( renderer->zbuf_fmt ) ?
+    VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL : VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
+  arr_att_refs[fb_zbuf].aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+
+  // The color buffer
+  arr_att_refs[fb_cbuf].attachment = fb_cbuf;
+  arr_att_refs[fb_cbuf].layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+  arr_att_refs[fb_cbuf].aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+
+  // The swapchain image
+  arr_att_refs[fb_swapchain].attachment = fb_swapchain;
+  arr_att_refs[fb_swapchain].layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+  arr_att_refs[fb_swapchain].aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+
+
+  //
+  // Define subpasses
+  //
+
+  // Operations performed in a render pass are grouped into subpasses. Each subpass represents a
+  //  stage or a phase of our rendering commands in which a subset of render pass's attachments are
+  //  used (into which we render or from which we read data).
+  // A render pass always requires at least one subpass that is automatically started when we begin
+  //  a render pass. And for each subpass, we need to prepare a description.
+  VkSubpassDescription2 arr_subpass_desc[cara_nr_subpasses_in_2nd_rp];
+  for ( unsigned int sp_idx = 0; sp_idx < _arr_elem_cnt( arr_subpass_desc ); sp_idx++ ) {
+    arr_subpass_desc[sp_idx].flags = 0;
+    arr_subpass_desc[sp_idx].pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+    arr_subpass_desc[sp_idx].sType = VK_STRUCTURE_TYPE_SUBPASS_DESCRIPTION_2;
+    arr_subpass_desc[sp_idx].pNext = nullptr;
+    arr_subpass_desc[sp_idx].viewMask = 0;
+  }
+  arr_subpass_desc[cs2_copy_to_sc].inputAttachmentCount = 0;
+  arr_subpass_desc[cs2_copy_to_sc].pInputAttachments = nullptr;
+  arr_subpass_desc[cs2_copy_to_sc].colorAttachmentCount = 1;
+  arr_subpass_desc[cs2_copy_to_sc].pColorAttachments = &arr_att_refs[fb_swapchain];
+  arr_subpass_desc[cs2_copy_to_sc].pResolveAttachments = nullptr;
+  arr_subpass_desc[cs2_copy_to_sc].pDepthStencilAttachment = &arr_att_refs[fb_zbuf];
+  arr_subpass_desc[cs2_copy_to_sc].preserveAttachmentCount = 0;
+  arr_subpass_desc[cs2_copy_to_sc].pPreserveAttachments = nullptr;
+
+
+  //
+  // Subpass dependencies
+  //
+
+  // When operations in a given subpass depend on the results of operations in one of the earlier
+  //  subpasses in the same render pass, we need to specify subpass dependencies. This is also
+  //  required if there are dependencies between operations recorded within a render pass and those
+  //  performed before it, or between operations that are executed after a render pass and those
+  //  performed within the render pass. It is also possible to define dependencies within a single
+  //  subpass.
+  VkSubpassDependency2 sp_dep[1];
+  for ( unsigned int dep_idx = 0; dep_idx < _arr_elem_cnt(sp_dep); dep_idx++ ) {
+    sp_dep[dep_idx].pNext = nullptr;
+    sp_dep[dep_idx].sType = VK_STRUCTURE_TYPE_SUBPASS_DEPENDENCY_2;
+    sp_dep[dep_idx].viewOffset = 0;
+  }
+  // cs_draw_opaq_objs - cs2_copy_to_sc
+  sp_dep[0].srcSubpass = VK_SUBPASS_EXTERNAL;
+  sp_dep[0].dstSubpass = cs2_copy_to_sc;
+  sp_dep[0].srcStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT_KHR;
+  sp_dep[0].dstStageMask = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT_KHR;
+  sp_dep[0].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+  sp_dep[0].dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+  sp_dep[0].dependencyFlags = 0;
+
+  // We don't need to set up dependencies for the layout transitions—these are performed
+  // automatically based on the information provided for the render pass attachment and subpass
+  // descriptions. What's more, when we specify different attachment layouts for different subpasses
+  // but in both subpasses the given attachment is used only for reading, we also don't need to
+  // specify a dependency.
+
+  //
+  // Call vkCreateRenderPass
+  //
+  VkRenderPassCreateInfo2 rp_create_info = {
+    .sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO_2,
+    .pNext = nullptr,
+    .flags = 0,
+    .attachmentCount = _arr_elem_cnt( arr_att_descs ),
+    .pAttachments = arr_att_descs,
+    .subpassCount = _arr_elem_cnt( arr_subpass_desc ),
+    .pSubpasses = arr_subpass_desc,
+    .dependencyCount = _arr_elem_cnt( sp_dep ),
+    .pDependencies = sp_dep,
+    .correlatedViewMaskCount = 0,
+    .pCorrelatedViewMasks = nullptr,
+  };
+  SPALL_BEGIN("vkCreateRenderPass2");
+  VkResult result;
+  result = vkCreateRenderPass2( renderer->log_dev, &rp_create_info,
+      &vk_alloc_callbacks,
+      &renderer->arr_renderpasses[1] );
+  SPALL_END();
+  if ( result != VK_SUCCESS ) {
+    fprintf( stderr, "[Carbonara] Error occurred creating a render pass. '%s'\n",
+        string_VkResult(result) );
+    return emsg_unknown;
+  }
+  return emsg_no_error;
+}
+
+
+
+
+//-------------------------------------------------------------------------------------------------
+enum err_msg create_1st_renderpass_and_framebuffer( struct cara_vk_renderer * renderer )
+{
+  //
+  // Define attachments
+  //
+
+  // The color attachment
+  VkAttachmentDescription2 arr_att_descs[2];
+  // NOTE Consider chaining VkAttachmentDescriptionStencilLayout in the pNext field in order to
+  // set stencilInitialLayout and stencilFinalLayout
+  for ( unsigned int att_idx = 0; att_idx < _arr_elem_cnt( arr_att_descs ); att_idx++ ) {
+    arr_att_descs[att_idx].flags = 0;
+    arr_att_descs[att_idx].samples = VK_SAMPLE_COUNT_1_BIT;
+    arr_att_descs[att_idx].pNext = nullptr;
+    arr_att_descs[att_idx].sType = VK_STRUCTURE_TYPE_ATTACHMENT_DESCRIPTION_2;
+    arr_att_descs[att_idx].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;  // An UNDEFINED layout can
+                                                             // always be used for an initial/old
+                                                             // layout—It means that we don't need
+                                                             // images content when a memory barrier
+                                                             // is set up.
+  }
 
   // The depth buffer
   arr_att_descs[fb_zbuf].format = renderer->zbuf_fmt;
@@ -2556,43 +2996,34 @@ enum err_msg create_1st_renderpass_and_framebuffer( struct cara_vk_renderer * re
   // The color buffer
   arr_att_descs[fb_cbuf].format = VK_FORMAT_R8G8B8A8_UNORM;
   arr_att_descs[fb_cbuf].loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-  arr_att_descs[fb_cbuf].storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+  arr_att_descs[fb_cbuf].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
   arr_att_descs[fb_cbuf].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
   arr_att_descs[fb_cbuf].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
   arr_att_descs[fb_cbuf].finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-                                                                        // We should set it to the
-                                                                        // same layout value as
-                                                                        // specified in the last
-                                                                        // subpass of a render pass.
 
-  // The swapchain image
-  arr_att_descs[fb_swapchain].format = renderer->swapchain_img_fmt;
-  arr_att_descs[fb_swapchain].loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-  arr_att_descs[fb_swapchain].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-  arr_att_descs[fb_swapchain].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-  arr_att_descs[fb_swapchain].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-  arr_att_descs[fb_swapchain].finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;  // We are rendering
-                                                                 // directly into a swapchain image
-                                                                 // and we want to display it on
-                                                                 // screen; We should use a
-                                                                 // PRESENT_SRC layout.
 
   // Prepare the array of VkAttachmentReference2
-  VkAttachmentReference2 arr_att_refs[3];
+  VkAttachmentReference2 arr_att_refs[cara_nr_framebuffers];
   for ( unsigned int att_idx = 0; att_idx < _arr_elem_cnt( arr_att_refs ); att_idx++ ) {
     arr_att_refs[att_idx].sType = VK_STRUCTURE_TYPE_ATTACHMENT_REFERENCE_2;
     arr_att_refs[att_idx].pNext = nullptr;
   }
+
+  // The depth buffer
   arr_att_refs[fb_zbuf].attachment = fb_zbuf;
-  arr_att_refs[fb_zbuf].layout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
+  arr_att_refs[fb_zbuf].layout = has_stencil_buf( renderer->zbuf_fmt ) ?
+    VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL : VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
   arr_att_refs[fb_zbuf].aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+
+  // The color buffer
   arr_att_refs[fb_cbuf].attachment = fb_cbuf;
   arr_att_refs[fb_cbuf].layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
   arr_att_refs[fb_cbuf].aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+
+  // The swapchain image
   arr_att_refs[fb_swapchain].attachment = fb_swapchain;
   arr_att_refs[fb_swapchain].layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
   arr_att_refs[fb_swapchain].aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-
 
   //
   // Define subpasses
@@ -2621,11 +3052,11 @@ enum err_msg create_1st_renderpass_and_framebuffer( struct cara_vk_renderer * re
   arr_subpass_desc[cs_z_only].preserveAttachmentCount = 0;
   arr_subpass_desc[cs_z_only].pPreserveAttachments = nullptr;
 
-  arr_subpass_desc[cs_draw_opaq_objs].inputAttachmentCount = 0;
-  arr_subpass_desc[cs_draw_opaq_objs].pInputAttachments = nullptr;
-  arr_subpass_desc[cs_draw_opaq_objs].colorAttachmentCount = 1;
-  arr_subpass_desc[cs_draw_opaq_objs].pColorAttachments = &arr_att_refs[fb_cbuf];
-  arr_subpass_desc[cs_draw_opaq_objs].pResolveAttachments = nullptr;  // If any of the color
+  arr_subpass_desc[cs_opaq_objs].inputAttachmentCount = 0;
+  arr_subpass_desc[cs_opaq_objs].pInputAttachments = nullptr;
+  arr_subpass_desc[cs_opaq_objs].colorAttachmentCount = 1;
+  arr_subpass_desc[cs_opaq_objs].pColorAttachments = &arr_att_refs[fb_cbuf];
+  arr_subpass_desc[cs_opaq_objs].pResolveAttachments = nullptr;  // If any of the color
                     // attachments should be resolved (changed from multisampled to single-sampled),
                     // specify a pointer to the first element of the array with same number of
                     // elements as pColorAttachments or use a nullptr value if no color attachments
@@ -2638,25 +3069,9 @@ enum err_msg create_1st_renderpass_and_framebuffer( struct cara_vk_renderer * re
           // A: Index of the attachment in the list of all render pass attachments for `attachment`.
           // B: A layout given image should be automatically transitioned to at the beginning of
           //   the subpass for `layout`.
-  arr_subpass_desc[cs_draw_opaq_objs].pDepthStencilAttachment = &arr_att_refs[fb_zbuf];
-  arr_subpass_desc[cs_draw_opaq_objs].preserveAttachmentCount = 0;
-  arr_subpass_desc[cs_draw_opaq_objs].pPreserveAttachments = nullptr;
-
-  VkAttachmentReference2 input_att_ref = {
-    .sType = VK_STRUCTURE_TYPE_ATTACHMENT_REFERENCE_2,
-    .pNext = nullptr,
-    .attachment = fb_cbuf,
-    .layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-    .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-  };
-  arr_subpass_desc[cs_copy_to_swapchain_img].inputAttachmentCount = 1;
-  arr_subpass_desc[cs_copy_to_swapchain_img].pInputAttachments = &input_att_ref;
-  arr_subpass_desc[cs_copy_to_swapchain_img].colorAttachmentCount = 1;
-  arr_subpass_desc[cs_copy_to_swapchain_img].pColorAttachments = &arr_att_refs[fb_swapchain];
-  arr_subpass_desc[cs_copy_to_swapchain_img].pResolveAttachments = nullptr;
-  arr_subpass_desc[cs_copy_to_swapchain_img].pDepthStencilAttachment = nullptr;
-  arr_subpass_desc[cs_copy_to_swapchain_img].preserveAttachmentCount = 0;
-  arr_subpass_desc[cs_copy_to_swapchain_img].pPreserveAttachments = nullptr;
+  arr_subpass_desc[cs_opaq_objs].pDepthStencilAttachment = &arr_att_refs[fb_zbuf];
+  arr_subpass_desc[cs_opaq_objs].preserveAttachmentCount = 0;
+  arr_subpass_desc[cs_opaq_objs].pPreserveAttachments = nullptr;
 
 
   //
@@ -2669,7 +3084,7 @@ enum err_msg create_1st_renderpass_and_framebuffer( struct cara_vk_renderer * re
   //  performed before it, or between operations that are executed after a render pass and those
   //  performed within the render pass. It is also possible to define dependencies within a single
   //  subpass.
-  VkSubpassDependency2 sp_dep[2];
+  VkSubpassDependency2 sp_dep[1];
   for ( unsigned int dep_idx = 0; dep_idx < _arr_elem_cnt(sp_dep); dep_idx++ ) {
     sp_dep[dep_idx].pNext = nullptr;
     sp_dep[dep_idx].sType = VK_STRUCTURE_TYPE_SUBPASS_DEPENDENCY_2;
@@ -2677,18 +3092,18 @@ enum err_msg create_1st_renderpass_and_framebuffer( struct cara_vk_renderer * re
   }
   // cs_depth_only - cs_draw_opaq_objs
   sp_dep[0].srcSubpass = cs_z_only;  // The index of a subpass from which ("producing")
-                                         // operations should be finished before the second set of
-                                         // ("consuming") operations (or a VK_SUBPASS_EXTERNAL value
-                                         // for commands before the render pass).
-  sp_dep[0].dstSubpass = cs_draw_opaq_objs;  // The index of a subpass whose operations depend on the
-                                          // previous set of commands (or a VK_SUBPASS_EXTERNAL
-                                          // value for operations after the render pass).
+                                     // operations should be finished before the second set of
+                                     // ("consuming") operations (or a VK_SUBPASS_EXTERNAL value
+                                     // for commands before the render pass).
+  sp_dep[0].dstSubpass = cs_opaq_objs;  // The index of a subpass whose operations depend on
+                                        // the previous set of commands (or a VK_SUBPASS_EXTERNAL
+                                        // value for operations after the render pass).
   sp_dep[0].srcStageMask = VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT_KHR;  // The set of pipeline
                                                                 // stages which produce the result
                                                                 // read by the "consuming" commands.
   sp_dep[0].dstStageMask = VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT_KHR;
-  sp_dep[0].srcAccessMask = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT_KHR;
-  sp_dep[0].dstAccessMask = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT_KHR;
+  sp_dep[0].srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+  sp_dep[0].dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT;
   sp_dep[0].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;  // For dependencyFlags, use a
                                    // VK_DEPENDENCY_BY_REGION_BIT value if the dependency is defined
                                    // by region—it means that operations generating data for a given
@@ -2697,21 +3112,13 @@ enum err_msg create_1st_renderpass_and_framebuffer( struct cara_vk_renderer * re
                                    // dependency is global, which means that data for the whole
                                    // image must be generated before "consuming" commands can be
                                    // executed.
-  // cs_draw_opaq_objs - cs_copy_to_swapchain_img
-  sp_dep[1].srcSubpass = cs_draw_opaq_objs;
-  sp_dep[1].dstSubpass = cs_copy_to_swapchain_img;
-  sp_dep[1].srcStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT_KHR;
-  sp_dep[1].dstStageMask = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT_KHR;
-  sp_dep[1].srcAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT_KHR;
-  sp_dep[1].dstAccessMask = VK_ACCESS_2_INPUT_ATTACHMENT_READ_BIT_KHR;
-  sp_dep[1].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
-
 
   // We don't need to set up dependencies for the layout transitions—these are performed
   // automatically based on the information provided for the render pass attachment and subpass
   // descriptions. What's more, when we specify different attachment layouts for different subpasses
   // but in both subpasses the given attachment is used only for reading, we also don't need to
   // specify a dependency.
+
 
   //
   // Call vkCreateRenderPass
@@ -2734,11 +3141,16 @@ enum err_msg create_1st_renderpass_and_framebuffer( struct cara_vk_renderer * re
   result = vkCreateRenderPass2( renderer->log_dev, &rp_create_info,
       &vk_alloc_callbacks,
       //nullptr,
-      &renderer->render_pass );
+      &renderer->arr_renderpasses[0] );
   SPALL_END();
   if ( result != VK_SUCCESS ) {
     fprintf( stderr, "[Carbonara] Error occurred creating a render pass. '%s'\n",
         string_VkResult(result) );
+    goto stop_everything_after_failure;
+  }
+
+  enum err_msg err = create_2nd_renderpass( renderer );
+  if ( err ) {
     goto stop_everything_after_failure;
   }
 
@@ -2760,35 +3172,42 @@ enum err_msg create_1st_renderpass_and_framebuffer( struct cara_vk_renderer * re
   // (refer to the Preparing viewport and scissor test state recipe from Chapter 8, Graphics and
   // Compute Pipelines and to the Setting a dynamic viewport and scissors state recipe from Chapter
   // 9, Command Recording and Drawing).
-  VkFramebufferAttachmentImageInfo fb_att_img_info[cara_nr_famebuffers];
-  for ( unsigned int att_idx = 0; att_idx < _arr_elem_cnt( fb_att_img_info ); att_idx++ ) {
-    fb_att_img_info[att_idx].sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_ATTACHMENT_IMAGE_INFO;
-    fb_att_img_info[att_idx].pNext = nullptr;
-    fb_att_img_info[att_idx].flags = 0;
-    fb_att_img_info[att_idx].width = small_win_width;
-    fb_att_img_info[att_idx].height = small_win_height;
-    fb_att_img_info[att_idx].layerCount = 1;
-    fb_att_img_info[att_idx].viewFormatCount = 1;
+  VkFramebufferAttachmentImageInfo fb_att_img_info1[cara_nr_framebuffers - 1];
+  for ( unsigned int att_idx = 0; att_idx < _arr_elem_cnt( fb_att_img_info1 ); att_idx++ ) {
+    fb_att_img_info1[att_idx].sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_ATTACHMENT_IMAGE_INFO;
+    fb_att_img_info1[att_idx].pNext = nullptr;
+    fb_att_img_info1[att_idx].flags = 0;
+    fb_att_img_info1[att_idx].width = small_win_width;
+    fb_att_img_info1[att_idx].height = small_win_height;
+    fb_att_img_info1[att_idx].layerCount = 1;
+    fb_att_img_info1[att_idx].viewFormatCount = 1;
   }
   constexpr VkFormat rgba_unorm = VK_FORMAT_R8G8B8A8_UNORM;
-  fb_att_img_info[fb_cbuf].usage =
+  fb_att_img_info1[fb_cbuf].usage =
     VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT;
-  fb_att_img_info[fb_cbuf].pViewFormats = &rgba_unorm;
+  fb_att_img_info1[fb_cbuf].pViewFormats = &rgba_unorm;
 
   const VkFormat depth_fmt = renderer->zbuf_fmt;
-  fb_att_img_info[fb_zbuf].usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
-  fb_att_img_info[fb_zbuf].pViewFormats = &depth_fmt;
+  fb_att_img_info1[fb_zbuf].usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+  fb_att_img_info1[fb_zbuf].pViewFormats = &depth_fmt;
 
-  fb_att_img_info[fb_swapchain].usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
-  fb_att_img_info[fb_swapchain].pViewFormats = &renderer->swapchain_img_fmt;
-  fb_att_img_info[fb_swapchain].width = small_win_width;
-  fb_att_img_info[fb_swapchain].height = small_win_height;
+  VkFramebufferAttachmentImageInfo fb_att_img_info2[1];
+  for ( unsigned int att_idx = 0; att_idx < _arr_elem_cnt( fb_att_img_info2 ); att_idx++ ) {
+    fb_att_img_info2[att_idx].sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_ATTACHMENT_IMAGE_INFO;
+    fb_att_img_info2[att_idx].pNext = nullptr;
+    fb_att_img_info2[att_idx].flags = 0;
+    fb_att_img_info2[att_idx].width = small_win_width;
+    fb_att_img_info2[att_idx].height = small_win_height;
+    fb_att_img_info2[att_idx].layerCount = 1;
+    fb_att_img_info2[att_idx].viewFormatCount = 1;
+  }
+  fb_att_img_info2[0].usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+  fb_att_img_info2[0].pViewFormats = &renderer->swapchain_img_fmt;
 
-  VkFramebufferAttachmentsCreateInfo fb_atts_create_info;
-  fb_atts_create_info.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_ATTACHMENTS_CREATE_INFO;
-  fb_atts_create_info.pNext = nullptr;
-  fb_atts_create_info.attachmentImageInfoCount = _arr_elem_cnt( fb_att_img_info );
-  fb_atts_create_info.pAttachmentImageInfos = fb_att_img_info;
+  VkFramebufferAttachmentsCreateInfo fb_atts_create_info = {
+    .sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_ATTACHMENTS_CREATE_INFO,
+    .pNext = nullptr,
+  };
 
   VkFramebufferCreateInfo fb_create_info = {
     .sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
@@ -2800,23 +3219,38 @@ enum err_msg create_1st_renderpass_and_framebuffer( struct cara_vk_renderer * re
                                                    // actual image views are provided at render pass
                                                    // begin time via
                                                    // `VkRenderPassAttachmentBeginInfoKHR`.
-    .renderPass = renderer->render_pass,
-    .attachmentCount = _arr_elem_cnt( fb_att_img_info ),
+    .attachmentCount = _arr_elem_cnt( fb_att_img_info1 ),
     .pAttachments = nullptr,
     .width = small_win_width,
     .height = small_win_height,
     .layers = 1,
   };
-  SPALL_BEGIN("vkCreateFramebuffer");
-  result = vkCreateFramebuffer( renderer->log_dev, &fb_create_info,
-      &vk_alloc_callbacks,
-      //nullptr
-      &renderer->framebuffer );
-  SPALL_END();
-  if ( result != VK_SUCCESS ) {
-    fprintf( stderr, "[Carbonara] Error occurred in vkCreateFramebuffer. '%s'\n",
-        string_VkResult(result) );
-    goto stop_everything_after_failure;
+  for ( unsigned int fif_idx = 0; fif_idx < cara_max_nr_fif; fif_idx++ ) {
+    fb_create_info.renderPass = renderer->arr_renderpasses[0];
+    fb_atts_create_info.attachmentImageInfoCount = _arr_elem_cnt( fb_att_img_info1 );
+    fb_atts_create_info.pAttachmentImageInfos = fb_att_img_info1;
+    SPALL_BEGIN("vkCreateFramebuffer");
+    result = vkCreateFramebuffer( renderer->log_dev, &fb_create_info, &vk_alloc_callbacks,
+        &renderer->arr_framebuffers[fif_idx][0] );
+    SPALL_END();
+    if ( result != VK_SUCCESS ) {
+      fprintf( stderr, "[Carbonara] Error occurred in vkCreateFramebuffer. '%s'\n",
+          string_VkResult(result) );
+      goto stop_everything_after_failure;
+    }
+
+    fb_create_info.renderPass = renderer->arr_renderpasses[1];
+    fb_atts_create_info.attachmentImageInfoCount = _arr_elem_cnt( fb_att_img_info2 );
+    fb_atts_create_info.pAttachmentImageInfos = fb_att_img_info2;
+    SPALL_BEGIN("vkCreateFramebuffer");
+    result = vkCreateFramebuffer( renderer->log_dev, &fb_create_info, &vk_alloc_callbacks,
+        &renderer->arr_framebuffers[fif_idx][1] );
+    SPALL_END();
+    if ( result != VK_SUCCESS ) {
+      fprintf( stderr, "[Carbonara] Error occurred in vkCreateFramebuffer. '%s'\n",
+          string_VkResult(result) );
+      goto stop_everything_after_failure;
+    }
   }
 
 
@@ -2826,69 +3260,86 @@ enum err_msg create_1st_renderpass_and_framebuffer( struct cara_vk_renderer * re
   //
 
   // Create a depth buffer and a color buffer
-  VkImageCreateInfo img_create_info;
-  img_create_info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
-  img_create_info.pNext = nullptr;
-  img_create_info.flags = 0;
-  img_create_info.imageType = VK_IMAGE_TYPE_2D;
-  img_create_info.format = renderer->zbuf_fmt;
-  img_create_info.extent = (VkExtent3D) { small_win_width, small_win_height, 1 };
-  img_create_info.mipLevels = 1;
-  img_create_info.arrayLayers = 1;
-  img_create_info.samples = VK_SAMPLE_COUNT_1_BIT;
-  img_create_info.tiling = VK_IMAGE_TILING_OPTIMAL;
-  img_create_info.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
-  img_create_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-  img_create_info.queueFamilyIndexCount = 0;
-  img_create_info.pQueueFamilyIndices = nullptr;
-  img_create_info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-  SPALL_BEGIN("vk_create_framebuffers_imgs");
-  vkCreateImage( renderer->log_dev, &img_create_info, &vk_alloc_callbacks,
-      &renderer->zbuf_n_cbuf[fb_zbuf] );
-  img_create_info.format = VK_FORMAT_R8G8B8A8_UNORM;
-  img_create_info.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
-  vkCreateImage( renderer->log_dev, &img_create_info, &vk_alloc_callbacks,
-      &renderer->zbuf_n_cbuf[fb_cbuf] );
-  SPALL_END();
-
-  for ( unsigned int fb_idx = fb_zbuf; fb_idx <= fb_cbuf; fb_idx++ ) {
-    // Obtain the requirements
-    VkMemoryRequirements req;
-    SPALL_BEGIN("vkGetImageMemoryRequirements");
-    vkGetImageMemoryRequirements( renderer->log_dev, renderer->zbuf_n_cbuf[fb_idx], &req );
+  VkImageCreateInfo img_create_info = {
+    .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+    .pNext = nullptr,
+    .flags = 0,
+    .imageType = VK_IMAGE_TYPE_2D,
+    .extent = (VkExtent3D) { small_win_width, small_win_height, 1 },
+    .mipLevels = 1,
+    .arrayLayers = 1,
+    .samples = VK_SAMPLE_COUNT_1_BIT,
+    .tiling = VK_IMAGE_TILING_OPTIMAL,
+    .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+    .queueFamilyIndexCount = 0,
+    .pQueueFamilyIndices = nullptr,
+    .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+  };
+  for ( unsigned int fif_idx = 0; fif_idx < cara_max_nr_fif; fif_idx++ ) {
+    img_create_info.format = renderer->zbuf_fmt;
+    img_create_info.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+    SPALL_BEGIN("vkCreateImage");
+    result = vkCreateImage( renderer->log_dev, &img_create_info, &vk_alloc_callbacks,
+        &renderer->zbuf_n_cbuf[fif_idx][fb_zbuf] );
     SPALL_END();
-
-    // Choose the best memory type
-    VkMemoryPropertyFlags preferred_props, required_props, tolerable_props;
-    preferred_props = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
-    required_props = 0;
-    tolerable_props = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT;
-    const uint32_t type_idx = ma_pick_best_mtype(
-        &renderer->vmm, &req, required_props, preferred_props, tolerable_props );
-    //const uint32_t heap_idx = renderer->vmm.arr_heap_indices[type_idx];
-
-    // Bind the image to a vulkan memory object
-    struct range_u32 * p_malloc_range = nullptr;
-    enum err_msg err = ma_bind_img_to_malloc( &renderer->vmm,
-        &vk_alloc_callbacks, vk_malloc_wrapper,
-        renderer->log_dev, renderer->zbuf_n_cbuf[fb_idx],
-        type_idx, req.size, req.alignment, &p_malloc_range );
-    if ( err ) {
-      fprintf( stderr, "Error occured in ma_bind_img_to_malloc. (%s)\n", err_msg_text[err] );
+    if ( result != VK_SUCCESS ) {
+      fprintf( stderr, "[Carbonara] Error occurred in vkCreateImage. '%s'\n",
+          string_VkResult(result) );
       goto stop_everything_after_failure;
     }
-    renderer->p_malloc_range_zbuf_and_cbuf[fb_idx] = p_malloc_range;
+    img_create_info.format = VK_FORMAT_R8G8B8A8_UNORM;
+    img_create_info.usage =
+      VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT;
+    SPALL_BEGIN("vkCreateImage");
+    result = vkCreateImage( renderer->log_dev, &img_create_info, &vk_alloc_callbacks,
+        &renderer->zbuf_n_cbuf[fif_idx][fb_cbuf] );
+    SPALL_END();
+    if ( result != VK_SUCCESS ) {
+      fprintf( stderr, "[Carbonara] Error occurred in vkCreateImage. '%s'\n",
+          string_VkResult(result) );
+      goto stop_everything_after_failure;
+    }
   }
 
+  // vkBindImageMemory
+  for ( unsigned int fif_idx = 0; fif_idx < cara_max_nr_fif; fif_idx++ ) {
+    for ( unsigned int fb_idx = fb_zbuf; fb_idx <= fb_cbuf; fb_idx++ ) {
+      // Obtain the requirements
+      VkMemoryRequirements req;
+      SPALL_BEGIN("vkGetImageMemoryRequirements");
+      vkGetImageMemoryRequirements( renderer->log_dev,
+          renderer->zbuf_n_cbuf[fif_idx][fb_idx], &req );
+      SPALL_END();
+
+      // Choose the best memory type
+      VkMemoryPropertyFlags preferred_props, required_props, tolerable_props;
+      preferred_props = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+      required_props = 0;
+      tolerable_props = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT;
+      const uint32_t mtype_idx = ma_pick_best_mtype(
+          &renderer->vmm, &req, required_props, preferred_props, tolerable_props );
+      //const uint32_t heap_idx = renderer->vmm.arr_heap_indices[mtype_idx];
+
+      // Bind the image to a vulkan memory object
+      struct range_u32 * p_malloc_range = nullptr;
+      err = ma_bind_img_to_malloc( &renderer->vmm,
+          &vk_alloc_callbacks, vk_malloc_wrapper,
+          renderer->log_dev, renderer->zbuf_n_cbuf[fif_idx][fb_idx],
+          mtype_idx, req.size, req.alignment, &p_malloc_range );
+      if ( err ) {
+        fprintf( stderr, "Error occured in ma_bind_img_to_malloc. (%s)\n", arr_emsg_txt[err] );
+        goto stop_everything_after_failure;
+      }
+      renderer->p_malloc_range_zbuf_and_cbuf[fif_idx][fb_idx] = p_malloc_range;
+    }
+  }
 
   // Create the image views
   VkImageViewCreateInfo iv_create_info = {
     .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
     .pNext = nullptr,
     .flags = 0,
-    .image = renderer->zbuf_n_cbuf[fb_zbuf],
     .viewType = VK_IMAGE_VIEW_TYPE_2D,
-    .format = renderer->zbuf_fmt,
     .components = (VkComponentMapping) {
       VK_COMPONENT_SWIZZLE_IDENTITY,
       VK_COMPONENT_SWIZZLE_IDENTITY,
@@ -2903,16 +3354,32 @@ enum err_msg create_1st_renderpass_and_framebuffer( struct cara_vk_renderer * re
         .layerCount = 1,
     },
   };
-  SPALL_BEGIN("vk_create_framebuffers_ivs");
-  result = vkCreateImageView( renderer->log_dev, &iv_create_info, &vk_alloc_callbacks,
-      &renderer->zbuf_n_cbuf_iv[fb_zbuf] );
-  iv_create_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-  iv_create_info.format = VK_FORMAT_R8G8B8A8_UNORM;
-  iv_create_info.image = renderer->zbuf_n_cbuf[fb_cbuf];
-  result = vkCreateImageView( renderer->log_dev, &iv_create_info, &vk_alloc_callbacks,
-      &renderer->zbuf_n_cbuf_iv[fb_cbuf] );
-  SPALL_END();
-
+  for ( unsigned int fif_idx = 0; fif_idx < cara_max_nr_fif; fif_idx++ ) {
+    iv_create_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+    iv_create_info.format = renderer->zbuf_fmt;
+    iv_create_info.image = renderer->zbuf_n_cbuf[fif_idx][fb_zbuf];
+    SPALL_BEGIN("vkCreateImageView");
+    result = vkCreateImageView( renderer->log_dev, &iv_create_info, &vk_alloc_callbacks,
+        &renderer->zbuf_n_cbuf_iv[fif_idx][fb_zbuf] );
+    SPALL_END();
+    if ( result != VK_SUCCESS ) {
+      fprintf( stderr, "[Carbonara] Error occurred in vkCreateImageView. '%s'\n",
+          string_VkResult(result) );
+      goto stop_everything_after_failure;
+    }
+    iv_create_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    iv_create_info.format = VK_FORMAT_R8G8B8A8_UNORM;
+    iv_create_info.image = renderer->zbuf_n_cbuf[fif_idx][fb_cbuf];
+    SPALL_BEGIN("vkCreateImageView");
+    result = vkCreateImageView( renderer->log_dev, &iv_create_info, &vk_alloc_callbacks,
+        &renderer->zbuf_n_cbuf_iv[fif_idx][fb_cbuf] );
+    SPALL_END();
+    if ( result != VK_SUCCESS ) {
+      fprintf( stderr, "[Carbonara] Error occurred in vkCreateImageView. '%s'\n",
+          string_VkResult(result) );
+      goto stop_everything_after_failure;
+    }
+  }
 
   renderer->dims_swapchain_imgs = (VkExtent2D) {
     .width = small_win_width,
@@ -2920,68 +3387,79 @@ enum err_msg create_1st_renderpass_and_framebuffer( struct cara_vk_renderer * re
   };
 
 
-  return err_msg_no_error;
+  return emsg_no_error;
 
 stop_everything_after_failure:
-  if ( renderer->framebuffer ) {
-    vkDestroyFramebuffer( renderer->log_dev, renderer->framebuffer, &vk_alloc_callbacks );
-    renderer->framebuffer = VK_NULL_HANDLE;
-  }
-
-  for ( unsigned int fb_idx = fb_zbuf; fb_idx <= fb_cbuf; fb_idx++ ) {
-    if ( renderer->zbuf_n_cbuf[fb_idx] == VK_NULL_HANDLE ) {
-      continue;
-    }
-    // Should I just write down the memory type when binding to a memory object?
-    VkMemoryRequirements req;
-    vkGetImageMemoryRequirements( renderer->log_dev, renderer->zbuf_n_cbuf[fb_idx], &req );
-    VkMemoryPropertyFlags preferred_props, required_props, tolerable_props;
-    preferred_props = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
-    required_props = 0;
-    tolerable_props = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT;
-    enum err_msg err = ma_report_vk_malloc_rel( &renderer->vmm,
-        &vk_alloc_callbacks, vk_malloc_wrapper,
-        ma_pick_best_mtype(&renderer->vmm, &req, required_props, preferred_props, tolerable_props),
-        renderer->p_malloc_range_zbuf_and_cbuf[fb_idx] );
-    if ( err ) {
-      fprintf( stderr, "[Carbonara] Failure occurred in ma_report_vk_malloc_rel!! "
-          "'%s'\n", err_msg_text[err] );
-      switch ( err ) {
-        case err_msg_already_done:
-          [[fallthrough]];
-        case err_msg_unknown:  // VkDeviceMemory object is somehow missing
-          renderer->p_malloc_range_zbuf_and_cbuf[fb_idx] = nullptr;
-          vkDestroyImage( renderer->log_dev, renderer->zbuf_n_cbuf[fb_idx], &vk_alloc_callbacks );
-          renderer->zbuf_n_cbuf[fb_idx] = VK_NULL_HANDLE;
-          renderer->p_malloc_range_zbuf_and_cbuf[fb_idx] = nullptr;
-          break;
-        default:
-          break;
+  for ( unsigned int fif_idx = 0; fif_idx < cara_max_nr_fif; fif_idx++ ) {
+    for ( unsigned int rp_idx = 0; rp_idx < cara_nr_renderpasses; rp_idx++ ) {
+      // vkDestroyFramebuffer
+      if ( renderer->arr_framebuffers[fif_idx][rp_idx] ) {
+        vkDestroyFramebuffer( renderer->log_dev,
+            renderer->arr_framebuffers[fif_idx][rp_idx], &vk_alloc_callbacks );
+        renderer->arr_framebuffers[fif_idx][rp_idx] = VK_NULL_HANDLE;
       }
-    } else {
-      renderer->p_malloc_range_zbuf_and_cbuf[fb_idx] = nullptr;
-      vkDestroyImage( renderer->log_dev, renderer->zbuf_n_cbuf[fb_idx], &vk_alloc_callbacks );
-      renderer->zbuf_n_cbuf[fb_idx] = VK_NULL_HANDLE;
-      renderer->p_malloc_range_zbuf_and_cbuf[fb_idx] = nullptr;
+    }
+  }
+  for ( unsigned int fif_idx = 0; fif_idx < cara_max_nr_fif; fif_idx++ ) {
+    // vkDestroyImage
+    for ( unsigned int fb_idx = fb_zbuf; fb_idx <= fb_cbuf; fb_idx++ ) {
+      if ( renderer->zbuf_n_cbuf[fif_idx][fb_idx] == VK_NULL_HANDLE ) {
+        continue;
+      }
+      // Should I just write down the memory type when binding to a memory object?
+      VkMemoryRequirements req;
+      vkGetImageMemoryRequirements( renderer->log_dev,
+          renderer->zbuf_n_cbuf[fif_idx][fb_idx], &req );
+      VkMemoryPropertyFlags preferred_props, required_props, tolerable_props;
+      preferred_props = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+      required_props = 0;
+      tolerable_props = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT;
+      err = ma_report_vk_malloc_rel( &renderer->vmm,
+          &vk_alloc_callbacks, vk_malloc_wrapper,
+          ma_pick_best_mtype(&renderer->vmm, &req,
+            required_props, preferred_props, tolerable_props),
+          renderer->p_malloc_range_zbuf_and_cbuf[fif_idx][fb_idx] );
+      if ( err ) {
+        fprintf( stderr, "[Carbonara] Failure occurred in ma_report_vk_malloc_rel!! "
+            "'%s'\n", arr_emsg_txt[err] );
+        switch ( err ) {
+          case emsg_already_done:
+            [[fallthrough]];
+          case emsg_unknown:  // VkDeviceMemory object is somehow missing
+            vkDestroyImage( renderer->log_dev,
+                renderer->zbuf_n_cbuf[fif_idx][fb_idx], &vk_alloc_callbacks );
+            renderer->zbuf_n_cbuf[fif_idx][fb_idx] = VK_NULL_HANDLE;
+            renderer->p_malloc_range_zbuf_and_cbuf[fif_idx][fb_idx] = nullptr;
+            break;
+          default:
+            break;
+        }
+      } else {
+        vkDestroyImage( renderer->log_dev,
+            renderer->zbuf_n_cbuf[fif_idx][fb_idx], &vk_alloc_callbacks );
+        renderer->zbuf_n_cbuf[fif_idx][fb_idx] = VK_NULL_HANDLE;
+        renderer->p_malloc_range_zbuf_and_cbuf[fif_idx][fb_idx] = nullptr;
+      }
+
+      // vkDestroyImageView
+      if ( renderer->zbuf_n_cbuf_iv[fif_idx][fb_idx] == VK_NULL_HANDLE ) {
+        continue;
+      }
+      vkDestroyImageView( renderer->log_dev,
+          renderer->zbuf_n_cbuf_iv[fif_idx][fb_idx], &vk_alloc_callbacks );
+      renderer->zbuf_n_cbuf_iv[fif_idx][fb_idx] = VK_NULL_HANDLE;
     }
   }
 
-  for ( unsigned int fb_idx = fb_zbuf; fb_idx <= fb_cbuf; fb_idx++ ) {
-    if ( renderer->zbuf_n_cbuf_iv[fb_idx] == VK_NULL_HANDLE ) {
-      continue;
+  for ( unsigned int rp_idx = 0; rp_idx < cara_nr_renderpasses; rp_idx++ ) {
+    if ( renderer->arr_renderpasses[rp_idx] ) {
+      vkDestroyRenderPass( renderer->log_dev, renderer->arr_renderpasses[rp_idx],
+          &vk_alloc_callbacks );
+      renderer->arr_renderpasses[rp_idx] = VK_NULL_HANDLE;
     }
-    vkDestroyImageView( renderer->log_dev, renderer->zbuf_n_cbuf_iv[fb_idx], &vk_alloc_callbacks );
-    renderer->zbuf_n_cbuf_iv[fb_idx] = VK_NULL_HANDLE;
   }
 
-  if ( renderer->render_pass ) {
-    vkDestroyRenderPass( renderer->log_dev, renderer->render_pass,
-        &vk_alloc_callbacks );
-        //nullptr );
-    renderer->render_pass = VK_NULL_HANDLE;
-  }
-
-  return err_msg_unknown;
+  return emsg_unknown;
 }
 
 
@@ -2989,25 +3467,31 @@ stop_everything_after_failure:
 enum err_msg expand_swapchain_and_framebuffer( struct cara_vk_renderer * renderer )
 {
   unsigned int new_width = renderer->win_size.parts.width;
-  new_width = _align_to_power_of_two( new_width, framebuf_dims_granularity );
-  unsigned int new_height = renderer->win_size.parts.height;
-  new_height = _align_to_power_of_two( new_height, framebuf_dims_granularity );
-  if ( new_width > renderer->max_win_size_avail.parts.width ||
-      new_height > renderer->max_win_size_avail.parts.height ) {
-    return err_msg_too_long;
+  if ( renderer->max_win_size.parts.width > new_width ) {
+    new_width = renderer->max_win_size.parts.width;
   }
+  new_width = _align_to_power_of_two( new_width, framebuf_dims_granularity );
 
+  unsigned int new_height = renderer->win_size.parts.height;
+  if ( renderer->max_win_size.parts.height > new_height ) {
+    new_height = renderer->max_win_size.parts.height;
+  }
+  new_height = _align_to_power_of_two( new_height, framebuf_dims_granularity );
 
+  if ( new_width > renderer->max_win_size_avail.parts.width ) {
+    new_width = renderer->max_win_size_avail.parts.width;
+  }
+  if ( new_height > renderer->max_win_size_avail.parts.height ) {
+    new_height = renderer->max_win_size_avail.parts.height;
+  }
 
   VkImage * arr_swapchain_images = nullptr;
   VkImageView * arr_swapchain_img_views = nullptr;
   VkSwapchainKHR swapchain = VK_NULL_HANDLE;
-  VkFramebuffer new_framebuffer = VK_NULL_HANDLE;
-  VkImageView new_zbuf_iv = VK_NULL_HANDLE;
-  VkImageView new_cbuf_iv = VK_NULL_HANDLE;
-  VkImage new_zbuf_img = VK_NULL_HANDLE;
-  VkImage new_cbuf_img = VK_NULL_HANDLE;
-  VkDeviceMemory * p_malloc_zbuf = nullptr;
+  VkFramebuffer new_framebuffers[cara_max_nr_fif][cara_nr_renderpasses] = {0};
+  VkImageView new_zbuf_n_cbuf_iv[cara_max_nr_fif][2] = {0};
+  VkImage new_zbuf_n_cbuf_img[cara_max_nr_fif][2] = {0};
+  struct range_u32 * arr_p_new_malloc_ranges_zbuf_and_cbuf[cara_max_nr_fif][2] = {0};
   uint32_t heap_idx = UINT_MAX_(heap_idx);
   unsigned int nr_swapchain_imgs = 0;
 
@@ -3017,35 +3501,43 @@ enum err_msg expand_swapchain_and_framebuffer( struct cara_vk_renderer * rendere
   //
   // Change framebuffers
   //
-  VkFramebufferAttachmentImageInfo fb_att_img_info[cara_nr_famebuffers];
-  for ( unsigned int att_idx = 0; att_idx < _arr_elem_cnt( fb_att_img_info ); att_idx++ ) {
-    fb_att_img_info[att_idx].sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_ATTACHMENT_IMAGE_INFO;
-    fb_att_img_info[att_idx].pNext = nullptr;
-    fb_att_img_info[att_idx].flags = 0;
-    fb_att_img_info[att_idx].width = new_width;
-    fb_att_img_info[att_idx].height = new_height;
-    fb_att_img_info[att_idx].layerCount = 1;
-    fb_att_img_info[att_idx].viewFormatCount = 1;
+  VkFramebufferAttachmentImageInfo fb_att_img_info1[cara_nr_framebuffers - 1];
+  for ( unsigned int att_idx = 0; att_idx < _arr_elem_cnt( fb_att_img_info1 ); att_idx++ ) {
+    fb_att_img_info1[att_idx].sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_ATTACHMENT_IMAGE_INFO;
+    fb_att_img_info1[att_idx].pNext = nullptr;
+    fb_att_img_info1[att_idx].flags = 0;
+    fb_att_img_info1[att_idx].width = new_width;
+    fb_att_img_info1[att_idx].height = new_height;
+    fb_att_img_info1[att_idx].layerCount = 1;
+    fb_att_img_info1[att_idx].viewFormatCount = 1;
   }
   constexpr VkFormat rgba_unorm = VK_FORMAT_R8G8B8A8_UNORM;
-  fb_att_img_info[fb_cbuf].usage =
+  fb_att_img_info1[fb_cbuf].usage =
     VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT;
-  fb_att_img_info[fb_cbuf].pViewFormats = &rgba_unorm;
+  fb_att_img_info1[fb_cbuf].pViewFormats = &rgba_unorm;
 
   const VkFormat depth_fmt = renderer->zbuf_fmt;
-  fb_att_img_info[fb_zbuf].usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
-  fb_att_img_info[fb_zbuf].pViewFormats = &depth_fmt;
+  fb_att_img_info1[fb_zbuf].usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+  fb_att_img_info1[fb_zbuf].pViewFormats = &depth_fmt;
 
-  fb_att_img_info[fb_swapchain].usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
-  fb_att_img_info[fb_swapchain].pViewFormats = &renderer->swapchain_img_fmt;
-  fb_att_img_info[fb_swapchain].width = new_width;
-  fb_att_img_info[fb_swapchain].height = new_height;
+  VkFramebufferAttachmentImageInfo fb_att_img_info2[1];
+  for ( unsigned int att_idx = 0; att_idx < _arr_elem_cnt( fb_att_img_info2 ); att_idx++ ) {
+    fb_att_img_info2[att_idx].sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_ATTACHMENT_IMAGE_INFO;
+    fb_att_img_info2[att_idx].pNext = nullptr;
+    fb_att_img_info2[att_idx].flags = 0;
+    fb_att_img_info2[att_idx].width = small_win_width;
+    fb_att_img_info2[att_idx].height = small_win_height;
+    fb_att_img_info2[att_idx].layerCount = 1;
+    fb_att_img_info2[att_idx].viewFormatCount = 1;
+  }
+  fb_att_img_info2[0].usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+  fb_att_img_info2[0].pViewFormats = &renderer->swapchain_img_fmt;
 
-  VkFramebufferAttachmentsCreateInfo fb_atts_create_info;
-  fb_atts_create_info.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_ATTACHMENTS_CREATE_INFO;
-  fb_atts_create_info.pNext = nullptr;
-  fb_atts_create_info.attachmentImageInfoCount = _arr_elem_cnt( fb_att_img_info );
-  fb_atts_create_info.pAttachmentImageInfos = fb_att_img_info;
+
+  VkFramebufferAttachmentsCreateInfo fb_atts_create_info = {
+    .sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_ATTACHMENTS_CREATE_INFO,
+    .pNext = nullptr,
+  };
 
   VkFramebufferCreateInfo fb_create_info = {
     .sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
@@ -3056,22 +3548,39 @@ enum err_msg expand_swapchain_and_framebuffer( struct cara_vk_renderer * rendere
                                                    // `VkFramebufferAttachmentsCreateInfo`, and the
                                                    // actual image views are provided at render pass
                                                    // begin time via
-                                                   // `VkRenderPassAttachmentBeginInfoKHR`.
-    .renderPass = renderer->render_pass,
-    .attachmentCount = _arr_elem_cnt( fb_att_img_info ),
+                                                   // `VkRenderPassAttachmentBeginInfo`.
+    .attachmentCount = _arr_elem_cnt( fb_att_img_info1 ),
     .pAttachments = nullptr,
     .width = new_width,
     .height = new_height,
     .layers = 1,
   };
-  SPALL_BEGIN("vkCreateFramebuffer");
-  result = vkCreateFramebuffer( renderer->log_dev, &fb_create_info, &vk_alloc_callbacks,
-      &new_framebuffer );
-  SPALL_END();
-  if ( result != VK_SUCCESS ) {
-    fprintf( stderr, "[Carbonara] Error occurred in vkCreateFramebuffer. '%s'\n",
-        string_VkResult(result) );
-    goto stop_everything_after_failure;
+  for ( unsigned int fif_idx = 0; fif_idx < cara_max_nr_fif; fif_idx++ ) {
+    fb_create_info.renderPass = renderer->arr_renderpasses[0];
+    fb_atts_create_info.attachmentImageInfoCount = _arr_elem_cnt( fb_att_img_info1 );
+    fb_atts_create_info.pAttachmentImageInfos = fb_att_img_info1;
+    SPALL_BEGIN("vkCreateFramebuffer");
+    result = vkCreateFramebuffer( renderer->log_dev, &fb_create_info, &vk_alloc_callbacks,
+        &new_framebuffers[fif_idx][0] );
+    SPALL_END();
+    if ( result != VK_SUCCESS ) {
+      fprintf( stderr, "[Carbonara] Error occurred in vkCreateFramebuffer. '%s'\n",
+          string_VkResult(result) );
+      goto stop_everything_after_failure;
+    }
+
+    fb_create_info.renderPass = renderer->arr_renderpasses[1];
+    fb_atts_create_info.attachmentImageInfoCount = _arr_elem_cnt( fb_att_img_info2 );
+    fb_atts_create_info.pAttachmentImageInfos = fb_att_img_info2;
+    SPALL_BEGIN("vkCreateFramebuffer");
+    result = vkCreateFramebuffer( renderer->log_dev, &fb_create_info, &vk_alloc_callbacks,
+        &new_framebuffers[fif_idx][1] );
+    SPALL_END();
+    if ( result != VK_SUCCESS ) {
+      fprintf( stderr, "[Carbonara] Error occurred in vkCreateFramebuffer. '%s'\n",
+          string_VkResult(result) );
+      goto stop_everything_after_failure;
+    }
   }
 
 
@@ -3081,76 +3590,124 @@ enum err_msg expand_swapchain_and_framebuffer( struct cara_vk_renderer * rendere
   //
 
   // Create a depth buffer and a color buffer
-  VkImageCreateInfo img_create_info;
-  img_create_info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
-  img_create_info.pNext = nullptr;
-  img_create_info.flags = 0;
-  img_create_info.imageType = VK_IMAGE_TYPE_2D;
-  img_create_info.format = renderer->zbuf_fmt;
-  img_create_info.extent = (VkExtent3D) { new_width, new_height, 1 };
-  img_create_info.mipLevels = 1;
-  img_create_info.arrayLayers = 1;
-  img_create_info.samples = VK_SAMPLE_COUNT_1_BIT;
-  img_create_info.tiling = VK_IMAGE_TILING_OPTIMAL;
-  img_create_info.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
-  img_create_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-  img_create_info.queueFamilyIndexCount = 0;
-  img_create_info.pQueueFamilyIndices = nullptr;
-  img_create_info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-  SPALL_BEGIN("vk_create_framebuffers_imgs");
-  vkCreateImage( renderer->log_dev, &img_create_info, &vk_alloc_callbacks, &new_zbuf_img );
-  if ( result != VK_SUCCESS ) {
-    fprintf( stderr, "[Carbonara] Error occurred in vkCreateImage. '%s'\n",
-        string_VkResult(result) );
-    goto stop_everything_after_failure;
-  }
-  img_create_info.format = VK_FORMAT_R8G8B8A8_UNORM;
-  img_create_info.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
-  vkCreateImage( renderer->log_dev, &img_create_info, &vk_alloc_callbacks, &new_cbuf_img );
-  SPALL_END();
-  if ( result != VK_SUCCESS ) {
-    fprintf( stderr, "[Carbonara] Error occurred in vkCreateImage. '%s'\n",
-        string_VkResult(result) );
-    goto stop_everything_after_failure;
+  VkImageCreateInfo img_create_info = {
+    .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+    .pNext = nullptr,
+    .flags = 0,
+    .imageType = VK_IMAGE_TYPE_2D,
+    .extent = (VkExtent3D) { new_width, new_height, 1 },
+    .mipLevels = 1,
+    .arrayLayers = 1,
+    .samples = VK_SAMPLE_COUNT_1_BIT,
+    .tiling = VK_IMAGE_TILING_OPTIMAL,
+    .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+    .queueFamilyIndexCount = 0,
+    .pQueueFamilyIndices = nullptr,
+    .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+  };
+  for ( unsigned int fif_idx = 0; fif_idx < cara_max_nr_fif; fif_idx++ ) {
+    img_create_info.format = renderer->zbuf_fmt;
+    img_create_info.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+    SPALL_BEGIN("vkCreateImage");
+    result = vkCreateImage( renderer->log_dev,
+        &img_create_info, &vk_alloc_callbacks, &new_zbuf_n_cbuf_img[fif_idx][fb_zbuf] );
+    SPALL_END();
+    if ( result != VK_SUCCESS ) {
+      fprintf( stderr, "[Carbonara] Error occurred in vkCreateImage. '%s'\n",
+          string_VkResult(result) );
+      goto stop_everything_after_failure;
+    }
+    img_create_info.format = VK_FORMAT_R8G8B8A8_UNORM;
+    img_create_info.usage =
+      VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT;
+    SPALL_BEGIN("vkCreateImage");
+    result = vkCreateImage( renderer->log_dev,
+        &img_create_info, &vk_alloc_callbacks, &new_zbuf_n_cbuf_img[fif_idx][fb_cbuf] );
+    SPALL_END();
+    if ( result != VK_SUCCESS ) {
+      fprintf( stderr, "[Carbonara] Error occurred in vkCreateImage. '%s'\n",
+          string_VkResult(result) );
+      goto stop_everything_after_failure;
+    }
   }
 
+
+  // vkBindImageMemory
+  for ( unsigned int fif_idx = 0; fif_idx < cara_max_nr_fif; fif_idx++ ) {
+    for ( unsigned int fb_idx = fb_zbuf; fb_idx <= fb_cbuf; fb_idx++ ) {
+      // Obtain the requirements
+      VkMemoryRequirements req;
+      vkGetImageMemoryRequirements( renderer->log_dev, new_zbuf_n_cbuf_img[fif_idx][fb_idx], &req );
+
+      // Choose the best memory type
+      VkMemoryPropertyFlags preferred_props, required_props, tolerable_props;
+      preferred_props = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+      required_props = 0;
+      tolerable_props = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT;
+      uint32_t mtype_idx = ma_pick_best_mtype(
+          &renderer->vmm, &req, required_props, preferred_props, tolerable_props );
+      //const uint32_t heap_idx = renderer->vmm.arr_heap_indices[mtype_idx];
+
+      // Bind the image to a vulkan memory object
+      struct range_u32 * p_malloc_range = nullptr;
+      enum err_msg err = ma_bind_img_to_malloc( &renderer->vmm,
+          &vk_alloc_callbacks, vk_malloc_wrapper,
+          renderer->log_dev, new_zbuf_n_cbuf_img[fif_idx][fb_idx],
+          mtype_idx, req.size, req.alignment, &p_malloc_range );
+      if ( err ) {
+        fprintf( stderr, "Error occured in ma_bind_img_to_malloc. (%s)\n", arr_emsg_txt[err] );
+        goto stop_everything_after_failure;
+      }
+      arr_p_new_malloc_ranges_zbuf_and_cbuf[fif_idx][fb_idx] = p_malloc_range;
+    }
+  }
+
+
   // Create the image views
-  VkImageViewCreateInfo iv_create_info;
-  iv_create_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-  iv_create_info.pNext = nullptr;
-  iv_create_info.flags = 0;
-  iv_create_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
-  iv_create_info.format = renderer->zbuf_fmt;
-  iv_create_info.components = (VkComponentMapping) {
-    VK_COMPONENT_SWIZZLE_IDENTITY,
-    VK_COMPONENT_SWIZZLE_IDENTITY,
-    VK_COMPONENT_SWIZZLE_IDENTITY,
-    VK_COMPONENT_SWIZZLE_IDENTITY
-  };
-  iv_create_info.subresourceRange = (VkImageSubresourceRange) {
-    .aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT,
+  VkImageViewCreateInfo iv_create_info = {
+    .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+    .pNext = nullptr,
+    .flags = 0,
+    .viewType = VK_IMAGE_VIEW_TYPE_2D,
+    .components = (VkComponentMapping) {
+      VK_COMPONENT_SWIZZLE_IDENTITY,
+      VK_COMPONENT_SWIZZLE_IDENTITY,
+      VK_COMPONENT_SWIZZLE_IDENTITY,
+      VK_COMPONENT_SWIZZLE_IDENTITY
+    },
+    .subresourceRange = (VkImageSubresourceRange) {
+      .aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT,
       .baseMipLevel = 0,
       .levelCount = 1,
       .baseArrayLayer = 0,
       .layerCount = 1,
+    },
   };
-  SPALL_BEGIN("vk_create_framebuffers_ivs");
-  result = vkCreateImageView( renderer->log_dev, &iv_create_info, &vk_alloc_callbacks,
-      &new_zbuf_iv );
-  if ( result != VK_SUCCESS ) {
-    fprintf( stderr, "[Carbonara] Error occurred in vkCreateImageView. '%s'\n",
-        string_VkResult(result) );
-    goto stop_everything_after_failure;
-  }
-  iv_create_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-  iv_create_info.format = VK_FORMAT_R8G8B8A8_UNORM;
-  result = vkCreateImageView( renderer->log_dev, &iv_create_info, &vk_alloc_callbacks,
-      &new_cbuf_iv );
-  SPALL_END();
-  if ( result != VK_SUCCESS ) {
-    fprintf( stderr, "[Carbonara] Error occurred in vkCreateImageView. '%s'\n",
-        string_VkResult(result) );
-    goto stop_everything_after_failure;
+  for ( unsigned int fif_idx = 0; fif_idx < cara_max_nr_fif; fif_idx++ ) {
+    iv_create_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+    iv_create_info.format = renderer->zbuf_fmt;
+    iv_create_info.image = new_zbuf_n_cbuf_img[fif_idx][fb_zbuf];
+    SPALL_BEGIN("vkCreateImageView");
+    result = vkCreateImageView( renderer->log_dev,
+        &iv_create_info, &vk_alloc_callbacks, &new_zbuf_n_cbuf_iv[fif_idx][fb_zbuf] );
+    SPALL_END();
+    if ( result != VK_SUCCESS ) {
+      fprintf( stderr, "[Carbonara] Error occurred in vkCreateImageView. '%s'\n",
+          string_VkResult(result) );
+      goto stop_everything_after_failure;
+    }
+    iv_create_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    iv_create_info.format = VK_FORMAT_R8G8B8A8_UNORM;
+    iv_create_info.image = new_zbuf_n_cbuf_img[fif_idx][fb_cbuf];
+    SPALL_BEGIN("vkCreateImageView");
+    result = vkCreateImageView( renderer->log_dev,
+        &iv_create_info, &vk_alloc_callbacks, &new_zbuf_n_cbuf_iv[fif_idx][fb_cbuf] );
+    SPALL_END();
+    if ( result != VK_SUCCESS ) {
+      fprintf( stderr, "[Carbonara] Error occurred in vkCreateImageView. '%s'\n",
+          string_VkResult(result) );
+      goto stop_everything_after_failure;
+    }
   }
 
 
@@ -3167,7 +3724,7 @@ enum err_msg expand_swapchain_and_framebuffer( struct cara_vk_renderer * rendere
     enum err_msg err = infos_al_grow( &renderer->old_swapchains,
         &vk_alloc_callbacks, vk_malloc_wrapper, 1, false );
     if ( err ) {
-      fprintf( stderr, "[Vulkan] A failure occurred in infos_al_grow. %s\n", err_msg_text[err] );
+      fprintf( stderr, "[Vulkan] A failure occurred in infos_al_grow. %s\n", arr_emsg_txt[err] );
       goto stop_everything_after_failure;
     }
   }
@@ -3177,45 +3734,43 @@ enum err_msg expand_swapchain_and_framebuffer( struct cara_vk_renderer * rendere
   p_dead->destruct_time = renderer->frame_id + renderer->nr_swapchain_imgs + 4;  // TODO Add `avg_fps/4`
   renderer->nr_old_swapchains++;
 
-  VkSwapchainCreateInfoKHR swapchain_create_info;
-  swapchain_create_info.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
-  swapchain_create_info.pNext = nullptr;
-  swapchain_create_info.flags = 0;
-  swapchain_create_info.surface = renderer->presentation_surface;
-  swapchain_create_info.minImageCount = renderer->nr_swapchain_imgs_we_request;
-  swapchain_create_info.imageFormat = renderer->swapchain_img_fmt;
-  swapchain_create_info.imageColorSpace = renderer->vk_color_space;
-  swapchain_create_info.imageExtent = (VkExtent2D) { .width = new_width, .height = new_height };
-  swapchain_create_info.imageArrayLayers = 1;
-  swapchain_create_info.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
-  swapchain_create_info.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
-  swapchain_create_info.queueFamilyIndexCount = 0;
-  swapchain_create_info.pQueueFamilyIndices = nullptr;
-  swapchain_create_info.preTransform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;  // NOTE Or perhaps..
-                                                             // renderer->vk_surface_transform_flags
-  swapchain_create_info.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
-  swapchain_create_info.presentMode = renderer->vk_present_mode;
-  swapchain_create_info.clipped = VK_TRUE;  // Applications should set this value to VK_TRUE if
-                                            //  they do not expect to read back the content of
-                                            //  presentable images before presenting them or after
-                                            //  reacquiring them, and if their fragment shaders do
-                                            //  not have any side effects that require them to run
-                                            //  for all pixels in the presentable image.
-  swapchain_create_info.oldSwapchain = old_swapchain;
+  VkSwapchainCreateInfoKHR swapchain_create_info = {
+    .sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
+    .pNext = nullptr,
+    .flags = 0,
+    .surface = renderer->presentation_surface,
+    .minImageCount = renderer->nr_swapchain_imgs_we_request,
+    .imageFormat = renderer->swapchain_img_fmt,
+    .imageColorSpace = renderer->swapchain_color_space,
+    .imageExtent = (VkExtent2D) { .width = new_width, .height = new_height },
+    .imageArrayLayers = 1,
+    .imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+    .imageSharingMode = VK_SHARING_MODE_EXCLUSIVE,
+    .queueFamilyIndexCount = 0,
+    .pQueueFamilyIndices = nullptr,
+    .preTransform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR,  // NOTE Or perhaps..
+                                                            // renderer->vk_surface_transform_flags
+    .compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
+    .presentMode = renderer->present_mode,
+    .clipped = VK_TRUE,  // Applications should set this value to VK_TRUE if they do not expect to
+                         // read back the content of presentable images before presenting them or
+                         // after reacquiring them, and if their fragment shaders do not have any
+                         // side effects that require them to run for all pixels in the presentable
+                         // image.
+    .oldSwapchain = old_swapchain,
+  };
 
   SPALL_BEGIN("vkCreateSwapchainKHR");
   result = vkCreateSwapchainKHR(
       renderer->log_dev,
       &swapchain_create_info,
       &vk_alloc_callbacks,
-      //nullptr,
       &swapchain );
   SPALL_END();
   if ( result != VK_SUCCESS || swapchain == VK_NULL_HANDLE ) {
     fprintf( stderr, "[Vulkan] Could not create a swapchain.\n" );
     goto stop_everything_after_failure;
   }
-  renderer->swapchain = swapchain;
 
   result = vkGetSwapchainImagesKHR( renderer->log_dev, swapchain, &nr_swapchain_imgs, nullptr );
   if ( result != VK_SUCCESS || nr_swapchain_imgs == 0 ) {
@@ -3260,64 +3815,6 @@ enum err_msg expand_swapchain_and_framebuffer( struct cara_vk_renderer * rendere
 
 
 
-  // Obtain the requirements
-  VkMemoryRequirements req;
-  vkGetImageMemoryRequirements( renderer->log_dev, new_zbuf_img, &req );
-
-  // Choose the best memory type
-  VkMemoryPropertyFlags preferred_props, required_props, tolerable_props;
-  preferred_props = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
-  required_props = 0;
-  tolerable_props = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT;
-  uint32_t type_idx = ma_pick_best_mtype(
-      &renderer->vmm, &req, required_props, preferred_props, tolerable_props );
-
-  // TODO Use some kind of page manager
-  heap_idx = renderer->vmm.arr_heap_indices[type_idx];
-get_dev_mem_obj_for_zbuf:
-  uint32_t first_slot_to_check = 0;
-  assume( sizeof(VkDeviceMemory) == 64/8 );
-  p_malloc_zbuf = infos_multi_al_get_elem_cond64( &renderer->vmm.mallocs, type_idx,
-      first_slot_to_check, 0 );
-  if ( !p_malloc_zbuf ) {
-    assume( util_endian_LOCAL_ENDIAN == util_endian_LITTLE_ENDIAN );  // just send the addr of u32
-    enum err_msg err = infos_multi_al_grow( &renderer->vmm.mallocs,
-        &vk_alloc_callbacks, vk_malloc_wrapper,
-        1, (void*)&heap_idx,
-        true );
-    if ( err ) {
-      fprintf( stderr, "Error occured in infos_multi_al_grow. (%s)\n", err_msg_text[err] );
-      goto stop_everything_after_failure;
-    }
-    goto get_dev_mem_obj_for_zbuf;
-  }
-
-  // Allocate memory
-  VkMemoryAllocateInfo buf_malloc_info;
-  buf_malloc_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-  buf_malloc_info.pNext = nullptr;
-  buf_malloc_info.allocationSize = req.size;
-  buf_malloc_info.memoryTypeIndex = type_idx;
-  SPALL_BEGIN("vkAllocateMemory");
-  result = vkAllocateMemory( renderer->log_dev,
-      &buf_malloc_info, &vk_alloc_callbacks, p_malloc_zbuf
-      );
-  SPALL_END();
-  if( result != VK_SUCCESS ) {
-    goto stop_everything_after_failure;
-  }
-  //renderer->vmm.arr_idx_next_unoccupied_elem[heap_idx]++;
-  renderer->vmm.arr_usages[heap_idx] += req.size;
-
-  // Bind the image to the first allocation of type_idx type
-  SPALL_BEGIN("vkBindImageMemory");
-  result = vkBindImageMemory( renderer->log_dev, new_zbuf_img, *p_malloc_zbuf, 0 );
-  SPALL_END();
-  if( result != VK_SUCCESS ) {
-    goto stop_everything_after_failure;
-  }
-
-
 
 
 
@@ -3331,25 +3828,79 @@ get_dev_mem_obj_for_zbuf:
   if ( renderer->max_win_size.parts.height < new_height ) {
     renderer->max_win_size.parts.height = new_height;
   }
-
-  // Destroy the old framebuffer
-  vkDestroyFramebuffer( renderer->log_dev, renderer->framebuffer,
-      &vk_alloc_callbacks );
-  renderer->framebuffer = new_framebuffer;
   renderer->dims_swapchain_imgs = (VkExtent2D) {
     .width = new_width,
     .height = new_height,
   };
 
-  // Destroy previous buffers NOTE or I should probably postpone the destruction.
-  vkDestroyImageView( renderer->log_dev, renderer->zbuf_n_cbuf_iv[fb_zbuf], &vk_alloc_callbacks );
-  vkDestroyImage( renderer->log_dev, renderer->zbuf_n_cbuf[fb_zbuf], &vk_alloc_callbacks ); 
-  vkDestroyImageView( renderer->log_dev, renderer->zbuf_n_cbuf_iv[fb_cbuf], &vk_alloc_callbacks );
-  vkDestroyImage( renderer->log_dev, renderer->zbuf_n_cbuf[fb_cbuf], &vk_alloc_callbacks ); 
-  renderer->zbuf_n_cbuf_iv[fb_zbuf] = new_zbuf_iv;
-  renderer->zbuf_n_cbuf_iv[fb_cbuf] = new_cbuf_iv;
-  renderer->zbuf_n_cbuf[fb_zbuf] = new_zbuf_img;
-  renderer->zbuf_n_cbuf[fb_cbuf] = new_cbuf_img;
+  // Destroy the old framebuffers and replace them with the newly created ones
+  for ( unsigned int fif_idx = 0; fif_idx < cara_max_nr_fif; fif_idx++ ) {
+    for ( unsigned int rp_idx = 0; rp_idx < cara_nr_renderpasses; rp_idx++ ) {
+      // vkDestroyFramebuffer
+      if ( renderer->arr_framebuffers[fif_idx][rp_idx] ) {
+        vkDestroyFramebuffer( renderer->log_dev,
+            renderer->arr_framebuffers[fif_idx][rp_idx], &vk_alloc_callbacks );
+        renderer->arr_framebuffers[fif_idx][rp_idx] = VK_NULL_HANDLE;
+      }
+
+      renderer->arr_framebuffers[fif_idx][rp_idx] = new_framebuffers[fif_idx][rp_idx];
+    }
+  }
+
+  for ( unsigned int fif_idx = 0; fif_idx < cara_max_nr_fif; fif_idx++ ) {
+    for ( unsigned int fb_idx = 0; fb_idx <= fb_cbuf; fb_idx++ ) {
+      // Destroy previous buffers NOTE or I should probably postpone the destruction.
+      // vkDestroyImage
+      if ( renderer->zbuf_n_cbuf[fif_idx][fb_idx] == VK_NULL_HANDLE ) {
+        continue;
+      }
+      // Should I just write down the memory type when binding to a memory object?
+      VkMemoryRequirements req;
+      vkGetImageMemoryRequirements( renderer->log_dev,
+          renderer->zbuf_n_cbuf[fif_idx][fb_idx], &req );
+      VkMemoryPropertyFlags preferred_props, required_props, tolerable_props;
+      preferred_props = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+      required_props = 0;
+      tolerable_props = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT;
+      enum err_msg err = ma_report_vk_malloc_rel( &renderer->vmm,
+          &vk_alloc_callbacks, vk_malloc_wrapper,
+          ma_pick_best_mtype(&renderer->vmm, &req,
+            required_props, preferred_props, tolerable_props),
+          renderer->p_malloc_range_zbuf_and_cbuf[fif_idx][fb_idx] );
+      if ( err ) {
+        fprintf( stderr, "[Carbonara] Failure occurred in ma_report_vk_malloc_rel!! "
+            "'%s'\n", arr_emsg_txt[err] );
+        switch ( err ) {
+          case emsg_already_done:
+            [[fallthrough]];
+          case emsg_unknown:  // VkDeviceMemory object is somehow missing
+            vkDestroyImage( renderer->log_dev,
+                renderer->zbuf_n_cbuf[fif_idx][fb_idx], &vk_alloc_callbacks );
+            renderer->zbuf_n_cbuf[fif_idx][fb_idx] = VK_NULL_HANDLE;
+            renderer->p_malloc_range_zbuf_and_cbuf[fif_idx][fb_idx] = nullptr;
+            break;
+          default:
+            break;
+        }
+      } else {
+        vkDestroyImage( renderer->log_dev,
+            renderer->zbuf_n_cbuf[fif_idx][fb_idx], &vk_alloc_callbacks );
+        renderer->zbuf_n_cbuf[fif_idx][fb_idx] = VK_NULL_HANDLE;
+        renderer->p_malloc_range_zbuf_and_cbuf[fif_idx][fb_idx] = nullptr;
+      }
+
+      // vkDestroyImageView
+      if ( renderer->zbuf_n_cbuf_iv[fif_idx][fb_idx] != VK_NULL_HANDLE ) {
+        vkDestroyImageView( renderer->log_dev,
+            renderer->zbuf_n_cbuf_iv[fif_idx][fb_idx], &vk_alloc_callbacks );
+        renderer->zbuf_n_cbuf_iv[fif_idx][fb_idx] = VK_NULL_HANDLE;
+      }
+
+      // Replace with the newly created objects
+      renderer->zbuf_n_cbuf_iv[fif_idx][fb_idx] = new_zbuf_n_cbuf_iv[fif_idx][fb_idx];
+      renderer->zbuf_n_cbuf[fif_idx][fb_idx] = new_zbuf_n_cbuf_img[fif_idx][fb_idx];
+    }
+  }
 
   // NOTE Is it okay to forget the addresses to the old swapchain images?
   vk_alloc_callbacks.pfnFree( vk_alloc_callbacks.pUserData, renderer->arr_swapchain_imgs );
@@ -3360,36 +3911,81 @@ get_dev_mem_obj_for_zbuf:
   renderer->swapchain = swapchain;
 
   // Return 0
-  return err_msg_no_error;
+  return emsg_no_error;
 
 
 stop_everything_after_failure:
-  if ( p_malloc_zbuf ) {
-    if ( *p_malloc_zbuf ) {
-      vkFreeMemory( cara_vk.log_dev, *p_malloc_zbuf, &vk_alloc_callbacks );
-      *p_malloc_zbuf = 0;
-      //TODO cara_vk.vmm.arr_usages[heap_idx] -= p_malloc_zbuf->size;
+  // Destroy the newly created ones
+  for ( unsigned int fif_idx = 0; fif_idx < cara_max_nr_fif; fif_idx++ ) {
+    for ( unsigned int rp_idx = 0; rp_idx < cara_nr_renderpasses; rp_idx++ ) {
+      // vkDestroyFramebuffer
+      if ( new_framebuffers[fif_idx][rp_idx] ) {
+        vkDestroyFramebuffer( renderer->log_dev,
+            new_framebuffers[fif_idx][rp_idx], &vk_alloc_callbacks );
+        new_framebuffers[fif_idx][rp_idx] = VK_NULL_HANDLE;
+      }
     }
-    //TODO cara_vk.vmm.arr_idx_next_unoccupied_elem[heap_idx]--;
   }
 
-  if ( new_framebuffer ) {
-    vkDestroyFramebuffer( renderer->log_dev, renderer->framebuffer,
-        &vk_alloc_callbacks );
-        //nullptr );
-    renderer->framebuffer = VK_NULL_HANDLE;
+  for ( unsigned int fif_idx = 0; fif_idx < cara_max_nr_fif; fif_idx++ ) {
+    for ( unsigned int fb_idx = 0; fb_idx <= fb_cbuf; fb_idx++ ) {
+      // vkDestroyImage
+      if ( new_zbuf_n_cbuf_img[fif_idx][fb_idx] == VK_NULL_HANDLE ) {
+        continue;
+      }
+      // Should I just write down the memory type when binding to a memory object?
+      VkMemoryRequirements req;
+      vkGetImageMemoryRequirements( renderer->log_dev,
+          new_zbuf_n_cbuf_img[fif_idx][fb_idx], &req );
+      VkMemoryPropertyFlags preferred_props, required_props, tolerable_props;
+      preferred_props = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+      required_props = 0;
+      tolerable_props = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT;
+      enum err_msg err = ma_report_vk_malloc_rel( &renderer->vmm,
+          &vk_alloc_callbacks, vk_malloc_wrapper,
+          ma_pick_best_mtype(&renderer->vmm, &req,
+            required_props, preferred_props, tolerable_props),
+          arr_p_new_malloc_ranges_zbuf_and_cbuf[fif_idx][fb_idx] );
+      if ( err ) {
+        fprintf( stderr, "[Carbonara] Failure occurred in ma_report_vk_malloc_rel!! "
+            "'%s'\n", arr_emsg_txt[err] );
+        switch ( err ) {
+          case emsg_already_done:
+            [[fallthrough]];
+          case emsg_unknown:  // VkDeviceMemory object is somehow missing
+            vkDestroyImage( renderer->log_dev,
+                new_zbuf_n_cbuf_img[fif_idx][fb_idx], &vk_alloc_callbacks );
+            new_zbuf_n_cbuf_img[fif_idx][fb_idx] = VK_NULL_HANDLE;
+            arr_p_new_malloc_ranges_zbuf_and_cbuf[fif_idx][fb_idx] = nullptr;
+            break;
+          default:
+            break;
+        }
+      } else {
+        vkDestroyImage( renderer->log_dev,
+            new_zbuf_n_cbuf_img[fif_idx][fb_idx], &vk_alloc_callbacks );
+        new_zbuf_n_cbuf_img[fif_idx][fb_idx] = VK_NULL_HANDLE;
+        arr_p_new_malloc_ranges_zbuf_and_cbuf[fif_idx][fb_idx] = nullptr;
+      }
+
+      // vkDestroyImageView
+      if ( new_zbuf_n_cbuf_iv[fif_idx][fb_idx] != VK_NULL_HANDLE ) {
+        vkDestroyImageView( renderer->log_dev,
+            new_zbuf_n_cbuf_iv[fif_idx][fb_idx], &vk_alloc_callbacks );
+        new_zbuf_n_cbuf_iv[fif_idx][fb_idx] = VK_NULL_HANDLE;
+      }
+    }
   }
-  if ( new_zbuf_iv ) {
-    vkDestroyImageView( renderer->log_dev, new_zbuf_iv, &vk_alloc_callbacks );
-  }
-  if ( new_cbuf_iv ) {
-    vkDestroyImageView( renderer->log_dev, new_cbuf_iv, &vk_alloc_callbacks );
-  }
-  if ( new_zbuf_img ) {
-    vkDestroyImage( renderer->log_dev, new_zbuf_img, &vk_alloc_callbacks ); 
-  }
-  if ( new_cbuf_img ) {
-    vkDestroyImage( renderer->log_dev, new_cbuf_img, &vk_alloc_callbacks ); 
+
+  for ( unsigned int fif_idx = 0; fif_idx < cara_max_nr_fif; fif_idx++ ) {
+    for ( unsigned int rp_idx = 0; rp_idx < cara_nr_renderpasses; rp_idx++ ) {
+      // vkDestroyFramebuffer
+      if ( renderer->arr_framebuffers[fif_idx][rp_idx] ) {
+        vkDestroyFramebuffer( renderer->log_dev,
+            renderer->arr_framebuffers[fif_idx][rp_idx], &vk_alloc_callbacks );
+        renderer->arr_framebuffers[fif_idx][rp_idx] = VK_NULL_HANDLE;
+      }
+    }
   }
 
   if ( arr_swapchain_img_views ) {
@@ -3406,5 +4002,5 @@ stop_everything_after_failure:
     vk_alloc_callbacks.pfnFree( vk_alloc_callbacks.pUserData, arr_swapchain_images );
   }
 
-  return err_msg_unknown;
+  return emsg_unknown;
 }

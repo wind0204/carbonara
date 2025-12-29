@@ -7,6 +7,7 @@ Prepare for FindWayland.cmake (NOT NEEDED ANYMORE)
 
 Prepare SDL3
  clone the git repo and place it in `extern/SDL`
+ install the development headers of liburing
 
 Prepare for xdg-shell.xml (NOT NEEDED ANYMORE)
  $ sudo apt install wayland-protocols

@@ -32,7 +32,7 @@ enum err_msg infos_pm_init_prealloc(
       rental_info_node_size + available_ranges_node_size );
   if ( !alloc ) {
     SPALL_END();
-    return err_msg_out_of_memory;
+    return emsg_out_of_memory;
   }
 
   // To just copy and paste I created one shared variable here.
@@ -173,7 +173,7 @@ take_and_return:
         uint_fast8_t err = infos_al_grow( &p_pm->al_rental_info, userdata, custom_malloc, 1, 0 );
         if ( err ) {
           switch ( err ) {
-            case err_msg_out_of_memory:
+            case emsg_out_of_memory:
               errno = ENOMEM;
               break;
             default:
@@ -442,7 +442,7 @@ take_it_and_return:
             1, 0 );
         if ( err ) {
           switch ( err ) {
-            case err_msg_out_of_memory:
+            case emsg_out_of_memory:
               errno = ENOMEM;
               break;
             default:
@@ -571,7 +571,7 @@ populate_new_vacancy:
         err = infos_al_grow( &p_pm->al_vacancies, userdata, custom_malloc, 1, 0 );
         if ( err ) {
           switch ( err ) {
-            case err_msg_out_of_memory:
+            case emsg_out_of_memory:
               errno = ENOMEM;
               break;
             default:
@@ -646,7 +646,7 @@ enum err_msg infos_pm_return( struct infos_page_mgr * restrict p_pm,
       rental_info = r_node->data + rent_idx * sizeof(*rental_info);
       if ( base_ridx + rent_idx > p_pm->idx_last_rental_info ) {
         SPALL_END();
-        return err_msg_no_such_entry;
+        return emsg_no_such_entry;
       }
 
       // Skip if it's empty.
@@ -784,7 +784,7 @@ populate_new_vacancy:
         uint_fast8_t err = infos_al_grow( &p_pm->al_vacancies, userdata, custom_malloc, 1, 0 );
         if ( err ) {
           SPALL_END();
-          return err_msg_out_of_memory;
+          return emsg_out_of_memory;
         }
         p_pm->nr_unused_pages -= UINT64_C(1) <<  p_pm->al_vacancies.log2_node_size;
         v_node = infos_ll_get_last_node(&p_pm->al_vacancies.list.head);
@@ -814,7 +814,7 @@ populate_new_vacancy:
   } while ( r_node );
 
   SPALL_END();
-  return err_msg_no_such_entry;
+  return emsg_no_such_entry;
 }
 
 
@@ -839,7 +839,7 @@ enum err_msg infos_pm_return_via_ptr( struct infos_page_mgr * restrict p_pm,
 
     if ( p_range->start > p_range->stop ) {
       SPALL_END();
-      return err_msg_already_done;
+      return emsg_already_done;
     }
 
     uint64_t rent_idx = ptr2ui((void*)p_range - r_node->data) >>
@@ -972,7 +972,7 @@ populate_new_vacancy:
     uint_fast8_t err = infos_al_grow( &p_pm->al_vacancies, userdata, custom_malloc, 1, 0 );
     if ( err ) {
       SPALL_END();
-      return err_msg_out_of_memory;
+      return emsg_out_of_memory;
     }
     p_pm->nr_unused_pages -= UINT64_C(1) <<  p_pm->al_vacancies.log2_node_size;
     v_node = infos_ll_get_last_node(&p_pm->al_vacancies.list.head);
@@ -996,5 +996,5 @@ populate_new_vacancy:
   } while ( r_node );
 
   SPALL_END();
-  return err_msg_no_such_entry;
+  return emsg_no_such_entry;
 }

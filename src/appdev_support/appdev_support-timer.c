@@ -304,7 +304,7 @@ base_freq_determined:
   if ( bigger - smaller > 512 ) {
     fprintf( stderr, "[Timer] The measured frequency was too far from the estimated frequency"
         " (%lu - %lu > %d)\n", bigger, smaller, 512 );
-    return err_msg_corrupted_data_detected;
+    return emsg_corrupted_data_detected;
   }
 
   fprintf( stdout, "[Timer] Time-stamp counter frequency: %lu Hz\n", nr_cpu_cycles_per_1s );

@@ -54,7 +54,7 @@ struct processor_map * prepare_processor_map(void)
   if ( err == -1 ) {
     fprintf(stderr, "ERROR: Error code returned by hwloc_topology_init was %d\n", errno);
     //return 4;
-    errno = err_msg_unknown;
+    errno = emsg_unknown;
     return 0;
   }
 
@@ -62,7 +62,7 @@ struct processor_map * prepare_processor_map(void)
   if ( err == -1 ) {
     fprintf(stderr, "ERROR: Error code returned by hwloc_topology_load was %d\n", errno);
     hwloc_topology_destroy(topology);
-    errno = err_msg_unknown;
+    errno = emsg_unknown;
     return 0;
   }
 
@@ -72,7 +72,7 @@ struct processor_map * prepare_processor_map(void)
   if ( package_gpu == NULL ) {
     fprintf(stderr, "ERROR: Couldn't find any CPU package.\n");
     //return 3;
-    errno = err_msg_unknown;
+    errno = emsg_unknown;
     return 0;
   }
   while ( package_gpu ) {
@@ -98,7 +98,7 @@ struct processor_map * prepare_processor_map(void)
   if ( nr_l1_caches < 1 ) {
     fprintf(stderr, "ERROR: Couldn't find any L1 cache.\n");
     //return 3;
-    errno = err_msg_unknown;
+    errno = emsg_unknown;
     return 0;
   }
 
@@ -108,7 +108,7 @@ struct processor_map * prepare_processor_map(void)
   if ( nr_proc_units < 1 ) {
     fprintf(stderr, "ERROR: Couldn't find any processor.\n");
     //return 3;
-    errno = err_msg_unknown;
+    errno = emsg_unknown;
     return 0;
   }
 
@@ -151,7 +151,7 @@ struct processor_map * prepare_processor_map(void)
     fprintf(stderr, "ERROR: A CPU core is not a child of an L1 cache in the hwloc tree. "
         "(hwloc_obj->type: %u)\n", hwloc_obj->type);
     hwloc_topology_destroy(topology);
-    errno = err_msg_unknown;
+    errno = emsg_unknown;
     return 0;
   }
 
@@ -202,7 +202,7 @@ struct processor_map * prepare_processor_map(void)
           "%lu is not.\n",
           il_cache->cache.depth, nr_cache_sets);
       hwloc_topology_destroy(topology);
-      errno = err_msg_system_not_supported;
+      errno = emsg_system_not_supported;
       return 0;
     }
     uint_fast8_t weight = hwloc_bitmap_weight(hwloc_obj->cpuset);
@@ -273,7 +273,7 @@ struct processor_map * prepare_processor_map(void)
   if ( !processor_map ) {
     fprintf(stderr, "ERROR: err_msg_out_of_memory\n");
     hwloc_topology_destroy(processor_map->topology);
-    errno = err_msg_out_of_memory;
+    errno = emsg_out_of_memory;
     return 0;
   }
 
@@ -283,7 +283,7 @@ struct processor_map * prepare_processor_map(void)
   if ( cacheline_len != CACHELINE_LEN ) {
     // ALLOW_DIFFERENT_CACHELINE_SIZE has never been implemented to be honest.
     fprintf(stderr, "This program is not built with ALLOW_DIFFERENT_CACHELINE_SIZE!\n");
-    errno = err_msg_system_not_supported;
+    errno = emsg_system_not_supported;
     return 0;
   }
   processor_map->len_highest_priv_d_cache = len_highest_priv_d_cache;
@@ -348,7 +348,7 @@ struct processor_map * prepare_processor_map(void)
         goto large_page_size_determined;
       default:
         fprintf(stderr, "Unknown largepage(hugepage) size (%zu bytes)\n", size);
-        errno = err_msg_system_not_supported;
+        errno = emsg_system_not_supported;
         return 0;
     }
   }
@@ -549,7 +549,7 @@ large_page_size_determined:;
 abort_preparation:
   fprintf(stderr, "ERROR: err_msg_out_of_memory\n");
   clear_processor_map(processor_map);
-  errno = err_msg_out_of_memory;
+  errno = emsg_out_of_memory;
   return 0;
 }
 

@@ -279,7 +279,7 @@ take_and_return:
         // Grow the infos_arr_list and register one
         uint_fast8_t err = infos_al_grow( &p_mgr->al_rental_info, userdata, custom_malloc, 1, 0 );
         if ( err ) {
-          if ( err == err_msg_out_of_memory ) {
+          if ( err == emsg_out_of_memory ) {
             errno = ENOMEM;
           }
           return 0;
@@ -440,7 +440,7 @@ take_and_return:
         // Grow the infos_arr_list and register one
         uint_fast8_t err = infos_al_grow( &p_mgr->al_rental_info, userdata, custom_malloc, 1, 0 );
         if ( err ) {
-          if ( err == err_msg_out_of_memory ) {
+          if ( err == emsg_out_of_memory ) {
             errno = ENOMEM;
           }
           return 0;
@@ -697,7 +697,7 @@ take_it_and_return:
             1, 0 );
         if ( err ) {
           switch ( err ) {
-            case err_msg_out_of_memory:
+            case emsg_out_of_memory:
               errno = ENOMEM;
               break;
             default:
@@ -822,7 +822,7 @@ populate_new_vacancy:
         err = infos_al_grow( &p_mgr->al_vacancies, userdata, custom_malloc, 1, 0 );
         if ( err ) {
           switch ( err ) {
-            case err_msg_out_of_memory:
+            case emsg_out_of_memory:
               errno = ENOMEM;
               break;
             default:
@@ -1083,7 +1083,7 @@ take_it_and_return:
         uint_fast8_t err = infos_al_grow( &p_mgr->al_rental_info, userdata, custom_malloc, 1, 0 );
         if ( err ) {
           switch ( err ) {
-            case err_msg_out_of_memory:
+            case emsg_out_of_memory:
               errno = ENOMEM;
               break;
             default:
@@ -1209,7 +1209,7 @@ populate_new_vacancy:
         err = infos_al_grow( &p_mgr->al_vacancies, userdata, custom_malloc, 1, 0 );
         if ( err ) {
           switch ( err ) {
-            case err_msg_out_of_memory:
+            case emsg_out_of_memory:
               errno = ENOMEM;
               break;
             default:
@@ -1321,7 +1321,7 @@ static enum err_msg infos_smm_return_impl( struct infos_simple_mem_mgr * restric
         if ( nr_units_released ) {
           *nr_units_released = 0;
         }
-        return err_msg_no_such_entry;
+        return emsg_no_such_entry;
       }
 
       // Skip if it's empty.
@@ -1479,7 +1479,7 @@ populate_new_vacancy:
           if ( nr_units_released ) {
             *nr_units_released = 0;
           }
-          return err_msg_out_of_memory;
+          return emsg_out_of_memory;
         }
         v_node = infos_ll_get_last_node(&p_mgr->al_vacancies.list.head);
         p_mgr->idx_last_vacancy++;
@@ -1516,7 +1516,7 @@ populate_new_vacancy:
   if ( nr_units_released ) {
     *nr_units_released = 0;
   }
-  return err_msg_no_such_entry;
+  return emsg_no_such_entry;
 }
 
 //-------------------------------------------------------------------------------------------------
@@ -1776,9 +1776,9 @@ no_surrounding_space_big_enough_to_take:
 
         enum err_msg err = infos_smm_return_chunks( p_mgr,
             userdata, custom_malloc, orig_ptr, NULL, log2_chunk_len );
-        assume( err == err_msg_no_error );
+        assume( err == emsg_no_error );
         if ( err ) {
-          fprintf( stderr, "[SMM] infos_smm_realloc_chunks failed. (%s)\n", err_msg_text[err] );
+          fprintf( stderr, "[SMM] infos_smm_realloc_chunks failed. (%s)\n", arr_emsg_txt[err] );
         }
         p_mgr->total_space_left -= len_diff_in_chunks;
         return new_ptr;
@@ -2227,9 +2227,9 @@ end_of_neighbor_search:
         enum err_msg err = infos_smm_return_chunks( p_mgr,
             userdata, custom_malloc, orig_ptr, NULL, log2_chunk_len );
         if ( err ) {
-          fprintf( stderr, "[SMM] infos_smm_realloc_chunks failed. (%s)\n", err_msg_text[err] );
+          fprintf( stderr, "[SMM] infos_smm_realloc_chunks failed. (%s)\n", arr_emsg_txt[err] );
         }
-        assume( err == err_msg_no_error );
+        assume( err == emsg_no_error );
         p_mgr->total_space_left -= len_diff_in_chunks;
         return new_ptr;
       }
@@ -2462,9 +2462,9 @@ no_surrounding_space_big_enough_to_take:
 //    new_length );
 //#endif
         enum err_msg err = infos_smm_return( p_mgr, userdata, custom_malloc, orig_ptr );
-        assume( err == err_msg_no_error );
+        assume( err == emsg_no_error );
         if ( err ) {
-          fprintf( stderr, "[SMM] infos_smm_realloc failed. (%s)\n", err_msg_text[err] );
+          fprintf( stderr, "[SMM] infos_smm_realloc failed. (%s)\n", arr_emsg_txt[err] );
         }
         p_mgr->total_space_left -= len_diff;
         return new_ptr;
@@ -2591,7 +2591,7 @@ populate_new_vacancy:
   // Grow bigger if there is no space
   uint_fast8_t err = infos_al_grow( &p_mgr->al_vacancies, userdata, custom_malloc, 1, 0 );
   if ( err ) {
-    return err_msg_out_of_memory;
+    return emsg_out_of_memory;
   }
   struct infos_singly_linked_list_node * tail =
     infos_ll_get_last_node(&p_mgr->al_vacancies.list.head);
