@@ -4,6 +4,8 @@
 #include <stdio.h>
 #include <string.h>
 #include <errno.h>
+#include <simde/x86/avx.h>
+#include <simde/x86/avx2.h>
 
 #include "err_msg.h"
 #include "info_struct.h"
@@ -66,15 +68,31 @@ struct infos_simple_mem_mgr * infos_smm_init(
   new_manager->idx_last_rental_info = 0;
   new_manager->idx_last_vacancy = 0;
 
-  infos_al_create_prealloc( &new_manager->al_rental_info,
-      userdata, custom_malloc, CACHELINE_LEN * 8, sizeof(struct range_u32), 0 );
-  infos_al_create_prealloc( &new_manager->al_vacancies,
-      userdata, custom_malloc, CACHELINE_LEN * 4, sizeof(struct range_u32), 0 );
+  constexpr size_t min_size_range_db = CACHELINE_LEN * 4;
+  constexpr size_t rental_info_node_size = min_size_range_db * 2;
+  constexpr size_t available_ranges_node_size = min_size_range_db;
 
-  struct range_u32 * first_one = infos_al_get_elem(&new_manager->al_rental_info, 0);
-  first_one->start = -7;
-  first_one->stop = 7;
-  first_one = infos_al_get_elem(&new_manager->al_vacancies, 0);
+  // Just in case we want to do AVX search on al_vacancies in the future
+  static_assert( _is_aligned_to_power_of_two(rental_info_node_size, ALIGN_FOR_AVX512) );
+  static_assert( _is_aligned_to_power_of_two(available_ranges_node_size, ALIGN_FOR_AVX512) );
+
+  infos_al_create_prealloc( &new_manager->al_rental_info,
+      userdata, custom_malloc, rental_info_node_size, sizeof(struct range_u32), false );
+  constexpr struct range_u32 empty_range = { .start = UINT32_MAX, .stop = 0 };
+  constexpr union range_union { struct range_u32 range; uint64_t u64; } empty_range_union = {
+    .range = empty_range };
+  const simde__m256i key_pack = simde_mm256_set1_epi64x( empty_range_union.u64 );
+  constexpr uint64_t stride = ALIGN_FOR_AVX;
+  void * const restrict p_vectors = __builtin_assume_aligned(
+      new_manager->al_rental_info.list.head.data, ALIGN_FOR_AVX512 );
+  for ( uint64_t idx = 0; idx < rental_info_node_size; idx += stride ) {
+    simde_mm256_store_si256( p_vectors + idx, key_pack );
+  }
+
+  infos_al_create_prealloc( &new_manager->al_vacancies,
+      userdata, custom_malloc, available_ranges_node_size, sizeof(struct range_u32), false );
+
+  struct range_u32 * first_one = infos_al_get_elem(&new_manager->al_vacancies, 0);
   first_one->start = 0;
   first_one->stop = new_manager->data_len - 1;
 
@@ -109,17 +127,31 @@ struct infos_simple_mem_mgr * infos_smm_init_chunks( void * restrict buffer,
   new_manager->idx_last_rental_info = 0;
   new_manager->idx_last_vacancy = 0;
 
-  constexpr size_t min_size_ranges_database = CACHELINE_LEN * 4;
-  infos_al_create_prealloc( &new_manager->al_rental_info,
-      userdata, custom_malloc, min_size_ranges_database * 2, sizeof(struct range_u32), 0 );
-  infos_al_create_prealloc( &new_manager->al_vacancies,
-      userdata, custom_malloc, min_size_ranges_database, sizeof(struct range_u32), 0 );
+  constexpr size_t min_size_range_db = CACHELINE_LEN * 4;
+  constexpr size_t rental_info_node_size = min_size_range_db * 2;
+  constexpr size_t available_ranges_node_size = min_size_range_db;
 
-  struct range_u32 * first_one = infos_al_get_elem(&new_manager->al_rental_info, 0);
-  first_one->start = -7;
-  first_one->stop = 7;
-  assume( first_one->start > first_one->stop );
-  first_one = infos_al_get_elem(&new_manager->al_vacancies, 0);
+  // Just in case we want to do AVX search on al_vacancies in the future
+  static_assert( _is_aligned_to_power_of_two(rental_info_node_size, ALIGN_FOR_AVX512) );
+  static_assert( _is_aligned_to_power_of_two(available_ranges_node_size, ALIGN_FOR_AVX512) );
+
+  infos_al_create_prealloc( &new_manager->al_rental_info,
+      userdata, custom_malloc, rental_info_node_size, sizeof(struct range_u32), false );
+  constexpr struct range_u32 empty_range = { .start = UINT32_MAX, .stop = 0 };
+  constexpr union range_union { struct range_u32 range; uint64_t u64; } empty_range_union = {
+    .range = empty_range };
+  const simde__m256i key_pack = simde_mm256_set1_epi64x( empty_range_union.u64 );
+  constexpr uint64_t stride = ALIGN_FOR_AVX;
+  void * const restrict p_vectors = __builtin_assume_aligned(
+      new_manager->al_rental_info.list.head.data, ALIGN_FOR_AVX512 );
+  for ( uint64_t idx = 0; idx < rental_info_node_size; idx += stride ) {
+    simde_mm256_store_si256( p_vectors + idx, key_pack );
+  }
+
+  infos_al_create_prealloc( &new_manager->al_vacancies,
+      userdata, custom_malloc, available_ranges_node_size, sizeof(struct range_u32), false );
+
+  struct range_u32 * first_one = infos_al_get_elem(&new_manager->al_vacancies, 0);
   first_one->start = 0;
   first_one->stop = (new_manager->data_len - 1) >> log2_chunk_len;
 
@@ -134,6 +166,7 @@ void infos_smm_init_chunks_prealloc(
     )
 {
   assume( p_smm->data );
+  assume( _is_aligned_to_power_of_two(ptr2ui(p_smm->data), ALIGN_FOR_AVX512) );
 
   if ( log2_chunk_len == 0 ) {
     constexpr size_t cacheline_len = CACHELINE_LEN;
@@ -148,7 +181,6 @@ void infos_smm_init_chunks_prealloc(
   constexpr size_t min_size_range_db = CACHELINE_LEN * 4;
   constexpr size_t rental_info_node_size = min_size_range_db * 2;
   constexpr size_t available_ranges_node_size = min_size_range_db;
-  assume( (rental_info_node_size + available_ranges_node_size) % CACHELINE_LEN == 0 );
   assume( pool_size > (rental_info_node_size + available_ranges_node_size) * 2 );
 
   // To just copy and paste I created one shared variable here.
@@ -156,20 +188,37 @@ void infos_smm_init_chunks_prealloc(
 
   al = &p_smm->al_rental_info;
   auto node_size = rental_info_node_size;
+  typeof(al->list.head.data) p_data = p_smm->data;
   // Copy
   al->log2_node_size = get_log2( node_size );
   al->log2_elem_size = 31 - _lzcnt_u32( sizeof(struct range_u32) );
   al->log2_nr_elems = al->log2_node_size - al->log2_elem_size;
-  al->list.head.data = p_smm->data;  // This line's not copied as-is!
+  al->list.head.data = p_data;
   infos_take_care_of_linked_list_after_putting_head( &al->list );
+
+  constexpr struct range_u32 empty_range = { .start = UINT32_MAX, .stop = 0 };
+  constexpr union range_union { struct range_u32 range; uint64_t u64; } empty_range_union = {
+    .range = empty_range };
+  const simde__m256i key_pack = simde_mm256_set1_epi64x( empty_range_union.u64 );
+  constexpr uint64_t stride = ALIGN_FOR_AVX;
+  void * const p_vectors = __builtin_assume_aligned(
+      p_smm->al_rental_info.list.head.data, ALIGN_FOR_AVX512 );
+  for ( uint64_t idx = 0; idx < rental_info_node_size; idx += stride ) {
+    simde_mm256_store_si256( p_vectors + idx, key_pack );
+  }
+
+  // Just in case we want to do AVX search on al_vacancies in the future
+  static_assert( _is_aligned_to_power_of_two(rental_info_node_size, ALIGN_FOR_AVX512) );
+  static_assert( _is_aligned_to_power_of_two(available_ranges_node_size, ALIGN_FOR_AVX512) );
 
   al = &p_smm->al_vacancies;
   node_size = available_ranges_node_size;
+  p_data = p_smm->data + rental_info_node_size;
   // Paste
   al->log2_node_size = get_log2( node_size );
   al->log2_elem_size = 31 - _lzcnt_u32( sizeof(struct range_u32) );
   al->log2_nr_elems = al->log2_node_size - al->log2_elem_size;
-  al->list.head.data = p_smm->data + rental_info_node_size;  // This line's different!
+  al->list.head.data = p_data;
   infos_take_care_of_linked_list_after_putting_head( &al->list );
 
   // Take a few chunks from the first tip for the array lists
@@ -693,8 +742,7 @@ take_it_and_return:
         } while ( r_node );
 
         // Grow the infos_arr_list and register one
-        uint_fast8_t err = infos_al_grow( &p_mgr->al_rental_info, userdata, custom_malloc,
-            1, 0 );
+        uint_fast8_t err = infos_al_grow( &p_mgr->al_rental_info, userdata, custom_malloc, 1, 0 );
         if ( err ) {
           switch ( err ) {
             case emsg_out_of_memory:
@@ -1315,8 +1363,8 @@ static enum err_msg infos_smm_return_impl( struct infos_simple_mem_mgr * restric
   do {  // while ( r_node );
 
     for ( uint_fast32_t rent_idx = 0; rent_idx < nr_elems; rent_idx++ ) {
-      struct range_u32 * restrict rental_info;
-      rental_info = r_node->data + rent_idx * sizeof(*rental_info);
+      struct range_u32 * restrict p_rented_range;
+      p_rented_range = r_node->data + rent_idx * sizeof(*p_rented_range);
       if ( base_ridx + rent_idx > p_mgr->idx_last_rental_info ) {
         if ( nr_units_released ) {
           *nr_units_released = 0;
@@ -1325,12 +1373,12 @@ static enum err_msg infos_smm_return_impl( struct infos_simple_mem_mgr * restric
       }
 
       // Skip if it's empty.
-      if ( rental_info->start > rental_info->stop ) {
+      if ( p_rented_range->start > p_rented_range->stop ) {
         continue;
       }
 
       // We found a match?
-      if ( rental_info->start == target ) {
+      if ( p_rented_range->start == target ) {
         // Make a vacancy and merge if possible
         nr_elems = UINT64_C(1) << p_mgr->al_vacancies.log2_nr_elems;
         struct infos_singly_linked_list_node * restrict v_node;
@@ -1353,10 +1401,10 @@ static enum err_msg infos_smm_return_impl( struct infos_simple_mem_mgr * restric
             // Some messy code from a long time ago
             if ( !vacancy_to_merge_with ) {
               if ( vacancy->stop == target - 1 ) {
-                merge_range_into_lower(vacancy, rental_info);
+                merge_range_into_lower(vacancy, p_rented_range);
                 vacancy_to_merge_with = vacancy;
-              } else if ( vacancy->start == rental_info->stop + 1 ) {
-                merge_range_into_higher(rental_info, vacancy);
+              } else if ( vacancy->start == p_rented_range->stop + 1 ) {
+                merge_range_into_higher(p_rented_range, vacancy);
                 vacancy_to_merge_with = vacancy;
               }
             } else {
@@ -1371,17 +1419,17 @@ static enum err_msg infos_smm_return_impl( struct infos_simple_mem_mgr * restric
               if ( vacancy_to_merge_with == 0 ) {
 mark_empty_and_return:
                 if ( nr_units_released ) {
-                  *nr_units_released = rental_info->stop - rental_info->start + 1;
+                  *nr_units_released = p_rented_range->stop - p_rented_range->start + 1;
                 }
 //#ifdef DEBUG_MODE
 //fprintf( stdout, "[SMM] smm_return_impl released %u-%u\n",
-//    rental_info->start, rental_info->stop );
+//    p_rented_range->start, p_rented_range->stop );
 //#endif
-                p_mgr->total_space_left += get_range_len(*rental_info);
+                p_mgr->total_space_left += get_range_len(*p_rented_range);
 
                 // Mark the element empty.
-                rental_info->start = -7;
-                rental_info->stop = 7;
+                constexpr struct range_u32 empty_range = { .start = UINT32_MAX, .stop = 0 };
+                *p_rented_range = empty_range;
                 if ( base_ridx + rent_idx == p_mgr->idx_last_rental_info &&
                     p_mgr->idx_last_rental_info > 0 ) {
                   p_mgr->idx_last_rental_info--;
@@ -1420,20 +1468,20 @@ no_existing_range_to_merge:
 
             vacancy = v_node->data + vacancy_idx * sizeof(*vacancy);
             if ( vacancy->stop < vacancy->start ) {
-              vacancy->start = rental_info->start;
-              vacancy->stop = rental_info->stop;
+              vacancy->start = p_rented_range->start;
+              vacancy->stop = p_rented_range->stop;
               if ( nr_units_released ) {
-                *nr_units_released = rental_info->stop - rental_info->start + 1;
+                *nr_units_released = p_rented_range->stop - p_rented_range->start + 1;
               }
 //#ifdef DEBUG_MODE
 //fprintf( stdout, "[SMM] smm_return_impl released %u-%u\n",
-//    rental_info->start, rental_info->stop );
+//    p_rented_range->start, p_rented_range->stop );
 //#endif
-              p_mgr->total_space_left += get_range_len(*rental_info);
+              p_mgr->total_space_left += get_range_len(*p_rented_range);
 
               // Mark the element empty.
-              rental_info->start = -7;
-              rental_info->stop = 7;
+              constexpr struct range_u32 empty_range = { .start = UINT32_MAX, .stop = 0 };
+              *p_rented_range = empty_range;
               if ( base_ridx + rent_idx == p_mgr->idx_last_rental_info &&
                   p_mgr->idx_last_rental_info > 0 ) {
                 p_mgr->idx_last_rental_info--;
@@ -1450,21 +1498,21 @@ no_existing_range_to_merge:
               vacancy++;
             }
 populate_new_vacancy:
-            vacancy->start = rental_info->start;
-            vacancy->stop = rental_info->stop;
+            vacancy->start = p_rented_range->start;
+            vacancy->stop = p_rented_range->stop;
             p_mgr->idx_last_vacancy++;
             if ( nr_units_released ) {
-              *nr_units_released = rental_info->stop - rental_info->start + 1;
+              *nr_units_released = p_rented_range->stop - p_rented_range->start + 1;
             }
 //#ifdef DEBUG_MODE
 //fprintf( stdout, "[SMM] smm_return_impl released %u-%u\n",
-//    rental_info->start, rental_info->stop );
+//    p_rented_range->start, p_rented_range->stop );
 //#endif
-            p_mgr->total_space_left += get_range_len(*rental_info);
+            p_mgr->total_space_left += get_range_len(*p_rented_range);
 
             // Mark the element empty.
-            rental_info->start = -7;
-            rental_info->stop = 7;
+            constexpr struct range_u32 empty_range = { .start = UINT32_MAX, .stop = 0 };
+            *p_rented_range = empty_range;
             if ( base_ridx + rent_idx == p_mgr->idx_last_rental_info &&
                 p_mgr->idx_last_rental_info > 0 ) {
               p_mgr->idx_last_rental_info--;
@@ -1484,21 +1532,21 @@ populate_new_vacancy:
         v_node = infos_ll_get_last_node(&p_mgr->al_vacancies.list.head);
         p_mgr->idx_last_vacancy++;
         vacancy = v_node->data;
-        vacancy->start = rental_info->start;
-        vacancy->stop = rental_info->stop;
+        vacancy->start = p_rented_range->start;
+        vacancy->stop = p_rented_range->stop;
 
         if ( nr_units_released ) {
-          *nr_units_released = rental_info->stop - rental_info->start + 1;
+          *nr_units_released = p_rented_range->stop - p_rented_range->start + 1;
         }
 //#ifdef DEBUG_MODE
 //fprintf( stdout, "[SMM] smm_return_impl released %u-%u\n",
-//    rental_info->start, rental_info->stop );
+//    p_rented_range->start, p_rented_range->stop );
 //#endif
-        p_mgr->total_space_left += get_range_len(*rental_info);
+        p_mgr->total_space_left += get_range_len(*p_rented_range);
 
         // Mark the element empty.
-        rental_info->start = -7;
-        rental_info->stop = 7;
+        constexpr struct range_u32 empty_range = { .start = UINT32_MAX, .stop = 0 };
+        *p_rented_range = empty_range;
         if ( base_ridx + rent_idx == p_mgr->idx_last_rental_info &&
             p_mgr->idx_last_rental_info > 0 ) {
           p_mgr->idx_last_rental_info--;

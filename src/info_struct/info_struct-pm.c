@@ -1,5 +1,7 @@
 #include <stdint.h>
 #include <errno.h>
+#include <simde/x86/avx.h>
+#include <simde/x86/avx2.h>
 
 #include "err_msg.h"
 #include "info_struct.h"
@@ -46,6 +48,21 @@ enum err_msg infos_pm_init_prealloc(
   al->log2_nr_elems = al->log2_node_size - al->log2_elem_size;
   al->list.head.data = alloc;
   infos_take_care_of_linked_list_after_putting_head( &al->list );
+
+  // Just in case we want to do AVX search on al_vacancies in the future
+  static_assert( _is_aligned_to_power_of_two(rental_info_node_size, ALIGN_FOR_AVX512) );
+  static_assert( _is_aligned_to_power_of_two(available_ranges_node_size, ALIGN_FOR_AVX512) );
+
+  constexpr struct range_u32 empty_range = { .start = UINT32_MAX, .stop = 0 };
+  constexpr union range_union { struct range_u32 range; uint64_t u64; } empty_range_union = {
+    .range = empty_range };
+  const simde__m256i key_pack = simde_mm256_set1_epi64x( empty_range_union.u64 );
+  constexpr uint64_t stride = ALIGN_FOR_AVX;
+  void * const restrict p_vectors = __builtin_assume_aligned(
+      p_pm->al_rental_info.list.head.data, ALIGN_FOR_AVX512 );
+  for ( uint64_t idx = 0; idx < rental_info_node_size; idx += stride ) {
+    simde_mm256_store_si256( p_vectors + idx, key_pack );
+  }
 
   alloc = alloc + rental_info_node_size;
   al = &p_pm->al_vacancies;
@@ -698,8 +715,8 @@ mark_empty_and_return:
                 p_pm->nr_unused_pages += get_range_len(*rental_info);
 
                 // Mark the element empty.
-                rental_info->start = -7;
-                rental_info->stop = 7;
+                constexpr struct range_u32 empty_range = { .start = UINT32_MAX, .stop = 0 };
+                *rental_info = empty_range;
                 if ( base_ridx + rent_idx == p_pm->idx_last_rental_info &&
                     p_pm->idx_last_rental_info > 0 ) {
                   p_pm->idx_last_rental_info--;
@@ -744,8 +761,8 @@ no_existing_range_to_merge:
               p_pm->nr_unused_pages += get_range_len(*rental_info);
 
               // Mark the element empty.
-              rental_info->start = -7;
-              rental_info->stop = 7;
+              constexpr struct range_u32 empty_range = { .start = UINT32_MAX, .stop = 0 };
+              *rental_info = empty_range;
               if ( base_ridx + rent_idx == p_pm->idx_last_rental_info &&
                   p_pm->idx_last_rental_info > 0 ) {
                 p_pm->idx_last_rental_info--;
@@ -769,8 +786,8 @@ populate_new_vacancy:
             p_pm->nr_unused_pages += get_range_len(*rental_info);
 
             // Mark the element empty.
-            rental_info->start = -7;
-            rental_info->stop = 7;
+            constexpr struct range_u32 empty_range = { .start = UINT32_MAX, .stop = 0 };
+            *rental_info = empty_range;
             if ( base_ridx + rent_idx == p_pm->idx_last_rental_info &&
                 p_pm->idx_last_rental_info > 0 ) {
               p_pm->idx_last_rental_info--;
@@ -796,8 +813,8 @@ populate_new_vacancy:
         p_pm->nr_unused_pages += get_range_len(*rental_info);
 
         // Mark the element empty.
-        rental_info->start = -7;
-        rental_info->stop = 7;
+        constexpr struct range_u32 empty_range = { .start = UINT32_MAX, .stop = 0 };
+        *rental_info = empty_range;
         if ( base_ridx + rent_idx == p_pm->idx_last_rental_info &&
             p_pm->idx_last_rental_info > 0 ) {
           p_pm->idx_last_rental_info--;
@@ -822,7 +839,7 @@ populate_new_vacancy:
 enum err_msg infos_pm_return_via_ptr( struct infos_page_mgr * restrict p_pm,
     void * restrict userdata,
     void * (*custom_malloc)(void * userdata, size_t alignment, size_t size),
-    struct range_u32 * p_range
+    struct range_u32 * p_rented_range
     )
 {
   SPALL_BEGIN("pm_return_ptr");
@@ -830,19 +847,19 @@ enum err_msg infos_pm_return_via_ptr( struct infos_page_mgr * restrict p_pm,
   uint64_t base_ridx = 0;
 
   do {  // while ( r_node );
-    if ( (void*)p_range < r_node->data ||
-        (void*)p_range >= r_node->data + (UINT64_C(1) << p_pm->al_rental_info.log2_node_size) ) {
+    if ( (void*)p_rented_range < r_node->data ||
+        (void*)p_rented_range >= r_node->data + (UINT64_C(1) << p_pm->al_rental_info.log2_node_size) ) {
       r_node = r_node->next;
       base_ridx += UINT64_C(1) << p_pm->al_rental_info.log2_nr_elems;
       continue;
     }
 
-    if ( p_range->start > p_range->stop ) {
+    if ( p_rented_range->start > p_rented_range->stop ) {
       SPALL_END();
       return emsg_already_done;
     }
 
-    uint64_t rent_idx = ptr2ui((void*)p_range - r_node->data) >>
+    uint64_t rent_idx = ptr2ui((void*)p_rented_range - r_node->data) >>
       p_pm->al_rental_info.log2_elem_size;
     // Make a vacancy and merge if possible
     uint64_t nr_elems = UINT64_C(1) << p_pm->al_vacancies.log2_nr_elems;
@@ -865,11 +882,11 @@ enum err_msg infos_pm_return_via_ptr( struct infos_page_mgr * restrict p_pm,
 
         // Some messy code from a long time ago
         if ( !vacancy_to_merge_with ) {
-          if ( vacancy->stop == p_range->start - 1 ) {
-            merge_range_into_lower(vacancy, p_range);
+          if ( vacancy->stop == p_rented_range->start - 1 ) {
+            merge_range_into_lower(vacancy, p_rented_range);
             vacancy_to_merge_with = vacancy;
-          } else if ( vacancy->start == p_range->stop + 1 ) {
-            merge_range_into_higher(p_range, vacancy);
+          } else if ( vacancy->start == p_rented_range->stop + 1 ) {
+            merge_range_into_higher(p_rented_range, vacancy);
             vacancy_to_merge_with = vacancy;
           }
         } else {
@@ -883,11 +900,11 @@ enum err_msg infos_pm_return_via_ptr( struct infos_page_mgr * restrict p_pm,
 
           if ( vacancy_to_merge_with == 0 ) {
 mark_empty_and_return:
-            p_pm->nr_unused_pages += get_range_len(*p_range);
+            p_pm->nr_unused_pages += get_range_len(*p_rented_range);
 
             // Mark the element empty.
-            p_range->start = -7;
-            p_range->stop = 7;
+            constexpr struct range_u32 empty_range = { .start = UINT32_MAX, .stop = 0 };
+            *p_rented_range = empty_range;
             if ( base_ridx + rent_idx == p_pm->idx_last_rental_info &&
                 p_pm->idx_last_rental_info > 0 ) {
               p_pm->idx_last_rental_info--;
@@ -927,13 +944,13 @@ no_existing_range_to_merge:
 
         vacancy = v_node->data + vacancy_idx * sizeof(*vacancy);
         if ( vacancy->stop < vacancy->start ) {
-          vacancy->start = p_range->start;
-          vacancy->stop = p_range->stop;
-          p_pm->nr_unused_pages += get_range_len(*p_range);
+          vacancy->start = p_rented_range->start;
+          vacancy->stop = p_rented_range->stop;
+          p_pm->nr_unused_pages += get_range_len(*p_rented_range);
 
           // Mark the element empty.
-          p_range->start = -7;
-          p_range->stop = 7;
+          constexpr struct range_u32 empty_range = { .start = UINT32_MAX, .stop = 0 };
+          *p_rented_range = empty_range;
           if ( base_ridx + rent_idx == p_pm->idx_last_rental_info &&
               p_pm->idx_last_rental_info > 0 ) {
             p_pm->idx_last_rental_info--;
@@ -951,14 +968,14 @@ no_existing_range_to_merge:
           vacancy++;
         }
 populate_new_vacancy:
-        vacancy->start = p_range->start;
-        vacancy->stop = p_range->stop;
+        vacancy->start = p_rented_range->start;
+        vacancy->stop = p_rented_range->stop;
         p_pm->idx_last_vacancy++;
-        p_pm->nr_unused_pages += get_range_len(*p_range);
+        p_pm->nr_unused_pages += get_range_len(*p_rented_range);
 
         // Mark the element empty.
-        p_range->start = -7;
-        p_range->stop = 7;
+        constexpr struct range_u32 empty_range = { .start = UINT32_MAX, .stop = 0 };
+        *p_rented_range = empty_range;
         if ( base_ridx + rent_idx == p_pm->idx_last_rental_info &&
             p_pm->idx_last_rental_info > 0 ) {
           p_pm->idx_last_rental_info--;
@@ -978,14 +995,14 @@ populate_new_vacancy:
     v_node = infos_ll_get_last_node(&p_pm->al_vacancies.list.head);
     p_pm->idx_last_vacancy++;
     vacancy = v_node->data;
-    vacancy->start = p_range->start;
-    vacancy->stop = p_range->stop;
+    vacancy->start = p_rented_range->start;
+    vacancy->stop = p_rented_range->stop;
 
-    p_pm->nr_unused_pages += get_range_len(*p_range);
+    p_pm->nr_unused_pages += get_range_len(*p_rented_range);
 
     // Mark the element empty.
-    p_range->start = -7;
-    p_range->stop = 7;
+    constexpr struct range_u32 empty_range = { .start = UINT32_MAX, .stop = 0 };
+    *p_rented_range = empty_range;
     if ( base_ridx + rent_idx == p_pm->idx_last_rental_info &&
         p_pm->idx_last_rental_info > 0 ) {
       p_pm->idx_last_rental_info--;

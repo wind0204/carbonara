@@ -267,7 +267,6 @@ enum err_msg infos_hashtable_remove_3(struct infos_hashtable * table,
     constexpr uint64_t stride = ALIGN_FOR_AVX * 2 / sizeof(key);
     simde__m256i pack1, pack2, res1, res2;
     const simde__m256i key_pack = simde_mm256_set1_epi32( key );
-    void * const restrict p_value = __builtin_assume_aligned( value_arr->data, ALIGN_FOR_AVX512 );
     const uint64_t last_idx = (idx_next_empty_elem < UINT64_C(1) << table->log2_nr_keys) ?
       idx_next_empty_elem : UINT64_C(1) << table->log2_nr_keys;
     for ( uint64_t idx = 0; idx < last_idx; idx += stride ) {
@@ -291,6 +290,8 @@ found_the_key_to_remove:
         while (-7) {
           if ( last_elem_idx < UINT64_C(1) << table->log2_nr_keys ) {
             p_key[idx] = ((typeof(&key)) cur_node->data) [last_elem_idx];
+            void * const restrict p_value = __builtin_assume_aligned(
+                value_arr->data, ALIGN_FOR_AVX512 );
             memcpy( p_value + (idx << table->values.log2_elem_size),
                 cur_value_arr + (last_elem_idx << table->values.log2_elem_size),
                 UINT64_C(1) << table->values.log2_elem_size );

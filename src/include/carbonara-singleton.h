@@ -56,6 +56,7 @@ struct carbonara {
   atomic_uint_least64_t cur_time_in_5us_for_render;
   atomic_uint_least64_t cur_time_in_5us_for_physics;
   atomic_uint_least64_t cur_time_in_5us_for_sim;
+  atomic_uint_least8_t render_now;
 
   // Quite dynamic
   alignas(CACHELINE_LEN)

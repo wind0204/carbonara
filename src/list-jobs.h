@@ -4,7 +4,6 @@
 
 #include <stdint.h>
 
-#include "carbonara.h"
 #include "carbonara-job.h"
 
 
@@ -28,6 +27,7 @@ enum job_func_idx : _typeof_member(struct cara_job_batch_desc_64, job_func_idx[0
   jf_idx_start_kill_chain,  // #6
   jf_idx_kickstart,
   jf_idx_police_patrol,
+  jf_idx_render_frame,  // This index is never used because the foreman calls the function itself
 };
 
 //-------------------------------------------------------------------------------------------------
@@ -48,6 +48,7 @@ extern void jf_end_rainbow_scene( struct cara_worker_state * p_ws );
 extern void jf_start_kill_chain( struct cara_worker_state * p_ws );
 extern void jf_kickstart( struct cara_worker_state * p_ws );
 extern void jf_police_patrol( struct cara_worker_state * p_ws );
+extern void jf_render_frame( struct cara_worker_state * p_ws );
 
 
 #endif

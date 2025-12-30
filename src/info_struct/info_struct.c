@@ -83,7 +83,8 @@ void default_free( [[maybe_unused]] void * userdata, void * ptr )
 //-------------------------------------------------------------------------------------------------
 void vk_free_wrapper( [[maybe_unused]] void * p_VkAllocationCallbacks, void * ptr )
 {
-  free( ptr );
+  VkAllocationCallbacks * p_vk_alloc_cb = p_VkAllocationCallbacks;
+  p_vk_alloc_cb->pfnFree( p_vk_alloc_cb->pUserData, ptr );
 }
 
 

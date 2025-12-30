@@ -315,7 +315,7 @@ uint8_t init_vulkan(
   VkInstance vk_instance;
   result = vkCreateInstance(
       &vk_instance_create_info,
-      nullptr,
+      &vk_alloc_callbacks,
       &vk_instance
       );
   if ( (result != VK_SUCCESS) ||
@@ -701,13 +701,12 @@ uint8_t init_vulkan(
   VkSurfaceKHR presentation_surface;
   if ( !SDL_Vulkan_CreateSurface( window,
         vk_instance,
-        nullptr,
+        &vk_alloc_callbacks,
         &presentation_surface) ) {
     fprintf( stderr, "[Vulkan] Failed to create a vulkan surface.\n" );
     SDL_DestroyWindow( window );
 error_after_window_early:
     vkDestroyInstance(vk_instance, &vk_alloc_callbacks);
-    //vkDestroyInstance(vk_instance, nullptr);
     ma_free( cara_single.mem_arena, worker_state->worker_idx, arr_device_props );
     ma_free( cara_single.mem_arena,
         worker_state->worker_idx, arr_phys_devices );
@@ -2542,6 +2541,10 @@ void destroy_vk_objs( _typeof_member(struct ms_worker_info, idx_self) worker_idx
     cara_vk.dsl_cp2sc = VK_NULL_HANDLE;
   }
 
+  if ( cara_vk.screen_sampler ) {
+    vkDestroySampler( cara_vk.log_dev, cara_vk.screen_sampler, &vk_alloc_callbacks );
+    cara_vk.screen_sampler = VK_NULL_HANDLE;
+  }
   if ( cara_vk.albmap_sampler ) {
     vkDestroySampler( cara_vk.log_dev, cara_vk.albmap_sampler, &vk_alloc_callbacks );
     cara_vk.albmap_sampler = VK_NULL_HANDLE;
@@ -2570,7 +2573,7 @@ void destroy_vk_objs( _typeof_member(struct ms_worker_info, idx_self) worker_idx
           default:
             break;
         }
-      } else {
+      } else {  // No error occurred
         cara_vk.p_malloc_range_albmaps = nullptr;
         vkDestroyImage( cara_vk.log_dev, cara_vk.albmaps[img_id], &vk_alloc_callbacks );
         cara_vk.albmaps[img_id] = VK_NULL_HANDLE;
@@ -2604,7 +2607,7 @@ void destroy_vk_objs( _typeof_member(struct ms_worker_info, idx_self) worker_idx
         default:
           break;
       }
-    } else {
+    } else {  // No error occurred
       cara_vk.p_malloc_range_vbuf = nullptr;
       vkDestroyBuffer( cara_vk.log_dev, cara_vk.vert_buf, &vk_alloc_callbacks );
       cara_vk.vert_buf = VK_NULL_HANDLE;
@@ -2637,26 +2640,18 @@ void destroy_vk_objs( _typeof_member(struct ms_worker_info, idx_self) worker_idx
         default:
           break;
       }
-    } else {
+    } else {  // No error occurred
       cara_vk.p_malloc_range_ibuf = nullptr;
       vkDestroyBuffer( cara_vk.log_dev, cara_vk.ind_buf, &vk_alloc_callbacks );
       cara_vk.ind_buf = VK_NULL_HANDLE;
     }
   }
 
-  if ( cara_vk.vmm.arr_usages ) {
-    // This function will put nullptr in the struct
-    ma_destroy_vk_mem_mgr( &cara_vk.vmm, cara_vk.log_dev,
-        ui2ptr(worker_idx), cara_free, &vk_alloc_callbacks, vk_malloc_wrapper );
-  }
-
   // FIXME Host access to `semaphore` must be externally synchronized (vkDestroySemaphore)
   for ( unsigned int fif_idx = 0; fif_idx < cara_max_nr_fif; fif_idx++ ) {
     if( cara_vk.arr_sc_acquire_semaphores[fif_idx] != VK_NULL_HANDLE ) {
       vkDestroySemaphore( cara_vk.log_dev, cara_vk.arr_sc_acquire_semaphores[fif_idx],
-          &vk_alloc_callbacks
-          //nullptr
-          );
+          &vk_alloc_callbacks );
       cara_vk.arr_sc_acquire_semaphores[fif_idx] = VK_NULL_HANDLE;
     }
   }
@@ -2667,9 +2662,7 @@ void destroy_vk_objs( _typeof_member(struct ms_worker_info, idx_self) worker_idx
       if( cara_vk.arr_sc_present_semaphores[swapchain_img_idx] != VK_NULL_HANDLE ) {
         vkDestroySemaphore( cara_vk.log_dev,
             cara_vk.arr_sc_present_semaphores[swapchain_img_idx],
-            &vk_alloc_callbacks
-            //nullptr
-            );
+            &vk_alloc_callbacks );
         cara_vk.arr_sc_present_semaphores[swapchain_img_idx] = VK_NULL_HANDLE;
       }
     }
@@ -2678,11 +2671,11 @@ void destroy_vk_objs( _typeof_member(struct ms_worker_info, idx_self) worker_idx
   }
   for ( unsigned int fif_idx = 0; fif_idx < cara_max_nr_fif; fif_idx++ ) {
     if( cara_vk.arr_semaphore_tr[fif_idx] != VK_NULL_HANDLE ) {
-      vkDestroySemaphore( cara_vk.log_dev, cara_vk.arr_sc_acquire_semaphores[fif_idx], nullptr );
+      vkDestroySemaphore( cara_vk.log_dev, cara_vk.arr_semaphore_tr[fif_idx], &vk_alloc_callbacks );
       cara_vk.arr_semaphore_tr[fif_idx] = VK_NULL_HANDLE;
     }
     if( cara_vk.arr_semaphore_gr[fif_idx] != VK_NULL_HANDLE ) {
-      vkDestroySemaphore( cara_vk.log_dev, cara_vk.arr_sc_acquire_semaphores[fif_idx], nullptr );
+      vkDestroySemaphore( cara_vk.log_dev, cara_vk.arr_semaphore_gr[fif_idx], &vk_alloc_callbacks );
       cara_vk.arr_semaphore_gr[fif_idx] = VK_NULL_HANDLE;
     }
   }
@@ -2711,6 +2704,12 @@ void destroy_vk_objs( _typeof_member(struct ms_worker_info, idx_self) worker_idx
       ma_free( cara_single.mem_arena, worker_idx, cara_vk.arr_swapchain_imgs );
       cara_vk.arr_swapchain_imgs = nullptr;
     }
+  }
+
+  if ( cara_vk.vmm.arr_usages ) {
+    // This function will put nullptr in the struct
+    ma_destroy_vk_mem_mgr( &cara_vk.vmm, cara_vk.log_dev,
+        ui2ptr(worker_idx), cara_free, &vk_alloc_callbacks, vk_malloc_wrapper );
   }
 
   for ( uint_fast8_t set_idx = 0; set_idx < nr_trans_cmd_pool_sets + 1; set_idx++ ) {
@@ -2801,8 +2800,12 @@ static enum err_msg create_2nd_renderpass( struct cara_vk_renderer * renderer )
   // Define attachments
   //
 
+  constexpr unsigned int nr_attachments_for_2nd_rp = 2;
+  constexpr unsigned int local_fb_zbuf = 0;
+  constexpr unsigned int local_fb_swapchain = 1;
+
   // The color attachment
-  VkAttachmentDescription2 arr_att_descs[2];
+  VkAttachmentDescription2 arr_att_descs[nr_attachments_for_2nd_rp];
   // NOTE Consider chaining VkAttachmentDescriptionStencilLayout in the pNext field in order to
   // set stencilInitialLayout and stencilFinalLayout
   for ( unsigned int att_idx = 0; att_idx < _arr_elem_cnt( arr_att_descs ); att_idx++ ) {
@@ -2826,48 +2829,49 @@ static enum err_msg create_2nd_renderpass( struct cara_vk_renderer * renderer )
   //  enough to make the implicit transition happen
 
   // The depth buffer
-  arr_att_descs[0].format = renderer->zbuf_fmt;
-  arr_att_descs[0].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-  arr_att_descs[0].storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-  arr_att_descs[0].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-  arr_att_descs[0].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-  arr_att_descs[0].finalLayout = has_stencil_buf( renderer->zbuf_fmt ) ?
+  arr_att_descs[local_fb_zbuf].format = renderer->zbuf_fmt;
+  arr_att_descs[local_fb_zbuf].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+  arr_att_descs[local_fb_zbuf].storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+  arr_att_descs[local_fb_zbuf].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+  arr_att_descs[local_fb_zbuf].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+  arr_att_descs[local_fb_zbuf].finalLayout = has_stencil_buf( renderer->zbuf_fmt ) ?
     VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL : VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
 
   // The swapchain image
-  arr_att_descs[1].format = renderer->swapchain_img_fmt;
-  arr_att_descs[1].loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-  arr_att_descs[1].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-  arr_att_descs[1].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-  arr_att_descs[1].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-  arr_att_descs[1].finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;  // We are rendering
-                                                                 // directly into a swapchain image
-                                                                 // and we want to display it on
-                                                                 // screen; We should use a
-                                                                 // PRESENT_SRC layout.
+  arr_att_descs[local_fb_swapchain].format = renderer->swapchain_img_fmt;
+  arr_att_descs[local_fb_swapchain].loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+  arr_att_descs[local_fb_swapchain].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+  arr_att_descs[local_fb_swapchain].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+  arr_att_descs[local_fb_swapchain].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+  arr_att_descs[local_fb_swapchain].finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;  //\
+                                                                  // We are rendering
+                                                                  // directly into a swapchain image
+                                                                  // and we want to display it on
+                                                                  // screen; We should use a
+                                                                  // PRESENT_SRC layout.
 
   // Prepare the array of VkAttachmentReference2
-  VkAttachmentReference2 arr_att_refs[cara_nr_framebuffers];
+  VkAttachmentReference2 arr_att_refs[nr_attachments_for_2nd_rp];
   for ( unsigned int att_idx = 0; att_idx < _arr_elem_cnt( arr_att_refs ); att_idx++ ) {
     arr_att_refs[att_idx].sType = VK_STRUCTURE_TYPE_ATTACHMENT_REFERENCE_2;
     arr_att_refs[att_idx].pNext = nullptr;
   }
 
   // The depth buffer
-  arr_att_refs[fb_zbuf].attachment = fb_zbuf;
-  arr_att_refs[fb_zbuf].layout = has_stencil_buf( renderer->zbuf_fmt ) ?
+  arr_att_refs[local_fb_zbuf].attachment = local_fb_zbuf;
+  arr_att_refs[local_fb_zbuf].layout = has_stencil_buf( renderer->zbuf_fmt ) ?
     VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL : VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
-  arr_att_refs[fb_zbuf].aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+  arr_att_refs[local_fb_zbuf].aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
 
   // The color buffer
-  arr_att_refs[fb_cbuf].attachment = fb_cbuf;
-  arr_att_refs[fb_cbuf].layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-  arr_att_refs[fb_cbuf].aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+  //arr_att_refs[fb_cbuf].attachment = fb_cbuf;
+  //arr_att_refs[fb_cbuf].layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+  //arr_att_refs[fb_cbuf].aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 
   // The swapchain image
-  arr_att_refs[fb_swapchain].attachment = fb_swapchain;
-  arr_att_refs[fb_swapchain].layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-  arr_att_refs[fb_swapchain].aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+  arr_att_refs[local_fb_swapchain].attachment = local_fb_swapchain;
+  arr_att_refs[local_fb_swapchain].layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+  arr_att_refs[local_fb_swapchain].aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 
 
   //
@@ -2890,9 +2894,9 @@ static enum err_msg create_2nd_renderpass( struct cara_vk_renderer * renderer )
   arr_subpass_desc[cs2_copy_to_sc].inputAttachmentCount = 0;
   arr_subpass_desc[cs2_copy_to_sc].pInputAttachments = nullptr;
   arr_subpass_desc[cs2_copy_to_sc].colorAttachmentCount = 1;
-  arr_subpass_desc[cs2_copy_to_sc].pColorAttachments = &arr_att_refs[fb_swapchain];
+  arr_subpass_desc[cs2_copy_to_sc].pColorAttachments = &arr_att_refs[local_fb_swapchain];
   arr_subpass_desc[cs2_copy_to_sc].pResolveAttachments = nullptr;
-  arr_subpass_desc[cs2_copy_to_sc].pDepthStencilAttachment = &arr_att_refs[fb_zbuf];
+  arr_subpass_desc[cs2_copy_to_sc].pDepthStencilAttachment = &arr_att_refs[local_fb_zbuf];
   arr_subpass_desc[cs2_copy_to_sc].preserveAttachmentCount = 0;
   arr_subpass_desc[cs2_copy_to_sc].pPreserveAttachments = nullptr;
 
@@ -3191,7 +3195,7 @@ enum err_msg create_1st_renderpass_and_framebuffer( struct cara_vk_renderer * re
   fb_att_img_info1[fb_zbuf].usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
   fb_att_img_info1[fb_zbuf].pViewFormats = &depth_fmt;
 
-  VkFramebufferAttachmentImageInfo fb_att_img_info2[1];
+  VkFramebufferAttachmentImageInfo fb_att_img_info2[2];
   for ( unsigned int att_idx = 0; att_idx < _arr_elem_cnt( fb_att_img_info2 ); att_idx++ ) {
     fb_att_img_info2[att_idx].sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_ATTACHMENT_IMAGE_INFO;
     fb_att_img_info2[att_idx].pNext = nullptr;
@@ -3201,8 +3205,10 @@ enum err_msg create_1st_renderpass_and_framebuffer( struct cara_vk_renderer * re
     fb_att_img_info2[att_idx].layerCount = 1;
     fb_att_img_info2[att_idx].viewFormatCount = 1;
   }
-  fb_att_img_info2[0].usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
-  fb_att_img_info2[0].pViewFormats = &renderer->swapchain_img_fmt;
+  fb_att_img_info2[0].usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+  fb_att_img_info2[0].pViewFormats = &depth_fmt;
+  fb_att_img_info2[1].usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+  fb_att_img_info2[1].pViewFormats = &renderer->swapchain_img_fmt;
 
   VkFramebufferAttachmentsCreateInfo fb_atts_create_info = {
     .sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_ATTACHMENTS_CREATE_INFO,
@@ -3239,6 +3245,7 @@ enum err_msg create_1st_renderpass_and_framebuffer( struct cara_vk_renderer * re
       goto stop_everything_after_failure;
     }
 
+    fb_create_info.attachmentCount = _arr_elem_cnt( fb_att_img_info2 );
     fb_create_info.renderPass = renderer->arr_renderpasses[1];
     fb_atts_create_info.attachmentImageInfoCount = _arr_elem_cnt( fb_att_img_info2 );
     fb_atts_create_info.pAttachmentImageInfos = fb_att_img_info2;
@@ -3520,7 +3527,7 @@ enum err_msg expand_swapchain_and_framebuffer( struct cara_vk_renderer * rendere
   fb_att_img_info1[fb_zbuf].usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
   fb_att_img_info1[fb_zbuf].pViewFormats = &depth_fmt;
 
-  VkFramebufferAttachmentImageInfo fb_att_img_info2[1];
+  VkFramebufferAttachmentImageInfo fb_att_img_info2[2];
   for ( unsigned int att_idx = 0; att_idx < _arr_elem_cnt( fb_att_img_info2 ); att_idx++ ) {
     fb_att_img_info2[att_idx].sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_ATTACHMENT_IMAGE_INFO;
     fb_att_img_info2[att_idx].pNext = nullptr;
@@ -3530,8 +3537,10 @@ enum err_msg expand_swapchain_and_framebuffer( struct cara_vk_renderer * rendere
     fb_att_img_info2[att_idx].layerCount = 1;
     fb_att_img_info2[att_idx].viewFormatCount = 1;
   }
-  fb_att_img_info2[0].usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
-  fb_att_img_info2[0].pViewFormats = &renderer->swapchain_img_fmt;
+  fb_att_img_info2[0].usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+  fb_att_img_info2[0].pViewFormats = &depth_fmt;
+  fb_att_img_info2[1].usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+  fb_att_img_info2[1].pViewFormats = &renderer->swapchain_img_fmt;
 
 
   VkFramebufferAttachmentsCreateInfo fb_atts_create_info = {
@@ -3569,6 +3578,7 @@ enum err_msg expand_swapchain_and_framebuffer( struct cara_vk_renderer * rendere
       goto stop_everything_after_failure;
     }
 
+    fb_create_info.attachmentCount = _arr_elem_cnt( fb_att_img_info2 );
     fb_create_info.renderPass = renderer->arr_renderpasses[1];
     fb_atts_create_info.attachmentImageInfoCount = _arr_elem_cnt( fb_att_img_info2 );
     fb_atts_create_info.pAttachmentImageInfos = fb_att_img_info2;

@@ -230,10 +230,19 @@ static inline struct infos_singly_linked_list_node * infos_ll_get_last_node(
 
 
 //-------------------------------------------------------------------------------------------------
+
+/**
+ * \brief It is composed of uint32_t start and uint32_t stop
+ * \sa get_range_len
+ * \sa get_aligned_range_len
+ * \sa merge_range_into_higher
+ * \sa merge_range_into_lower
+ */
 struct range_u32 {
   uint32_t start;
   uint32_t stop;
 };
+
 
 //-------------------------------------------------------------------------------------------------
 /**

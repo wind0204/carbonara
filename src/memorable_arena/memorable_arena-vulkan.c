@@ -111,7 +111,6 @@ void ma_destroy_vk_mem_mgr(
 {
   void (*local_free)(void * restrict userdata, void * restrict ptr);
   local_free = custom_free ? custom_free : default_free;
-  local_free( userdata_free, p_vmm->arr_usages );
   void * (*local_malloc)(void * userdata_malloc, size_t alignment, size_t size);
   local_malloc = custom_malloc ? custom_malloc : default_malloc;
 
@@ -133,7 +132,7 @@ void ma_destroy_vk_mem_mgr(
 
         VkDeviceMemory * p_malloc = m_node->data + malloc_idx * sizeof(VkDeviceMemory);
         if ( *p_malloc == VK_NULL_HANDLE ) {
-          fprintf( stderr, "[MA] *p_malloc is already VK_NULL_HANDLE "
+          fprintf( stderr, "[MA-Vulkan] *p_malloc is already VK_NULL_HANDLE "
               "type_idx=%u node_idx=%u malloc_idx=%u\n",
               type_idx, node_idx, malloc_idx );
           continue;
@@ -165,9 +164,9 @@ void ma_destroy_vk_mem_mgr(
               case emsg_out_of_memory:
                 [[fallthrough]];
               default:
-                fprintf( stderr, "[MA] Error occured in infos_pm_return_via_ptr: %s\n",
+                fprintf( stderr, "[MA-Vulkan] Error occured in infos_pm_return_via_ptr: %s\n",
                     arr_emsg_txt[err] );
-                fprintf( stderr, "[MA] context: "
+                fprintf( stderr, "[MA-Vulkan] context: "
                     "type_idx=%u node_idx=%u malloc_idx=%u rnode_idx=? bind_idx=%u\n",
                     type_idx, node_idx, malloc_idx, bind_idx );
                 break;
@@ -175,27 +174,22 @@ void ma_destroy_vk_mem_mgr(
           }
           r_node = r_node->next;
         }  // while( r_node )
-
-        if ( p_vmm->arr_usages[heap_idx] > 0 ) {
-          fprintf( stdout, "[MA-Debug] leftover in heap_idx %u = %lu\n",
-              heap_idx, p_vmm->arr_usages[heap_idx] );
-        }
 #endif
       }  // for ( uint32_t malloc_idx = 0; malloc_idx < last_idx; malloc_idx++ )
 
       if ( !p_node->next ) {
-        infos_multi_al_destroy_except_preallocated_struct( &p_vmm->page_mgrs,
-            userdata_free, local_free );
-        infos_multi_al_destroy_except_preallocated_struct( &p_vmm->mallocs,
-            userdata_free, local_free );
         break;
       }
 
       m_node = m_node->next;
       p_node = p_node->next;
       node_idx++;
-    }
-  }
+    }  // while(7)
+  }  // for ( unsigned int type_idx = 0; type_idx < p_vmm->type_cnt; type_idx++ )
+  infos_multi_al_destroy_except_preallocated_struct( &p_vmm->page_mgrs,
+      userdata_free, local_free );
+  infos_multi_al_destroy_except_preallocated_struct( &p_vmm->mallocs,
+      userdata_free, local_free );
 
   if ( p_vmm->p_staging_buf ) {
     vkUnmapMemory( logical_dev, p_vmm->staging_buf_malloc );
@@ -208,6 +202,15 @@ void ma_destroy_vk_mem_mgr(
     p_vmm->staging_buf_malloc = 0;
   }
 
+#if !defined(ARE_WE_SHIPPING_IT)
+  for ( unsigned int heap_idx = 0; heap_idx < p_vmm->heap_cnt; heap_idx++ ) {
+    if ( p_vmm->arr_usages[heap_idx] > 0 ) {
+      fprintf( stdout, "[MA-Vulkan-Debug] leftover in heap_idx %u = %lu KiB\n",
+          heap_idx, p_vmm->arr_usages[heap_idx] / 1024 );
+    }
+  }
+#endif
+  local_free( userdata_free, p_vmm->arr_usages );
   p_vmm->arr_usages = nullptr;
   p_vmm->arr_sizes = nullptr;
   p_vmm->arr_heap_indices = nullptr;
@@ -692,6 +695,7 @@ enum err_msg ma_report_vk_malloc_rel(
         return emsg_no_such_entry;
       }
 
+      auto length = get_range_len(*p_malloc_range);
       err = infos_pm_return_via_ptr( (struct infos_page_mgr*)p_pm, userdata, local_malloc,
           p_malloc_range );
 
@@ -699,7 +703,7 @@ enum err_msg ma_report_vk_malloc_rel(
         case emsg_no_such_entry:
           continue;
         case 0:
-          p_vmm->arr_usages[heap_idx] -= get_range_len(*p_malloc_range);
+          p_vmm->arr_usages[heap_idx] -= length;
 #if !defined( ARE_WE_SHIPPING_IT )
           VkDeviceMemory * p_malloc = m_node->data + idx * sizeof(VkDeviceMemory);
           assume( *p_malloc );
