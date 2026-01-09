@@ -4,7 +4,9 @@
 
 #include "carbonara-job.h"
 #include "carbonara-singleton.h"
+#include "info_struct.h"
 #include "list-jobs.h"
+#include "util-c_lang-basic.h"
 
 #ifdef _MSC_VER
 #include <intrin.h>
@@ -40,46 +42,28 @@ void (* const known_jobs[])( struct cara_worker_state * p_ws ) = {
 //-------------------------------------------------------------------------------------------------
 struct cara_job_batch_desc_64 * cara_get_job( const struct ms_worker_info * worker_info )
 {
-    //struct cara_job_batch_desc_64 * buffer[NR_PTRS_IN_BUFFER_FOR_GET_JOB]) {
-  /*
-  uint8_t cnt_buffer_index = 0;
-  for ( uint_fast8_t idx_buf_ptr = 0;
-      idx_buf_ptr < NR_PTRS_IN_BUFFER_FOR_GET_JOB; idx_buf_ptr++ ) {
-    buffer[idx_buf_ptr]->progress = 0;
-    buffer[idx_buf_ptr]->preferred_core = 0;
-    for ( uint_fast8_t i = 0; i < CARBONARA_MAX_NR_JOBS_IN_A_JOB_DESC_64; i++ ) {
-      buffer[idx_buf_ptr]->idx_job_func[i] = 0;
-      buffer[idx_buf_ptr]->job_flags[i] = 0;
-      for ( uint_fast8_t j = 0; j < CARBONARA_MAX_LEN_JOB_FUNC_ARGS; j++ )
-        buffer[idx_buf_ptr]->job_func_args[i*CARBONARA_MAX_NR_JOBS_IN_A_JOB_DESC_64 + j] = 0;
+  struct infos_arr_list * p_al = cara_single.job_list;
+  const uint64_t nr_elems_in_block = UINT64_C(1) << p_al->log2_nr_elems;
+  const uint64_t nr_valid_elems = nr_elems_in_block * p_al->nr_active_blocks;
+  uint64_t base_idx = 0;  // The base idx of current vacancy block
+  //uint64_t node_base_idx = 0;
+  uint64_t block_idx = 0;
+  struct linked_list_of_lists_node * restrict node = &p_al->list.head;
+  do {  // while ( base_idx < nr_valid_elems )
+    if ( base_idx + block_idx * nr_elems_in_block >= nr_valid_elems ) {
+      goto out_of_nested_loop;
     }
-    for ( uint_fast8_t i = 0; i < sizeof(buffer[0]->user_data); i++ )
-      buffer[idx_buf_ptr]->user_data[i] = 0;
-  }
-  */
+    void * block = node->arr_blocks[block_idx];
 
-  /*
-  uint32_t clsets = worker_info->cache_pattern >> worker_info->cache_location;
-  uint32_t reversed_clsets = ~clsets;
-  uint32_t clsets_sibling = 0;
-  if ( worker_info->idx_one_sibling && !worker_info->idx_missing_sibling ) {
-    struct ms_worker_info * sibling_info;
-    sibling_info = &cara_single.proc_map->processors[worker_info->idx_one_sibling - 1];
-    clsets_sibling = sibling_info->cache_pattern >> sibling_info->cache_location;
-  }
-  */
-  const uint64_t nr_elems = UINT64_C(1) << cara_single.job_list->log2_nr_elems;
-  const struct infos_singly_linked_list_node * node = &cara_single.job_list->list.head;
-  // Try to find a job that doesn't have anything to do with the datasets on the cache
-  // line sets the worker is not assigned to
-  while ( node ) {
-    for ( uint64_t idx_elem = 0; idx_elem < nr_elems; idx_elem++ ) {
-      struct cara_job_batch_desc_64 * restrict batch =
-        node->data + (idx_elem << cara_single.job_list->log2_elem_size);
+    for ( uint_fast32_t local_elem_idx = 0;
+        local_elem_idx < nr_elems_in_block;
+        local_elem_idx++ ) {
+
+      struct cara_job_batch_desc_64 * restrict p_batch = block + local_elem_idx * sizeof(*p_batch);
       uint_fast8_t try_to_take = 1;
 
       const uint_fast8_t preferred_core =
-        atomic_load_explicit( &batch->preferred_core, memory_order_acquire );
+        atomic_load_explicit( &p_batch->preferred_core, memory_order_acquire );
       if ( preferred_core != UINT8_MAX ) {  // The job is from a duo job pair.
         if ( preferred_core != UINT8_MAX - 1 &&  // preferred_core of the pair has been determined.
             worker_info->idx_core != preferred_core ) {  // The worker is not assigned to the core
@@ -91,247 +75,156 @@ struct cara_job_batch_desc_64 * cara_get_job( const struct ms_worker_info * work
         if ( !(worker_info->deployment_flags & job_flag_foremans_task) ) {
           for ( uint_fast8_t idx_job = 0; idx_job < CARBONARA_MAX_NR_JOBS_IN_A_JOB_DESC_64;
               idx_job++ ) {
-            if ( batch->job_flags[idx_job] & job_flag_foremans_task ) {
-              try_to_take = 0;
-              break;
+            if ( p_batch->job_flags[idx_job] & job_flag_foremans_task ) {
+              goto continue_to_next_elem;
             }
           }
         }
 
-        if ( try_to_take ) {
-          uint8_t old_value = 0;
-          if ( preferred_core == UINT8_MAX - 1 ) {
-            struct cara_job_batch_desc_64 * restrict const peer =
-              infos_al_get_elem( cara_single.job_list, batch->idx_peer_job );
-            // Try to take the batch and set preferred_core
-            if ( atomic_compare_exchange_strong_explicit(&batch->progress,
-                  &old_value, 1, memory_order_acq_rel, memory_order_acquire) ) {
-              atomic_store_explicit(
-                  &peer->preferred_core, worker_info->idx_core, memory_order_release );
-              return batch;
-            }
-          } else {
-            // Try to take the batch
-            if ( atomic_compare_exchange_strong_explicit(&batch->progress,
-                  &old_value, 1, memory_order_acq_rel, memory_order_acquire) ) {
-              return batch;
-            }
-          }
-        }
-      }
-    }
-
-    node = node->next;
-  }
-
-  /*
-  // Try to find a job that at least doesn't involve the datasets on the cache line sets the
-  // sibling of this worker is assigned to
-  if ( clsets_sibling ) {
-    for ( uint_fast8_t i = 0; i < 2; i++ ) {
-      for ( uint_fast8_t idx_buf_ptr = 0;
-          idx_buf_ptr < NR_PTRS_IN_BUFFER_FOR_GET_JOB; idx_buf_ptr++ ) {
-        struct cara_job_batch_desc_64 * restrict batch = buffer[idx_buf_ptr];
-
-        if ( !batch ) {
-          continue;
-        }
-
-        uint8_t try_to_take = 1;
-        for ( uint_fast8_t idx_job = 0; idx_job < CARBONARA_MAX_NR_JOBS_IN_A_JOB_DESC_64;
-            idx_job++ ) {
-          if ( batch->cache_pattern[idx_job] >> batch->cache_location[idx_job] & clsets_sibling ) {
-            try_to_take = 0;
-            buffer[idx_buf_ptr] = 0;
-            break;
-          }
-        }
-
-        if ( try_to_take ) {
-          uint8_t old_value = 0;
-          // Try to take the batch
-          if ( atomic_compare_exchange_strong_explicit(&batch->progress,
+        uint8_t old_value = 0;
+        if ( preferred_core == UINT8_MAX - 1 ) {
+          struct cara_job_batch_desc_64 * restrict const peer =
+            infos_al_get_elem_unsafe( cara_single.job_list, p_batch->idx_peer_job );
+          // Try to take the p_batch and set preferred_core
+          if ( atomic_compare_exchange_strong_explicit(&p_batch->progress,
                 &old_value, 1, memory_order_acq_rel, memory_order_acquire) ) {
-            return batch;
+            atomic_store_explicit(
+                &peer->preferred_core, worker_info->idx_core, memory_order_release );
+            return p_batch;
           }
-        }
-      }
-    }
-  }
-  */
+        } else {
+          // Try to take the p_batch
+          if ( atomic_compare_exchange_strong_explicit(&p_batch->progress,
+                &old_value, 1, memory_order_acq_rel, memory_order_acquire) ) {
+            return p_batch;
+          }
+        }  // if ( preferred_core == UINT8_MAX - 1 ) {} else
+      }  // if ( try_to_take )
+continue_to_next_elem:
 
-  return 0;
+    }  // for ( uint_fast32_t local_elem_idx = 0;
+       // local_elem_idx < nr_elems_in_block; local_elem_idx++ )
+
+    block_idx++;
+    base_idx += nr_elems_in_block;
+    if ( block_idx >= _arr_elem_cnt(node->arr_blocks) ) {
+      node = node->next;
+      assume( node );
+      //node_base_idx += UINT64_C(1) << ( p_smm->al_vacancies.log2_nr_elems +
+      //    _arr_elem_cnt(p_smm->al_vacancies.list.head.arr_blocks) );
+      block_idx = 0;
+    }
+  } while ( base_idx < nr_valid_elems );
+out_of_nested_loop:
+
+  return nullptr;
 }
 
 
 //-------------------------------------------------------------------------------------------------
 struct cara_job_batch_desc_64 * cara_get_unoccupied_job_batch_desc(void)
 {
-  const uint64_t nr_elems = UINT64_C(1) << cara_single.job_list->log2_nr_elems;
-  const struct infos_singly_linked_list_node * node = &cara_single.job_list->list.head;
-  while ( node ) {
-    for ( uint_fast16_t idx_elem = 0; idx_elem < nr_elems; idx_elem++ ) {
-      struct cara_job_batch_desc_64 * restrict batch =
-        node->data + (idx_elem << cara_single.job_list->log2_elem_size);
+  struct infos_arr_list * p_al = cara_single.job_list;
+  const uint64_t nr_elems_in_block = UINT64_C(1) << p_al->log2_nr_elems;
+  const uint64_t nr_valid_elems = nr_elems_in_block * p_al->nr_active_blocks;
+  uint64_t base_idx = 0;  // The base idx of current vacancy block
+  //uint64_t node_base_idx = 0;
+  uint64_t block_idx = 0;
+  struct linked_list_of_lists_node * restrict node = &p_al->list.head;
+  do {  // while ( base_idx < nr_valid_elems )
+    if ( base_idx + block_idx * nr_elems_in_block >= nr_valid_elems ) {
+      goto out_of_nested_loop;
+    }
+    void * block = node->arr_blocks[block_idx];
+
+    for ( uint_fast32_t local_elem_idx = 0;
+        local_elem_idx < nr_elems_in_block;
+        local_elem_idx++ ) {
+
+      struct cara_job_batch_desc_64 * restrict p_batch = block + local_elem_idx * sizeof(*p_batch);
       // Try to take the job batch descriptor if every job in it is done.
       uint8_t old_value = ~0;
-      if ( atomic_load_explicit(&batch->progress, memory_order_acquire) == old_value ) {
-        if ( atomic_compare_exchange_strong_explicit(&batch->progress,
+      if ( atomic_load_explicit(&p_batch->progress, memory_order_acquire) == old_value ) {
+        if ( atomic_compare_exchange_strong_explicit(&p_batch->progress,
               &old_value, 1, memory_order_acq_rel, memory_order_acquire) ) {
           atomic_fetch_add_explicit( &cara_single.nr_job_batch_descriptors_taken, 1,
               memory_order_release );
-          return batch;
+          return p_batch;
         }
       }
+    }  // for ( uint_fast32_t local_elem_idx = 0;
+       // local_elem_idx < nr_elems_in_block; local_elem_idx++ )
 
+    block_idx++;
+    base_idx += nr_elems_in_block;
+    if ( block_idx >= _arr_elem_cnt(node->arr_blocks) ) {
+      node = node->next;
+      assume( node );
+      //node_base_idx += UINT64_C(1) << ( p_smm->al_vacancies.log2_nr_elems +
+      //    _arr_elem_cnt(p_smm->al_vacancies.list.head.arr_blocks) );
+      block_idx = 0;
     }
+  } while ( base_idx < nr_valid_elems );
+out_of_nested_loop:
 
-    node = node->next;
-  }
+  return nullptr;
 
-  return 0;
 }
-
-//struct cara_job_batch_desc_64 * cara_get_unoccupied_job_batch_desc_colored(uint32_t cacheline_sets) {
-//  uint_fast8_t nr_0s = _tzcnt_u32(cara_single.proc_map->set_index_mask);
-//  uint_fast8_t nr_elems;
-//  uint_fast8_t elem_size;
-//  nr_elems = cara_single.job_list->elem_cnt_per_node;
-//  elem_size = cara_single.job_list->elem_size;
-//  struct infos_singly_linked_list_node * node = &cara_single.job_list->list.head;
-//  while ( node ) {
-//    for ( uint_fast8_t idx_elem = 0; idx_elem < nr_elems; idx_elem++ ) {
-//      struct cara_job_batch_desc_64 * restrict batch = node->data + idx_elem*elem_size;
-//
-//      // Try to take the job batch descriptor if the jobs inside are all done.
-//      uint8_t old_value = ~0;
-//      if ( atomic_load_explicit(&batch->progress, memory_order_acquire) == old_value &&
-//          0x80000000u >> ((ptr2ui(batch) & cara_single.proc_map->set_index_mask) >> nr_0s) & cacheline_sets ) {
-//        if ( atomic_compare_exchange_strong_explicit(&batch->progress,
-//              &old_value, 1, memory_order_acq_rel, memory_order_acquire) ) {
-//          atomic_fetch_add_explicit(&cara_single.nr_job_batch_descriptors_taken, 1,
-//              memory_order_release);
-//          return batch;
-//        }
-//      }
-//
-//    }
-//
-//    node = node->next;
-//  }
-//
-//  return 0;
-//}
 
 
 //-------------------------------------------------------------------------------------------------
-void cara_init_job_list_node( void * data )
+void cara_init_job_list_node( struct infos_arr_list * p_al )
 {
-  const uint64_t nr_elems = UINT64_C(1) << cara_single.job_list->log2_nr_elems;
-  for ( uint_fast16_t idx_elem = 0; idx_elem < nr_elems; idx_elem++ ) {
-    struct cara_job_batch_desc_64 * restrict batch =
-      data + (idx_elem << cara_single.job_list->log2_elem_size);
-
-    atomic_init( &batch->progress, ~0 );
-    atomic_init( &batch->preferred_core, ~0 );
-    for ( uint_fast8_t idx_job = 0; idx_job < CARBONARA_MAX_NR_JOBS_IN_A_JOB_DESC_64;
-        idx_job++ ) {
-      batch->job_flags[idx_job] = 0;
+  const uint64_t nr_elems_in_block = UINT64_C(1) << p_al->log2_nr_elems;
+  const uint64_t nr_valid_elems = nr_elems_in_block * p_al->nr_active_blocks;
+  uint64_t base_idx = 0;  // The base idx of current vacancy block
+  //uint64_t node_base_idx = 0;
+  uint64_t block_idx = 0;
+  struct linked_list_of_lists_node * restrict node = &p_al->list.head;
+  do {  // while ( base_idx < nr_valid_elems )
+    if ( base_idx + block_idx * nr_elems_in_block >= nr_valid_elems ) {
+      goto out_of_nested_loop;
     }
-    //for ( uint_fast8_t idx_job = 0; idx_job < CARBONARA_MAX_NR_JOBS_IN_A_JOB_DESC_64;
-    //    idx_job++ ) {
-    //  batch->jobs[idx_job].idx_job_func = 0;
-    //  batch->cache_locations[idx_job] = 0;
-    //  batch->cache_patterns[idx_job] = 0;
-    //  for ( uint_fast8_t idx_byte = 0; idx_byte < __sizeof_member(struct cara_job_batch_desc_64, user_data);
-    //      idx_byte++ ) {
-    //    batch->user_data[idx_byte] = 0;
-    //  }
-    //}
-  }
+    void * block = node->arr_blocks[block_idx];
 
-}
+    for ( uint_fast32_t local_elem_idx = 0;
+        local_elem_idx < nr_elems_in_block;
+        local_elem_idx++ ) {
 
-/*
-void cara_init_job_arg_pool_node(void * data) {
-
-  uint8_t nr_elems;
-  nr_elems = cara_single.job_arg_pool->node_size / cara_single.job_arg_pool->elem_size;
-  typeof(cara_single.job_arg_pool->elem_size) elem_size = cara_single.job_arg_pool->elem_size;
-  for ( uint_fast8_t idx_elem = 0; idx_elem < nr_elems; idx_elem++ ) {
-    struct cara_job_func_args_64 * restrict func_arg_group = data + idx_elem*elem_size;
-
-    atomic_init(&func_arg_group->occupied, 0);
-  }
-
-}
-*/
-
-/*
-uint16_t cara_get_unoccupied_job_func_args(void) {
-  uint8_t nr_elems;
-  uint8_t elem_size;
-  nr_elems = cara_single.job_arg_pool->node_size / cara_single.job_arg_pool->elem_size;
-  elem_size = cara_single.job_arg_pool->elem_size;
-  struct infos_linked_list_node * node = cara_single.job_arg_pool->list->head;
-  uint_fast8_t idx_node = 0;
-  while ( node ) {
-    for ( uint_fast8_t idx_elem = 0; idx_elem < nr_elems; idx_elem++ ) {
-      struct cara_job_func_args_64 * restrict arg_group = node->data + idx_elem*elem_size;
-      // Try to take the job function argument group.
-      uint8_t old_value = 0;
-      if ( arg_group->occupied == old_value ) {
-        if ( atomic_compare_exchange_strong_explicit(&arg_group->occupied,
-              &old_value, 1, memory_order_acq_rel, memory_order_acquire) ) {
-          atomic_fetch_add_explicit(&cara_single.nr_job_arg_groups_taken, 1,
-              memory_order_release);
-          return nr_elems * idx_node + idx_elem;
-        }
+      struct cara_job_batch_desc_64 * restrict p_batch = block + local_elem_idx * sizeof(*p_batch);
+      atomic_init( &p_batch->progress, ~0 );
+      atomic_init( &p_batch->preferred_core, ~0 );
+      for ( uint_fast8_t idx_job = 0; idx_job < CARBONARA_MAX_NR_JOBS_IN_A_JOB_DESC_64;
+          idx_job++ ) {
+        p_batch->job_flags[idx_job] = 0;
       }
+      //for ( uint_fast8_t idx_job = 0; idx_job < CARBONARA_MAX_NR_JOBS_IN_A_JOB_DESC_64;
+      //    idx_job++ ) {
+      //  batch->jobs[idx_job].idx_job_func = 0;
+      //  batch->cache_locations[idx_job] = 0;
+      //  batch->cache_patterns[idx_job] = 0;
+      //  for ( uint_fast8_t idx_byte = 0; idx_byte < __sizeof_member(struct cara_job_batch_desc_64, user_data);
+      //      idx_byte++ ) {
+      //    batch->user_data[idx_byte] = 0;
+      //  }
+      //}
 
+    }  // for ( uint_fast32_t local_elem_idx = 0;
+       // local_elem_idx < nr_elems_in_vblock; local_elem_idx++ )
+
+    block_idx++;
+    base_idx += nr_elems_in_block;
+    if ( block_idx >= _arr_elem_cnt(node->arr_blocks) ) {
+      node = node->next;
+      assume( node );
+      //node_base_idx += UINT64_C(1) << ( p_smm->al_vacancies.log2_nr_elems +
+      //    _arr_elem_cnt(p_smm->al_vacancies.list.head.arr_blocks) );
+      block_idx = 0;
     }
+  } while ( base_idx < nr_valid_elems );
+out_of_nested_loop:
 
-    node = node->next;
-    idx_node++;
-  }
-
-  return UINT16_MAX;
 }
-*/
 
-/*
-uint16_t cara_get_unoccupied_job_func_args_colored(uint32_t cacheline_sets) {
-  uint_fast8_t nr_0s = _tzcnt_u32(mm_singleton.set_index_mask);
-  uint8_t nr_elems;
-  uint8_t elem_size;
-  nr_elems = cara_single.job_arg_pool->node_size / cara_single.job_arg_pool->elem_size;
-  elem_size = cara_single.job_arg_pool->elem_size;
-  struct infos_linked_list_node * node = cara_single.job_arg_pool->list->head;
-  uint_fast8_t idx_node = 0;
-  while ( node ) {
-    for ( uint_fast8_t idx_elem = 0; idx_elem < nr_elems; idx_elem++ ) {
-      struct cara_job_func_args_64 * restrict arg_group = node->data + idx_elem*elem_size;
-
-      // Try to take the job function argument group.
-      uint8_t old_value = 0;
-      if ( arg_group->occupied == old_value &&
-          0x80000000u >> ((ptr2ui(arg_group) & mm_singleton.set_index_mask) >> nr_0s) & cacheline_sets ) {
-        if ( atomic_compare_exchange_strong_explicit(&arg_group->occupied,
-              &old_value, 1, memory_order_acq_rel, memory_order_acquire) ) {
-          atomic_fetch_add_explicit(&cara_single.nr_job_arg_groups_taken, 1,
-              memory_order_release);
-          return nr_elems * idx_node + idx_elem;
-        }
-      }
-
-    }
-
-    node = node->next;
-    idx_node++;
-  }
-
-  return UINT16_MAX;
-}
-*/
 
 

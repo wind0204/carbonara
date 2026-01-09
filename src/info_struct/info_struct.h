@@ -5,17 +5,14 @@
 #include <stdint.h>
 #include <stddef.h>
 #include <string.h>
-#include <math.h>
 #include <vulkan/vulkan_core.h>
+#include <simde/x86/avx.h>
+#include <simde/x86/avx2.h>
 
 #include "func_overloading_and_def_args_and_named_args.h"
 #include "util-c_lang-basic.h"
 #include "util-c_lang-bits.h"
 #include "err_msg.h"
-
-#ifdef DEBUG_MODE
-//#include <stdio.h>
-#endif
 
 
 //-------------------------------------------------------------------------------------------------
@@ -25,14 +22,14 @@ void init_info_struct(uint64_t proc_info);
 //-------------------------------------------------------------------------------------------------
 struct infos_singly_linked_list {
   struct infos_singly_linked_list_node * head;
-  static_assert( alignof(void*) >= alignof(uint64_t), "Sort the struct members!" );
+  static_assert( alignof(void*) >= alignof(uint64_t) );
   uint64_t nr_nodes;
 };
-struct infos_singly_linked_list_with_tail {
-  struct infos_singly_linked_list_node * tail;
-  static_assert( alignof(void*) >= alignof(uint64_t), "Sort the struct members!" );
-  uint64_t nr_nodes;
-};
+//struct infos_singly_linked_list_with_tail {
+//  struct infos_singly_linked_list_node * tail;
+//  static_assert( alignof(void*) >= alignof(uint64_t), "Sort the struct members!" );
+//  uint64_t nr_nodes;
+//};
 struct infos_singly_linked_list_node {
   struct infos_singly_linked_list_node * next;
   void * data;
@@ -40,65 +37,81 @@ struct infos_singly_linked_list_node {
 // infos_singly_linked_list with a fixed head
 struct infos_singly_linked_list_fh {
   struct infos_singly_linked_list_node head;
-  static_assert( alignof(struct infos_singly_linked_list_node) >= alignof(uint64_t),
-      "Sort the struct members!" );
+  static_assert( alignof(struct infos_singly_linked_list_node) >= alignof(uint64_t) );
   uint64_t nr_nodes;
 };
 
-struct infos_linked_list {
-  struct infos_linked_list_node * head;
-  struct infos_linked_list_node * tail;
-  static_assert( alignof(void*) >= alignof(uint64_t), "Sort the struct members!" );
-  uint64_t nr_nodes;
+//struct infos_linked_list {
+//  struct infos_linked_list_node * head;
+//  struct infos_linked_list_node * tail;
+//  static_assert( alignof(void*) >= alignof(uint64_t), "Sort the struct members!" );
+//  uint64_t nr_nodes;
+//};
+//struct infos_linked_list_node {
+//  struct infos_linked_list_node * prev;
+//  struct infos_linked_list_node * next;
+//  void * data;
+//};
+//// infos_linked_list with fixed head
+//struct infos_linked_list_fh {
+//  struct infos_linked_list_node * tail;
+//  static_assert( alignof(void*) >= alignof(struct infos_linked_list_node),
+//      "Sort the struct members!" );
+//  struct infos_linked_list_node head;
+//  uint64_t nr_nodes;
+//};
+
+struct linked_list_of_lists_node {
+  struct linked_list_of_lists_node * next;
+  void * arr_blocks[128 / sizeof(void*)];  // The element count of this array is a power of two
 };
-struct infos_linked_list_node {
-  struct infos_linked_list_node * prev;
-  struct infos_linked_list_node * next;
-  void * data;
+static_assert( _is_power_of_two(
+      _arr_elem_cnt(_typeof_member(struct linked_list_of_lists_node, arr_blocks)) ) ); 
+
+struct linked_list_of_lists_fh {
+  struct linked_list_of_lists_node head;
 };
-// infos_linked_list with fixed head
-struct infos_linked_list_fh {
-  struct infos_linked_list_node * tail;
-  static_assert( alignof(void*) >= alignof(struct infos_linked_list_node),
-      "Sort the struct members!" );
-  struct infos_linked_list_node head;
-  uint64_t nr_nodes;
+struct linked_list_of_lists_2_fh {
+  struct linked_list_of_lists_node head;
+  uint32_t nr_nodes;  // The number of lists including `head`
+  uint32_t nr_active_blocks;  // The number of non-null elements in every `data`
 };
-/**
- * \brief Same with struct infos_linked_list_node except that next is _Atomic.
- */
-struct infos_linked_list_node_atomic {
-  struct infos_linked_list_node_atomic * prev;
-  struct infos_linked_list_node_atomic * _Atomic next;
-  void * data;
+
+struct linked_list_of_lists {
+  struct linked_list_of_lists_node * head;
+};
+struct linked_list_of_lists_2 {
+  struct linked_list_of_lists_node * head;
+  uint32_t nr_nodes;  // The number of lists
+  uint32_t nr_active_blocks;  // The number of non-null elements in every `data`
 };
 
 //-------------------------------------------------------------------------------------------------
-__attribute__((always_inline))
-static inline void infos_take_care_of_tail_next_prev_and_nr_nodes_after_putting_head_uh(
-    struct infos_linked_list * ll )
-{
-  ll->head->next = ll->head->prev = 0;
-  ll->tail = ll->head;
-  ll->nr_nodes = 1;
-}
+//__attribute__((always_inline))
+//static inline void infos_take_care_of_tail_next_prev_and_nr_nodes_after_putting_head_uh(
+//    struct infos_linked_list * ll )
+//{
+//  ll->head->next = ll->head->prev = nullptr;
+//  ll->tail = ll->head;
+//  ll->nr_nodes = 1;
+//}
 
 //-------------------------------------------------------------------------------------------------
-__attribute__((always_inline))
-static inline void infos_take_care_of_tail_next_prev_and_nr_nodes_after_putting_head_fh(
-    struct infos_linked_list_fh * ll )
-{
-  ll->head.next = ll->head.prev = 0;
-  ll->tail = &ll->head;
-  ll->nr_nodes = 1;
-}
+//__attribute__((always_inline))
+//static inline void infos_take_care_of_tail_next_prev_and_nr_nodes_after_putting_head_fh(
+//    struct infos_linked_list_fh * ll )
+//{
+//  ll->head.next = ll->head.prev = nullptr;
+//  ll->tail = &ll->head;
+//  ll->nr_nodes = 1;
+//}
 
 //-------------------------------------------------------------------------------------------------
 __attribute__((always_inline))
 static inline void infos_take_care_of_next_and_nr_nodes_after_putting_head_uh(
     struct infos_singly_linked_list * ll )
 {
-  ll->head->next = 0;
+  ll->head->next = nullptr;
   ll->nr_nodes = 1;
 }
 
@@ -107,7 +120,25 @@ __attribute__((always_inline))
 static inline void infos_take_care_of_next_and_nr_nodes_after_putting_head_fh(
     struct infos_singly_linked_list_fh * ll )
 {
-  ll->head.next = 0;
+  ll->head.next = nullptr;
+  ll->nr_nodes = 1;
+}
+
+//-------------------------------------------------------------------------------------------------
+__attribute__((always_inline))
+static inline void take_care_of_next_and_nr_nodes_after_putting_head_lists_2_uh(
+    struct linked_list_of_lists_2 * ll )
+{
+  ll->head->next = nullptr;
+  ll->nr_nodes = 1;
+}
+
+//-------------------------------------------------------------------------------------------------
+__attribute__((always_inline))
+static inline void take_care_of_next_and_nr_nodes_after_putting_head_lists_2_fh(
+    struct linked_list_of_lists_2_fh * ll )
+{
+  ll->head.next = nullptr;
   ll->nr_nodes = 1;
 }
 
@@ -116,53 +147,58 @@ static inline void infos_take_care_of_next_and_nr_nodes_after_putting_head_fh(
  * \brief no docstring for macro :(
  */
 #define infos_take_care_of_linked_list_after_putting_head(ptr_ll) _Generic((ptr_ll),  \
-    struct infos_linked_list * :                                                      \
-        infos_take_care_of_tail_next_prev_and_nr_nodes_after_putting_head_uh,         \
-    struct infos_linked_list_fh * :                                                   \
-        infos_take_care_of_tail_next_prev_and_nr_nodes_after_putting_head_fh,         \
     struct infos_singly_linked_list * :                                               \
         infos_take_care_of_next_and_nr_nodes_after_putting_head_uh,                   \
     struct infos_singly_linked_list_fh * :                                            \
-        infos_take_care_of_next_and_nr_nodes_after_putting_head_fh                    \
-    )(ptr_ll)
+        infos_take_care_of_next_and_nr_nodes_after_putting_head_fh,                   \
+    struct linked_list_of_lists_2 * :                                                 \
+        take_care_of_next_and_nr_nodes_after_putting_head_lists_2_uh,                 \
+    struct linked_list_of_lists_2_fh * :                                              \
+        take_care_of_next_and_nr_nodes_after_putting_head_lists_2_fh                  \
+    )((ptr_ll))
+
+    //struct infos_linked_list * :                                                      \
+    //    infos_take_care_of_tail_next_prev_and_nr_nodes_after_putting_head_uh,         \
+    //struct infos_linked_list_fh * :                                                   \
+    //    infos_take_care_of_tail_next_prev_and_nr_nodes_after_putting_head_fh,         \
 
 //-------------------------------------------------------------------------------------------------
-__attribute__((always_inline))
-static inline struct infos_linked_list_node * infos_ll_get_node_uh(
-    const struct infos_linked_list * list, uint32_t idx_node )
-{
-  struct infos_linked_list_node * restrict cur = list->head;
-  typeof(idx_node) i = 0;
-  while(-7) {
-    if ( i == idx_node ) {
-      return cur;
-    }
-    i++;
-    cur = cur->next;
-    if ( !cur ) {
-      return 0;
-    }
-  }
-}
+//__attribute__((always_inline))
+//static inline struct infos_linked_list_node * infos_ll_get_node_uh(
+//    const struct infos_linked_list * list, uint32_t idx_node )
+//{
+//  struct infos_linked_list_node * restrict cur = list->head;
+//  typeof(idx_node) i = 0;
+//  while(-7) {
+//    if ( i == idx_node ) {
+//      return cur;
+//    }
+//    i++;
+//    cur = cur->next;
+//    if ( !cur ) {
+//      return 0;
+//    }
+//  }
+//}
 
 //-------------------------------------------------------------------------------------------------
-__attribute__((always_inline))
-static inline struct infos_linked_list_node * infos_ll_get_node_fh(
-    const struct infos_linked_list_fh * list, uint32_t idx_node )
-{
-  const struct infos_linked_list_node * restrict cur = &list->head;
-  typeof(idx_node) i = 0;
-  while(-7) {
-    if ( i == idx_node ) {
-      return (struct infos_linked_list_node *) cur;
-    }
-    i++;
-    cur = cur->next;
-    if ( !cur ) {
-      return 0;
-    }
-  }
-}
+//__attribute__((always_inline))
+//static inline struct infos_linked_list_node * infos_ll_get_node_fh(
+//    const struct infos_linked_list_fh * list, uint32_t idx_node )
+//{
+//  const struct infos_linked_list_node * restrict cur = &list->head;
+//  typeof(idx_node) i = 0;
+//  while(-7) {
+//    if ( i == idx_node ) {
+//      return (struct infos_linked_list_node *) cur;
+//    }
+//    i++;
+//    cur = cur->next;
+//    if ( !cur ) {
+//      return 0;
+//    }
+//  }
+//}
 
 //-------------------------------------------------------------------------------------------------
 __attribute__((always_inline))
@@ -203,27 +239,124 @@ static inline struct infos_singly_linked_list_node * infos_sll_get_node_fh(
 }
 
 //-------------------------------------------------------------------------------------------------
-/**
- * \warning I've never tried using these functions but wrote the function-like macro just in case.
- */
-#define infos_ll_get_node(ll, idx_node) _Generic((ll),            \
-    struct infos_linked_list *  : infos_ll_get_node_uh,           \
-    struct infos_linked_list_fh *  : infos_ll_get_node_fh,        \
-    struct infos_singly_linked_list *  : infos_sll_get_node_uh,   \
-    struct infos_singly_linked_list_fh *  : infos_sll_get_node_fh \
-    )(ll, idx_node)
+__attribute__((always_inline))
+static inline void * lll_get_elem_from_head_unsafe(
+    const struct linked_list_of_lists_node * head, uint32_t idx_elem )
+{
+  const struct linked_list_of_lists_node * restrict cur = head;
+  while(-7) {
+    if ( idx_elem < _arr_elem_cnt(cur->arr_blocks) ) {
+      return cur->arr_blocks[idx_elem];
+    }
+    idx_elem -= _arr_elem_cnt( cur->arr_blocks );
+    cur = cur->next;
+    assume( cur );
+  }
+}
 
 //-------------------------------------------------------------------------------------------------
 __attribute__((always_inline))
-static inline struct infos_singly_linked_list_node * infos_ll_get_last_node(
-    const struct infos_singly_linked_list_node * head )
+static inline void * lll_get_elem_from_head(
+    const struct linked_list_of_lists_node * head, uint32_t idx_elem )
 {
-  const struct infos_singly_linked_list_node * restrict cur = head;
+  const struct linked_list_of_lists_node * restrict cur = head;
   while(-7) {
-    if ( cur->next == 0 ) {
-      return (struct infos_singly_linked_list_node *) cur;
+    if ( idx_elem < _arr_elem_cnt(cur->arr_blocks) ) {
+      return cur->arr_blocks[idx_elem];
     }
+    idx_elem -= _arr_elem_cnt( cur->arr_blocks );
     cur = cur->next;
+    if ( !cur->next ) {
+      return nullptr;
+    }
+  }
+}
+
+//-------------------------------------------------------------------------------------------------
+__attribute__((always_inline))
+static inline void * lll_get_elem_uh(
+    const struct linked_list_of_lists * list, uint32_t idx_elem )
+{
+  void * ret = lll_get_elem_from_head_unsafe( list->head, idx_elem );
+  return ret;
+}
+
+//-------------------------------------------------------------------------------------------------
+__attribute__((always_inline))
+static inline void * lll_get_elem_fh(
+    const struct linked_list_of_lists_fh * list, uint32_t idx_elem )
+{
+  void * ret = lll_get_elem_from_head_unsafe( &list->head, idx_elem );
+  return ret;
+}
+
+//-------------------------------------------------------------------------------------------------
+__attribute__((always_inline))
+static inline void * lll2_get_elem_uh(
+    const struct linked_list_of_lists_2 * list, uint32_t idx_elem )
+{
+  void * ret = lll_get_elem_from_head_unsafe( list->head, idx_elem );
+  return ret;
+}
+
+//-------------------------------------------------------------------------------------------------
+__attribute__((always_inline))
+static inline void * lll2_get_elem_fh(
+    const struct linked_list_of_lists_2_fh * list, uint32_t idx_elem )
+{
+  void * ret = lll_get_elem_from_head_unsafe( &list->head, idx_elem );
+  return ret;
+}
+
+//-------------------------------------------------------------------------------------------------
+/**
+ * \warning I've never tried using these functions but wrote the function-like macro just in case.
+ */
+#define infos_ll_get_node(ll, idx_node) _Generic((ll),              \
+    struct infos_linked_list *  : infos_ll_get_node_uh,             \
+    struct infos_linked_list_fh *  : infos_ll_get_node_fh,          \
+    struct infos_singly_linked_list *  : infos_sll_get_node_uh,     \
+    struct infos_singly_linked_list_fh *  : infos_sll_get_node_fh   \
+    ) ((ll), (idx_node))
+
+#define lll_get_elem_unsafe(lll_or_head, idx_elem) _Generic((lll_or_head),  \
+    const struct linked_list_of_lists *  : lll_get_elem_uh,                 \
+    struct linked_list_of_lists *  : lll_get_elem_uh,                       \
+    const struct linked_list_of_lists_fh *  : lll_get_elem_fh,              \
+    struct linked_list_of_lists_fh *  : lll_get_elem_fh,                    \
+    const struct linked_list_of_lists_2 *  : lll2_get_elem_uh,              \
+    struct linked_list_of_lists_2 *  : lll2_get_elem_uh,                    \
+    const struct linked_list_of_lists_2_fh *  : lll2_get_elem_fh,           \
+    struct linked_list_of_lists_2_fh *  : lll2_get_elem_fh,                 \
+    const struct linked_list_of_lists_node *  : lll_get_elem_from_head,     \
+    struct linked_list_of_lists_node *  : lll_get_elem_from_head            \
+    ) ((lll_or_head), (idx_elem))
+
+//-------------------------------------------------------------------------------------------------
+//__attribute__((always_inline))
+//static inline struct infos_singly_linked_list_node * infos_ll_get_last_node(
+//    const struct infos_singly_linked_list_node * head )
+//{
+//  const struct infos_singly_linked_list_node * restrict cur = head;
+//  while(cur->next) {
+//    cur = cur->next;
+//  }
+//  return (struct infos_singly_linked_list_node *) cur;
+//}
+
+
+//-------------------------------------------------------------------------------------------------
+__attribute__((always_inline))
+static inline void packed_aligned_avx2_memset(
+    void * dest, uint64_t qw_filler, size_t len_in_bytes )
+{
+  const simde__m256i key_pack = simde_mm256_set1_epi64x( qw_filler );
+
+  assume( _is_aligned_to_power_of_two(len_in_bytes, ALIGN_FOR_AVX) );
+  void * const restrict p_vectors = __builtin_assume_aligned( dest, ALIGN_FOR_AVX );
+  constexpr uint64_t stride = ALIGN_FOR_AVX;
+  for ( uint64_t byte_idx = 0; byte_idx < len_in_bytes; byte_idx += stride ) {
+    simde_mm256_store_si256( p_vectors + byte_idx, key_pack );
   }
 }
 
@@ -243,6 +376,24 @@ struct range_u32 {
   uint32_t stop;
 };
 
+constexpr struct range_u32 invalid_range = { .start = UINT32_MAX, .stop = 0 };
+constexpr union range32_union { struct range_u32 range; uint64_t u64; } invalid_range32_union = {
+  .range = invalid_range };
+
+__attribute__((always_inline)) [[maybe_unused]]
+static inline uint64_t range32_to_u64( struct range_u32 range ) {
+  union range32_union uni = { .range = range };
+  return uni.u64;
+}
+
+__attribute__((always_inline)) [[maybe_unused]]
+static inline bool is_range_u32_invalid( struct range_u32 range ) {
+  return ( range.start > range.stop );
+}
+__attribute__((always_inline)) [[maybe_unused]]
+static inline bool is_range_u32_valid( struct range_u32 range ) {
+  return ( range.start <= range.stop );
+}
 
 //-------------------------------------------------------------------------------------------------
 /**
@@ -311,21 +462,23 @@ extern void vk_free_wrapper( [[maybe_unused]] void * userdata, void * ptr );
 
 //-------------------------------------------------------------------------------------------------
 /**
- * \brief A simple linked list of arrays.
- *    Use functions with names starting with infos_al_.
+ * \brief Linked list of array of pointers where each pointer points to a data block aligned to AVX;
+ *  Use functions with names starting with infos_al_.
  */
 struct infos_arr_list {
-  struct infos_singly_linked_list_fh list;
-  uint8_t log2_node_size;
-  uint8_t log2_nr_elems;
+  struct linked_list_of_lists_fh list;
+  uint32_t nr_active_blocks;  // The number of active data blocks
+  uint8_t log2_block_size;  // Log2(data block's size in bytes)
+  uint8_t log2_nr_elems;  // Log2(the number of elements in each block)
   uint8_t log2_elem_size;
 };
 struct infos_multi_arr_list {
-  struct infos_singly_linked_list_fh * lists;
-  uint8_t log2_node_size;
-  uint8_t log2_nr_lists;
-  uint8_t log2_nr_elems;
+  struct linked_list_of_lists_fh * lists;
+  uint32_t * arr_nr_active_blocks;  // The array of 'numbers of the active data blocks in each list'
+  uint8_t log2_block_size;  // Log2(data block's size in bytes)
+  uint8_t log2_nr_elems;  // Log2(the number of elements in each block)
   uint8_t log2_elem_size;
+  uint8_t log2_nr_lists;
 };
 
 //-------------------------------------------------------------------------------------------------
@@ -352,7 +505,7 @@ struct infos_arr_list * infos_al_create(
  * \param userdata \a custom_malloc is called with this as an argument
  */
 struct infos_arr_list * infos_al_create_prealloc(
-    struct infos_arr_list * restrict al,
+    struct infos_arr_list * restrict p_al,
     void * restrict userdata,
     void * (*custom_malloc)(void * userdata, size_t alignment, size_t size),
     uint32_t node_size, uint_fast16_t elem_size, bool zero_all
@@ -385,11 +538,11 @@ struct infos_multi_arr_list * infos_multi_al_create(
 /**
  * \brief Initialize a new infos_multi_arr_list using a preallocated struct infos_multi_arr_list
  * \return 0 if it did succeed non-zero otherwise.
- * \param mal a pointer to struct infos_multi_arr_list which will be populated with data
+ * \param p_mal a pointer to struct infos_multi_arr_list which will be populated with data
  * \param userdata \a custom_malloc is called with this as an argument
  */
 uint_fast8_t infos_multi_al_init_prealloc(
-    struct infos_multi_arr_list * restrict mal,
+    struct infos_multi_arr_list * restrict p_mal,
     void * restrict userdata,
     void * (*custom_malloc)(void * userdata, size_t alignment, size_t size),
     uint_fast8_t log2_node_size, uint_fast8_t log2_elem_size, uint_fast8_t log2_nr_arr_lists,
@@ -403,62 +556,89 @@ uint_fast8_t infos_multi_al_init_prealloc(
         get_log2(32), false), __VA_ARGS__)
 
 //-------------------------------------------------------------------------------------------------
-void * infos_al_get_elem( const struct infos_arr_list * al, uint32_t idx );
+void * infos_al_get_elem( struct infos_arr_list * restrict p_al,
+    void * restrict userdata,
+    void * (*custom_malloc)(void * userdata, size_t alignment, size_t size),
+    bool fill_new_blocks, uint64_t qw_filler,
+    uint32_t elem_idx );
+//-------------------------------------------------------------------------------------------------
+__attribute__((always_inline))
+static inline void * infos_al_get_elem_unsafe(
+    const struct infos_arr_list * restrict p_al,
+    uint32_t elem_idx )
+{
+  void * block = lll_get_elem_unsafe( &p_al->list, elem_idx >> p_al->log2_nr_elems );
+  return block +
+    ( _reiterate_under_power_of_two_l2(elem_idx, p_al->log2_nr_elems) << p_al->log2_elem_size );
+}
+//-------------------------------------------------------------------------------------------------
 /**
  * \brief Find an element whose value equals \a cond
  * \warning .+al_get_elem_cond.. functions never tested but only implemented
  */
-void * infos_al_get_elem_cond32( const struct infos_arr_list * al,
+void * infos_al_get_elem_cond32( const struct infos_arr_list * p_al,
     uint32_t first_slot_to_check, uint32_t cond );
 /**
  * \brief Find an element whose value equals \a cond
  * \warning .+al_get_elem_cond.. functions never tested but only implemented
  */
-void * infos_al_get_elem_cond64( const struct infos_arr_list * al,
+void * infos_al_get_elem_cond64( const struct infos_arr_list * p_al,
     uint32_t first_slot_to_check, uint64_t cond );
 
 //-------------------------------------------------------------------------------------------------
-void * infos_multi_al_get_elem( const struct infos_multi_arr_list * al,
-    uint_fast16_t idx_al, uint32_t idx_elem );
+void * infos_multi_al_get_elem( struct infos_multi_arr_list * p_mal,
+    void * restrict userdata,
+    void * (*custom_malloc)(void * userdata, size_t alignment, size_t size),
+    bool fill_new_blocks, uint64_t qw_filler,
+    uint_fast16_t list_idx, uint32_t elem_idx );
+//-------------------------------------------------------------------------------------------------
+__attribute__((always_inline))
+static inline void * infos_multi_al_get_elem_unsafe(
+    const struct infos_multi_arr_list * restrict p_mal,
+    uint32_t list_idx, uint32_t elem_idx )
+{
+  void * block = lll_get_elem_unsafe( &p_mal->lists[list_idx], elem_idx >> p_mal->log2_nr_elems );
+  return block +
+    ( _reiterate_under_power_of_two_l2(elem_idx, p_mal->log2_nr_elems) << p_mal->log2_elem_size );
+}
+//-------------------------------------------------------------------------------------------------
 /**
  * \brief Find an element whose value equals \a cond
  * \warning .+al_get_elem_cond.. functions never tested but only implemented
  */
-void * infos_multi_al_get_elem_cond32( const struct infos_multi_arr_list * al,
-    uint_fast16_t idx_al, uint32_t first_slot_to_check, uint32_t cond );
+void * infos_multi_al_get_elem_cond32( const struct infos_multi_arr_list * p_mal,
+    uint_fast16_t list_idx, uint32_t first_slot_to_check, uint32_t cond );
 /**
  * \brief Find an element whose value equals \a cond
  * \warning .+al_get_elem_cond.. functions never tested but only implemented
  */
-void * infos_multi_al_get_elem_cond64( const struct infos_multi_arr_list * al,
-    uint_fast16_t idx_al, uint32_t first_slot_to_check, uint64_t cond );
+void * infos_multi_al_get_elem_cond64( const struct infos_multi_arr_list * p_mal,
+    uint_fast16_t list_idx, uint32_t first_slot_to_check, uint64_t cond );
 
 //-------------------------------------------------------------------------------------------------
 /**
  * \brief Add new nodes
  * \return Non-zero if it couldn't allocate memory, 0 otherwise
- * \param nr_nodes The number of nodes to add
+ * \param nr_blocks_to_generate The number of nodes to add
  */
 enum err_msg infos_al_grow(
-    struct infos_arr_list * restrict al,
+    struct infos_arr_list * restrict p_al,
     void * restrict userdata,
     void * (*custom_malloc)(void * userdata, size_t alignment, size_t size),
-    uint_fast16_t nr_nodes,
-    bool zero_all
+    void ** pp_first_block_among_new_blocks,
+    struct linked_list_of_lists_node ** pp_last_node,
+    uint_fast16_t nr_blocks_to_generate,
+    bool fill_new_blocks, uint64_t qw_filler
     );
-/**
- * \brief no docstring for macro :(
- */
-#define infos_al_grow_(...) CWDV(infos_al_grow, V(0, 0, 0, 1, 0), __VA_ARGS__)
 
 //-------------------------------------------------------------------------------------------------
-void infos_al_destroy( struct infos_arr_list * restrict al,
+void infos_al_destroy( struct infos_arr_list * restrict p_al,
     void * restrict userdata,
     void (*custom_free)(void * restrict userdata, void * restrict ptr)
     );
 
 //-------------------------------------------------------------------------------------------------
-void infos_al_destroy_except_preallocated_struct( struct infos_arr_list * restrict al,
+void infos_al_destroy_except_preallocated_struct( struct infos_arr_list * restrict p_al,
     void * restrict userdata,
     void (*custom_free)(void * restrict userdata, void * restrict ptr)
     );
@@ -468,23 +648,23 @@ void infos_al_destroy_except_preallocated_struct( struct infos_arr_list * restri
  * \brief Add 1 new node in each array list indexed by arr_len[idx]
  * \return Non-zero if it couldn't allocate memory, 0 otherwise
  */
-enum err_msg infos_multi_al_grow( struct infos_multi_arr_list * restrict mal,
+enum err_msg infos_multi_al_grow( struct infos_multi_arr_list * restrict p_mal,
     void * restrict userdata,
     void * (*custom_malloc)(void * userdata, size_t alignment, size_t size),
     uint32_t arr_len,
     const uint32_t arr_al_indices[arr_len],
-    bool zero_all
+    bool fill_new_blocks, uint64_t qw_filler
     );
 
 //-------------------------------------------------------------------------------------------------
-void infos_multi_al_destroy( struct infos_multi_arr_list * restrict mal,
+void infos_multi_al_destroy( struct infos_multi_arr_list * restrict p_mal,
     void * restrict userdata,
     void (*custom_free)(void * restrict userdata, void * restrict ptr)
     );
 
 //-------------------------------------------------------------------------------------------------
 void infos_multi_al_destroy_except_preallocated_struct(
-    struct infos_multi_arr_list * restrict mal,
+    struct infos_multi_arr_list * restrict p_mal,
     void * restrict userdata,
     void (*custom_free)(void * restrict userdata, void * restrict ptr)
     );
@@ -509,8 +689,8 @@ struct infos_simple_mem_mgr {
                       ///<  infos_smm_init_chunks_prealloc
   uint32_t total_space_left;  ///< Like \a data_len, the value assigned at this field is written
                               ///< in bytes but you can manually write it in any units.
-  uint32_t idx_last_rental_info;
-  uint32_t idx_last_vacancy;
+  uint32_t nr_rents;
+  uint32_t nr_vacancy_infos;
 };
 
 //-------------------------------------------------------------------------------------------------
@@ -576,13 +756,13 @@ void infos_smm_init_chunks_prealloc(
 /**
  * \brief Allocate memory
  * \param length The length of the string which is being allocated in bytes.
- * \return 0 if failed, A pointer if the operation was successful. you
+ * \return nullptr if failed, A pointer if the operation was successful. you
  *    can take a look at the errno value after the failure.
  *
  * errno ENOMEM There was a failure of a memory allocation;
  * errno ENOBUFS There was not enough space left;
  */
-void * infos_smm_rent( struct infos_simple_mem_mgr * restrict smm,
+void * infos_smm_rent( struct infos_simple_mem_mgr * restrict p_smm,
     void * restrict userdata,
     void * (*custom_malloc)(void * userdata, size_t alignment, size_t size),
     uint32_t length,
@@ -603,7 +783,7 @@ void * infos_smm_rent( struct infos_simple_mem_mgr * restrict smm,
  * errno ENOMEM There was a failure of a memory allocation;
  * errno ENOBUFS There was not enough space left;
  */
-void * infos_smm_rent_chunks( struct infos_simple_mem_mgr * restrict smm,
+void * infos_smm_rent_chunks( struct infos_simple_mem_mgr * restrict p_smm,
     void * restrict userdata,
     void * (*custom_malloc)(void * userdata, size_t alignment, size_t size),
     uint32_t nr_chunks,
@@ -628,7 +808,7 @@ void * infos_smm_rent_chunks( struct infos_simple_mem_mgr * restrict smm,
  * errno ENOMEM There was a failure of a memory allocation;
  * errno ENOBUFS There was not enough space left;
  */
-void * infos_smm_rent_aligned( struct infos_simple_mem_mgr * restrict smm,
+void * infos_smm_rent_aligned( struct infos_simple_mem_mgr * restrict p_smm,
     void * restrict userdata,
     void * (*custom_malloc)(void * userdata, size_t alignment, size_t size),
     uint32_t length,
@@ -652,7 +832,7 @@ void * infos_smm_rent_aligned( struct infos_simple_mem_mgr * restrict smm,
  * errno ENOMEM There was a failure of a memory allocation;
  * errno ENOBUFS There was not enough space left;
  */
-void * infos_smm_rent_aligned_chunks( struct infos_simple_mem_mgr * restrict smm,
+void * infos_smm_rent_aligned_chunks( struct infos_simple_mem_mgr * restrict p_smm,
     void * restrict userdata,
     void * (*custom_malloc)(void * userdata, size_t alignment, size_t size),
     uint32_t nr_chunks,
@@ -670,14 +850,14 @@ void * infos_smm_rent_aligned_chunks( struct infos_simple_mem_mgr * restrict smm
  * \brief Call .*smm_return when you wanna stop renting a portion of memory.
  * \return err_msg_no_such_entry or err_msg_out_of_memory
  */
-enum err_msg infos_smm_return( struct infos_simple_mem_mgr * restrict smm,
+enum err_msg infos_smm_return( struct infos_simple_mem_mgr * restrict p_smm,
     void * restrict userdata,
     void * (*custom_malloc)(void * userdata, size_t alignment, size_t size),
     void * restrict ptr
     );
 
 //-------------------------------------------------------------------------------------------------
-enum err_msg infos_smm_return_chunks( struct infos_simple_mem_mgr * restrict smm,
+enum err_msg infos_smm_return_chunks( struct infos_simple_mem_mgr * restrict p_smm,
     void * restrict userdata,
     void * (*custom_malloc)(void * userdata, size_t alignment, size_t size),
     void * restrict ptr,
@@ -692,9 +872,9 @@ enum err_msg infos_smm_return_chunks( struct infos_simple_mem_mgr * restrict smm
 //-------------------------------------------------------------------------------------------------
 /**
  * \brief Allocate aligned memory
- * \param offset = ptr2ui(ptr) - ptr2ui(smm->data)
+ * \param offset = ptr2ui(ptr) - ptr2ui(p_smm->data)
  */
-enum err_msg infos_smm_return_chunks_ofs( struct infos_simple_mem_mgr * restrict smm,
+enum err_msg infos_smm_return_chunks_ofs( struct infos_simple_mem_mgr * restrict p_smm,
     void * restrict userdata,
     void * (*custom_malloc)(void * userdata, size_t alignment, size_t size),
     uint32_t offset,
@@ -718,7 +898,7 @@ enum err_msg infos_smm_return_chunks_ofs( struct infos_simple_mem_mgr * restrict
  * errno ENOMEM There was a failure of a memory allocation;
  * errno ENOBUFS There was not enough space left;
  */
-void * infos_smm_realloc( struct infos_simple_mem_mgr * restrict smm,
+void * infos_smm_realloc( struct infos_simple_mem_mgr * restrict p_smm,
     void * restrict userdata,
     void * (*custom_malloc)(void * userdata, size_t alignment, size_t size),
     void * restrict orig_ptr,
@@ -737,7 +917,7 @@ void * infos_smm_realloc( struct infos_simple_mem_mgr * restrict smm,
  * errno ENOMEM There was a failure of a memory allocation;
  * errno ENOBUFS There was not enough space left;
  */
-void * infos_smm_realloc_chunks( struct infos_simple_mem_mgr * restrict smm,
+void * infos_smm_realloc_chunks( struct infos_simple_mem_mgr * restrict p_smm,
     void * restrict userdata,
     void * (*custom_malloc)(void * userdata, size_t alignment, size_t size),
     void * restrict orig_ptr,
@@ -757,7 +937,7 @@ void * infos_smm_realloc_chunks( struct infos_simple_mem_mgr * restrict smm,
  * errno ENOMEM There was a failure of a memory allocation;
  * errno ENOBUFS There was not enough space left;
  */
-void * infos_smm_realloc_aligned_chunks( struct infos_simple_mem_mgr * restrict smm,
+void * infos_smm_realloc_aligned_chunks( struct infos_simple_mem_mgr * restrict p_smm,
     void * restrict userdata,
     void * (*custom_malloc)(void * userdata, size_t alignment, size_t size),
     void * restrict orig_ptr,
@@ -767,24 +947,32 @@ void * infos_smm_realloc_aligned_chunks( struct infos_simple_mem_mgr * restrict 
     );
 
 //-------------------------------------------------------------------------------------------------
+size_t infos_smm_get_size(
+    struct infos_simple_mem_mgr * restrict p_smm,
+    uint32_t offset
+    );
+
+//-------------------------------------------------------------------------------------------------
 /**
  * \brief free al_rental_info and al_available_ranges.
  */
-void infos_smm_destroy(struct infos_simple_mem_mgr * smm,
+void infos_smm_destroy(struct infos_simple_mem_mgr * p_smm,
     void * restrict userdata,
     void (*custom_free)(void * restrict userdata, void * restrict ptr)
     );
 
 //-------------------------------------------------------------------------------------------------
 /**
- * \brief Allow smm to touch the part beyond the current length of data
+ * \brief Allow SMM to touch the part beyond the current length of data (It won't do any realloc)
  * \return 0 if it was successful, an enum err_msg otherwise
- * \param total_len_buf_n_struct The total length sum of the buffer and one struct
- * smm
+ * \param total_len_buf_n_struct The final length sum of the buffer and a struct infos_simple_mem_mgr
+ * \warning Do not use it if you need to take care of alignment greater than ALIGN_FOR_AVX512
+ *   Also, look at the name of \a custom_malloc_non_null You see? it won't be a safe function.
+ *   Also, I think I've never used/tested this function.
  */
-enum err_msg infos_smm_resize_pool( struct infos_simple_mem_mgr * restrict smm,
+enum err_msg infos_smm_resize_pool( struct infos_simple_mem_mgr * restrict p_smm,
     void * restrict userdata,
-    void * (*custom_malloc)(void * userdata, size_t alignment, size_t size),
+    void * (*custom_malloc_non_null)(void * userdata, size_t alignment, size_t size),
     uint32_t total_len_buf_n_struct
     );
 
@@ -797,7 +985,7 @@ enum err_msg infos_smm_resize_pool( struct infos_simple_mem_mgr * restrict smm,
 struct infos_stack {
   void * data;
   uint32_t total_len;
-  uint32_t idx_last_elem;  ///< The index of the element that will be popped first,
+  uint32_t nr_elems;  ///< The index of the element that will be popped first,
                            ///  0 if there is no element in stack.
 };
 
@@ -1117,12 +1305,12 @@ static void push_keys_and_sepd_sp( void * arr_keys, size_t head_key_idx,
 
 //-------------------------------------------------------------------------------------------------
 /**
- * \brief A sorted array that provides a binary search tree. it's located behind its own member
+ * \brief A sorted array that provides binary search feature. it's located behind its own member
  *   `keys`, and there is also an array of compact bitfields hiding behind struct infos_bst which
- *   represents the handles/indices of the keys.--Each index shouldn't be ~0 which is effectively
- *   represented by `2 << height_cap - 1`. A value of ~0 wouldn't cause any error by itself but
- *   there will be confusion due to the fact that the search function returns ~0 when the tree
- *   doesn't contain the target key value.
+ *   represents the handles/indices of the keys.--Each handle/index shouldn't be ~0 which is
+ *   effectively represented by `2 << height_cap - 1`. A value of ~0 wouldn't cause any error by
+ *   itself but there will be confusion due to the fact that the search function returns ~0 when the
+ *   tree doesn't contain the target key value.
  */
 struct infos_bst {
   void * keys;  ///< Each key must not be 0 because 0 means it's empty.
@@ -1487,7 +1675,8 @@ bst_node_idx_t infos_bst_search_i32( const struct infos_bst * tree, int32_t key 
 bst_node_idx_t infos_bst_search_i16( const struct infos_bst * tree, int16_t key );
 bst_node_idx_t infos_bst_search_i8( const struct infos_bst * tree, int8_t key );
 /*
- * \brief Search for the key and find out the sepd/data/idx associated to the key, return UINT_MAX_(bst_node_idx_Type) when the key is not found
+ * \brief Search for the key and find out the sepd/data/idx associated to the key
+ * \return UINT_MAX_(bst_node_idx_Type) when the key is not found
  */
 #define infos_bst_search(tree, key) _Generic((key), \
     uint64_t  : infos_bst_search_u64,               \
@@ -1609,73 +1798,88 @@ void infos_hashtable_destroy(
 /**
  * \return 0 if it was successful, an enum err_msg otherwise.
  */
-enum err_msg infos_hashtable_insert_4(
+enum err_msg infos_hashtable_insert_6(
     struct infos_hashtable * restrict table,
+    void * restrict userdata,
+    void * (*custom_malloc)(void * userdata, size_t alignment, size_t size),
     uint32_t key,
     uint32_t bucket_idx,
-    const void * restrict data
+    const void * restrict p_value
     );
 
 //-------------------------------------------------------------------------------------------------
-enum err_msg infos_hashtable_insert_u32_4(
+enum err_msg infos_hashtable_insert_u32_6(
     struct infos_hashtable * restrict table,
+    void * restrict userdata,
+    void * (*custom_malloc)(void * userdata, size_t alignment, size_t size),
     uint32_t key,
     uint32_t bucket_idx,
-    const uint32_t data
+    const uint32_t value
     );
 
 //-------------------------------------------------------------------------------------------------
-enum err_msg infos_hashtable_insert_u64_4(
+enum err_msg infos_hashtable_insert_u64_6(
     struct infos_hashtable * restrict table,
+    void * restrict userdata,
+    void * (*custom_malloc)(void * userdata, size_t alignment, size_t size),
     uint32_t key,
     uint32_t bucket_idx,
-    const uint64_t data
+    const uint64_t value
     );
 
 //-------------------------------------------------------------------------------------------------
 __attribute__((always_inline))
-static inline enum err_msg infos_hashtable_insert_3(struct infos_hashtable * table,
-    uint32_t key, const void * restrict data )
+static inline enum err_msg infos_hashtable_insert_5(
+    struct infos_hashtable * table,
+    void * restrict userdata,
+    void * (*custom_malloc)(void * userdata, size_t alignment, size_t size),
+    uint32_t key,
+    const void * restrict p_value )
 {
   assume( key != 0 );
   uint32_t hash_value;
   hash_value = hash_func_pi( key, table->keys.log2_nr_lists );
 
-  return infos_hashtable_insert_4( table, key,
+  return infos_hashtable_insert_6( table, userdata, custom_malloc, key,
       hash_value -
       (1 << table->keys.log2_nr_lists) * (hash_value >> table->keys.log2_nr_lists),
-      data );
+      p_value );
 }
 
 //-------------------------------------------------------------------------------------------------
 __attribute__((always_inline))
-static inline enum err_msg infos_hashtable_insert_u32_3(struct infos_hashtable * table,
-    uint32_t key, uint32_t data )
+static inline enum err_msg infos_hashtable_insert_u32_5(
+    struct infos_hashtable * table,
+    void * restrict userdata,
+    void * (*custom_malloc)(void * userdata, size_t alignment, size_t size),
+    uint32_t key, uint32_t value )
 {
   assume( key != 0 );
   uint32_t hash_value;
   //hash_value = hash_func_pi( key, _tzcnt_u16(table->buckets.nr_arr_list_packs * INFOS_AL_PACK_SIZE) );
   hash_value = hash_func_pi( key, table->keys.log2_nr_lists );
 
-  return infos_hashtable_insert_u32_4( table, key,
+  return infos_hashtable_insert_u32_6( table, userdata, custom_malloc, key,
       hash_value -
       (1 << table->keys.log2_nr_lists) * (hash_value >> table->keys.log2_nr_lists),
-      data );
+      value );
 }
 
 //-------------------------------------------------------------------------------------------------
 __attribute__((always_inline))
-static inline enum err_msg infos_hashtable_insert_u64_3(struct infos_hashtable * table,
-    uint32_t key, uint64_t data )
+static inline enum err_msg infos_hashtable_insert_u64_5(struct infos_hashtable * table,
+    void * restrict userdata,
+    void * (*custom_malloc)(void * userdata, size_t alignment, size_t size),
+    uint32_t key, uint64_t value )
 {
   assume( key != 0 );
   uint32_t hash_value;
   hash_value = hash_func_pi( key, table->keys.log2_nr_lists );
 
-  return infos_hashtable_insert_u64_4( table, key,
+  return infos_hashtable_insert_u64_6( table, userdata, custom_malloc, key,
       hash_value -
       (1 << table->keys.log2_nr_lists) * (hash_value >> table->keys.log2_nr_lists),
-      data );
+      value );
 }
 
 /**
@@ -1766,8 +1970,8 @@ struct infos_page_mgr {
   struct infos_arr_list al_vacancies;
   static_assert( sizeof(struct infos_arr_list) >= alignof(uint32_t) );
   uint32_t nr_unused_pages;
-  uint32_t idx_last_rental_info;
-  uint32_t idx_last_vacancy;
+  uint32_t nr_rents;
+  uint32_t nr_vacancy_infos;
 };
 
 constexpr size_t p2_sizeof_page_mgr = _ct_align_to_the_close_power_of_two(
@@ -1778,8 +1982,8 @@ struct infos_page_mgr_p2 {
   struct infos_arr_list al_vacancies;
   static_assert( sizeof(struct infos_arr_list) >= alignof(uint32_t) );
   uint32_t nr_unused_pages;
-  uint32_t idx_last_rental_info;
-  uint32_t idx_last_vacancy;
+  uint32_t nr_rents;
+  uint32_t nr_vacancy_infos;
   float s1;
   double d1, d2, d3, d4, d5, d6;
 };
@@ -1806,7 +2010,7 @@ void infos_pm_destroy( struct infos_page_mgr * p_pm,
  * errno ENOMEM There was a failure of a memory allocation
  * errno ENOBUFS There was not enough space left
  */
-struct range_u32 * infos_pm_rent( struct infos_page_mgr * restrict p_pm,
+struct range_u32 infos_pm_rent( struct infos_page_mgr * restrict p_pm,
     void * restrict userdata,
     void * (*custom_malloc)(void * userdata, size_t alignment, size_t size),
     uint32_t nr_seq_pages_needed,
@@ -1821,7 +2025,7 @@ struct range_u32 * infos_pm_rent( struct infos_page_mgr * restrict p_pm,
  * errno ENOMEM There was a failure of a memory allocation
  * errno ENOBUFS There was not enough space left
  */
-struct range_u32 * infos_pm_rent_aligned( struct infos_page_mgr * restrict p_pm,
+struct range_u32 infos_pm_rent_aligned( struct infos_page_mgr * restrict p_pm,
     void * restrict userdata,
     void * (*custom_malloc)(void * userdata, size_t alignment, size_t size),
     uint32_t nr_seq_pages_needed,
@@ -1832,14 +2036,7 @@ struct range_u32 * infos_pm_rent_aligned( struct infos_page_mgr * restrict p_pm,
 enum err_msg infos_pm_return( struct infos_page_mgr * restrict p_pm,
     void * restrict userdata,
     void * (*custom_malloc)(void * userdata, size_t alignment, size_t size),
-    uint32_t head_idx
-    );
-
-//-------------------------------------------------------------------------------------------------
-enum err_msg infos_pm_return_via_ptr( struct infos_page_mgr * restrict p_pm,
-    void * restrict userdata,
-    void * (*custom_malloc)(void * userdata, size_t alignment, size_t size),
-    struct range_u32 * p_range
+    struct range_u32 rent
     );
 
 

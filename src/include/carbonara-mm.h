@@ -4,7 +4,9 @@
 
 #include <stdint.h>
 #include <stddef.h>
+
 #include "vulkan/vulkan_core.h"
+#include "memorable_arena.h"
 //#include "memorable_arena.h"
 
 
@@ -71,7 +73,10 @@ _Pragma ( "GCC diagnostic pop" )
 void cara_free( void * idx_proc, void * ptr );
 
 //-------------------------------------------------------------------------------------------------
-void * cara_realloc( void * cara_malloc_helper, void * orig_ptr, size_t size, size_t alignment );
+void * cara_realloc( void * cara_malloc_helper,
+    void * orig_ptr, size_t size, size_t alignment, size_t orig_size );
+
+size_t cara_get_size( memorable_arena_t * arena, void * ptr );
 
 //-------------------------------------------------------------------------------------------------
 void * cara_malloc_vk( void * cara_malloc_helper,

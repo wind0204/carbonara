@@ -2,9 +2,9 @@
 #include <stdatomic.h>
 #include <stdint.h>
 
+#include "err_msg.h"
 #include "info_struct.h"
 #include "carbonara-singleton.h"
-#include "carbonara.h"
 #include "memorable_arena.h"
 #include "carbonara-job.h"
 
@@ -15,8 +15,8 @@ void jf_maint_memo_maps(struct cara_worker_state * p_ws);
 
 
 void jf_maint_job_list(struct cara_worker_state * p_ws) {
-  const uint_fast8_t nr_nodes = cara_single.job_list->list.nr_nodes;
-  uint64_t nr_elems = nr_nodes << cara_single.job_list->log2_nr_elems;
+  const uint_fast8_t nr_arrays = cara_single.job_list->nr_active_blocks;
+  uint64_t nr_elems = nr_arrays << cara_single.job_list->log2_nr_elems;
 
   const uint_fast16_t nr_elems_taken_by_workers = atomic_load_explicit(
       &cara_single.nr_job_batch_descriptors_taken, memory_order_acquire);
@@ -25,21 +25,18 @@ void jf_maint_job_list(struct cara_worker_state * p_ws) {
     fprintf(stdout, "[Maint-JD] Adding another array to job_list... "
         "nr_elems:%lu, nr_elems_taken_by_workers:%lu\n", nr_elems, nr_elems_taken_by_workers);
 #endif
-    const uint8_t ret = infos_al_grow( cara_single.job_list,
-        &p_ws->malloc_helper, cara_malloc, 1, 0 );
-    if ( ret ) {
-      fprintf(stderr, "[Maint-JD] failed to allocate memory. %s\n", __FUNCTION__);
+    void * last_arr;
+    enum err_msg err = infos_al_grow( cara_single.job_list,
+        &p_ws->malloc_helper, cara_malloc, &last_arr, nullptr, 1, false, 0 );
+    if ( err ) {
+      fprintf(stderr, "[Maint-JD] infos_al_grow failed. %s\n", arr_emsg_txt[err] );
       return;
     }
 
-    auto node = &cara_single.job_list->list.head;
-    for ( uint_fast8_t node_idx = 1; node_idx < cara_single.job_list->list.nr_nodes; node_idx++ ) {
-      node = node->next;
-    }
-    const uint64_t nr_elems_per_node = UINT64_C(1) << cara_single.job_list->log2_nr_elems;
-    for ( uint64_t idx_elem = 0; idx_elem < nr_elems_per_node; idx_elem++ ) {
+    const uint64_t nr_elems_per_arr = UINT64_C(1) << cara_single.job_list->log2_nr_elems;
+    for ( uint64_t idx_elem = 0; idx_elem < nr_elems_per_arr; idx_elem++ ) {
       struct cara_job_batch_desc_64 * restrict batch =
-        node->data + (idx_elem << cara_single.job_list->log2_elem_size);
+        last_arr + ( idx_elem << cara_single.job_list->log2_elem_size );
       atomic_init( &batch->preferred_core, ~0 );
       atomic_init( &batch->progress, ~0 );
     }
@@ -78,7 +75,7 @@ void jf_maint_memo_maps( [[maybe_unused]] struct cara_worker_state * p_ws ) {
   uint16_t idx_pool = 0;
   while ( sub_arena ) {
 
-    const uint32_t nr_mem_chunks = sub_arena->capacity >> LOG2_CACHELINE_LEN;
+    const uint32_t nr_mem_chunks = sub_arena->capacity;
     threshold_nr_mem_chunks_unallocated += nr_mem_chunks/16;
     nr_mem_chunks_unallocated += sub_arena->smm.total_space_left;
 
@@ -111,7 +108,7 @@ void jf_maint_memo_maps( [[maybe_unused]] struct cara_worker_state * p_ws ) {
           old_value,
           memory_order_relaxed );
       errno = errno;
-      fprintf(stderr, "failed in mm_add_pool. errno = %d\n", errno);
+      fprintf(stderr, "mm_add_pool failed. errno = %d\n", errno);
       return;
     }
 

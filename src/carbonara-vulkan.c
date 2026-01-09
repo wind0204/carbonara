@@ -1,3 +1,4 @@
+#include <SDL3/SDL_error.h>
 #include <stdatomic.h>
 #include <stdint.h>
 
@@ -514,6 +515,117 @@ uint8_t init_vulkan(
       arr_phys_devices[idx_phys_dev] = 0;
       continue;
     }
+
+
+    //
+    // Sparse binding for mip-level memory management
+    //
+
+    // Sparse resources can be bound non-contiguously to one or more VkDeviceMemory allocations.
+    // Sparse resources can be re-bound to different memory allocations over the lifetime of the
+    //   resource.
+    // Sparse resources can have descriptors generated and used orthogonally with memory binding
+    //   commands.
+
+    // The sparseBinding feature is the base, and provides the following capabilities:
+    // - Resources can be bound at some defined (sparse block) granularity.
+    // - The entire resource must be bound to memory before use regardless of regions actually
+    //   accessed.
+    // - No specific mapping of image region to memory offset is defined, i.e. the location that
+    //   each texel corresponds to in memory is implementation-dependent.
+    // - Sparse buffers have a well-defined mapping of buffer range to memory range, where an offset
+    //   into a range of the buffer that is bound to a single contiguous range of memory corresponds
+    //   to an identical offset within that range of memory.
+    // - Requested via the VK_IMAGE_CREATE_SPARSE_BINDING_BIT and
+    //   VK_BUFFER_CREATE_SPARSE_BINDING_BIT bits.
+    // - A sparse image created using VK_IMAGE_CREATE_SPARSE_BINDING_BIT (but not
+    //   VK_IMAGE_CREATE_SPARSE_RESIDENCY_BIT) supports all formats that non-sparse usage supports,
+    //   and supports both VK_IMAGE_TILING_OPTIMAL and VK_IMAGE_TILING_LINEAR tiling.
+    if ( !device_features.features.sparseBinding ) {
+#ifdef DEBUG_MODE
+      fprintf( stdout, "[Vulkan] %s doesn't support %s.\n",
+          arr_device_props[idx_phys_dev].properties.deviceName,
+          "sparseBinding"
+          );
+#endif
+      arr_phys_devices[idx_phys_dev] = 0;
+      continue;
+    }
+
+    // Sparse Residency builds on (and requires) the sparseBinding feature. It includes the following capabilities:
+    // - Resources do not have to be completely bound to memory before use on the device.
+    // - Images have a prescribed sparse image block layout, allowing specific rectangular regions
+    //   of the image to be bound to specific offsets in memory allocations.
+    // - Consistency of access to unbound regions of the resource is defined by the absence or
+    //   presence of VkPhysicalDeviceSparseProperties::residencyNonResidentStrict. If this property
+    //   is present, accesses to unbound regions of the resource are well defined and behave as if
+    //   the data bound is populated with all zeros; writes are discarded. When this property is
+    //   absent, accesses are considered safe, but reads will return undefined values.
+    // - Requested via the VK_IMAGE_CREATE_SPARSE_RESIDENCY_BIT and
+    //   VK_BUFFER_CREATE_SPARSE_RESIDENCY_BIT bits.
+    // - Sparse residency support is advertised on a finer grain via the following features:
+    //   * The sparseResidencyBuffer feature provides support for creating VkBuffer objects with the
+    //     VK_BUFFER_CREATE_SPARSE_RESIDENCY_BIT.
+    //   * The sparseResidencyImage2D feature provides support for creating 2D single-sampled
+    //     VkImage objects with VK_IMAGE_CREATE_SPARSE_RESIDENCY_BIT.
+    //   * The sparseResidencyImage3D feature provides support for creating 3D VkImage objects with
+    //     VK_IMAGE_CREATE_SPARSE_RESIDENCY_BIT.
+    //   * The sparseResidency2Samples feature provides support for creating 2D VkImage objects with
+    //     2 samples and VK_IMAGE_CREATE_SPARSE_RESIDENCY_BIT.
+    //   * The sparseResidency4Samples feature provides support for creating 2D VkImage objects with
+    //     ...
+    //   * Implementations supporting sparseResidencyImage2D are only required to support sparse 2D,
+    //     single-sampled images. Support for sparse 3D and MSAA images is optional and can be
+    //     enabled via sparseResidencyImage3D, sparseResidency2Samples, sparseResidency4Samples,
+    //     sparseResidency8Samples, and sparseResidency16Samples.
+    // - A sparse image created using VK_IMAGE_CREATE_SPARSE_RESIDENCY_BIT supports all
+    //   non-compressed color formats with power-of-two element size that non-sparse usage supports.
+    //   Additional formats may also be supported and can be queried via
+    //   vkGetPhysicalDeviceSparseImageFormatProperties. VK_IMAGE_TILING_LINEAR tiling is not
+    //   supported.
+    if ( !device_features.features.sparseResidencyImage2D ) {
+#ifdef DEBUG_MODE
+      fprintf( stdout, "[Vulkan] %s doesn't support %s.\n",
+          arr_device_props[idx_phys_dev].properties.deviceName,
+          "sparseResidencyImage2D"
+          );
+#endif
+      arr_phys_devices[idx_phys_dev] = 0;
+      continue;
+    }
+
+    // The sparseResidencyAliased feature provides the following capability that can be enabled per
+    //   resource:
+    // - Allows physical memory ranges to be shared between multiple locations in the same sparse
+    //   resource or between multiple sparse resources, with each binding of a memory location
+    //   observing a consistent interpretation of the memory contents.
+    if ( !device_features.features.sparseResidencyAliased ) {
+#ifdef DEBUG_MODE
+      fprintf( stdout, "[Vulkan] %s doesn't support %s.\n",
+          arr_device_props[idx_phys_dev].properties.deviceName,
+          "sparseResidencyAliased"
+          );
+#endif
+      arr_phys_devices[idx_phys_dev] = 0;
+      continue;
+    }
+
+    // shaderResourceResidency is required for the fragment shader to be able to detect which parts
+    //   of the image are bind to a memory allocation
+    // The HLSL equivalent of the OpenGL extension GL_ARB_sparse_texture2 is the Tiled Resources
+    //   feature
+    if ( !device_features.features.shaderResourceResidency ) {
+#ifdef DEBUG_MODE
+      fprintf( stdout, "[Vulkan] %s doesn't support %s.\n",
+          arr_device_props[idx_phys_dev].properties.deviceName,
+          "shaderResourceResidency"
+          );
+#endif
+      arr_phys_devices[idx_phys_dev] = 0;
+      continue;
+    }
+
+
     if ( !vk12_features.timelineSemaphore ) {
 #ifdef DEBUG_MODE
       fprintf( stdout, "[Vulkan] %s doesn't support %s.\n",
@@ -524,6 +636,7 @@ uint8_t init_vulkan(
       arr_phys_devices[idx_phys_dev] = 0;
       continue;
     }
+
     if ( !vk12_features.drawIndirectCount ) {
 #ifdef DEBUG_MODE
       fprintf( stdout, "[Vulkan] %s doesn't support %s.\n",
@@ -554,6 +667,7 @@ uint8_t init_vulkan(
       arr_phys_devices[idx_phys_dev] = 0;
       continue;
     }
+
     if ( !vk12_features.scalarBlockLayout ) {
 #ifdef DEBUG_MODE
       fprintf( stdout, "[Vulkan] %s doesn't support %s.\n",
@@ -564,6 +678,7 @@ uint8_t init_vulkan(
       arr_phys_devices[idx_phys_dev] = 0;
       continue;
     }
+
     if ( !vk13_features.synchronization2 ) {
 #ifdef DEBUG_MODE
       fprintf( stdout, "[Vulkan] %s doesn't support %s.\n",
@@ -691,10 +806,10 @@ uint8_t init_vulkan(
     SDL_CreateWindow( Carbonara_APP_NAME, test_width, test_height,
       SDL_WINDOW_RESIZABLE |
       SDL_WINDOW_HIDDEN |
-      //SDL_WINDOW_VULKAN |
+      //SDL_WINDOW_BORDERLESS |
       0 );
   if ( !window ) {
-    fprintf( stderr, "[Vulkan] Failed to create a window.\n" );
+    fprintf( stderr, "[Vulkan] Failed to create a window. %s\n", SDL_GetError() );
     goto error_after_window_early;
   }
 
@@ -1274,15 +1389,18 @@ we_have_already_recorded_that_q_fam:
           nr_queues_from_same_q_fam++;
         }
       }
+      float priorities[] = { 1.0f, 1.0f, 1.0f, 1.0f };
+      if ( arr_uniq_q_fams[q_create_info_idx] == arr_q_fam_idx[transfer] &&
+          nr_queues_from_same_q_fam > 1 ) {
+        constexpr typeof(priorities[0]) priority_of_asset_loader = 0.5f;
+        priorities[nr_queues_from_same_q_fam - 1] = priority_of_asset_loader;
+      }
       arr_q_create_info[q_create_info_idx].sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
       arr_q_create_info[q_create_info_idx].pNext = 0;
       arr_q_create_info[q_create_info_idx].flags = 0;
       arr_q_create_info[q_create_info_idx].queueFamilyIndex = arr_uniq_q_fams[q_create_info_idx];
       arr_q_create_info[q_create_info_idx].queueCount = nr_queues_from_same_q_fam;
-      arr_q_create_info[q_create_info_idx].pQueuePriorities = nr_queues_from_same_q_fam == 4 ?
-        (float[]){1.0f, 1.0f, 1.0f, 1.0f} : nr_queues_from_same_q_fam == 3 ?
-        (float[]){1.0f, 1.0f, 1.0f} : nr_queues_from_same_q_fam == 2 ?
-        (float[]){1.0f, 1.0f} : (float[]){1.0f};
+      arr_q_create_info[q_create_info_idx].pQueuePriorities = priorities;
       // `pQueuePriorities` is a pointer to an array of `queueCount` normalized floating-point
       //  values, specifying priorities of work that will be submitted to each created queue.
       //  Follow the link below to learn about the priority
@@ -1347,6 +1465,10 @@ we_have_already_recorded_that_q_fam:
   device_features.features.robustBufferAccess = VK_FALSE;  // I make it clear that I do not use it.
                                                            // I redundantly zero it once again.
   device_features.features.samplerAnisotropy = VK_TRUE;
+
+  device_features.features.sparseResidencyImage2D = VK_TRUE;
+  device_features.features.sparseBinding = VK_TRUE;
+  device_features.features.shaderResourceResidency = VK_TRUE;
 
   const VkDeviceCreateInfo device_create_info = {
     VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,   // VkStructureType                  sType
@@ -1465,6 +1587,8 @@ we_have_already_recorded_that_q_fam:
     goto error_after_logical_device;
   }
 
+  // VK_PRESENT_MODE_FIFO_KHR is a v-synced mode and the only mode guaranteed to be available
+  //   everywhere.
   VkPresentModeKHR chosen_present_mode = VK_PRESENT_MODE_MAX_ENUM_KHR;
   for ( unsigned int priority_idx = 0;
       priority_idx < _arr_elem_cnt(desired_present_modes); priority_idx++ ) {
@@ -1586,11 +1710,13 @@ we_have_already_recorded_that_q_fam:
 #endif
 
 
+  // The combination of the 4 component color format VK_FORMAT_B8G8R8A8_SRGB with a non-linear sRGB
+  //   color space VK_COLORSPACE_SRGB_NONLINEAR_KHR is guaranteed to be available everywhere.
   constexpr VkFormat desired_img_formats_for_present[] = {
-    VK_FORMAT_R8G8B8A8_SRGB,
     VK_FORMAT_B8G8R8A8_SRGB,
-    VK_FORMAT_R8G8B8_SRGB,
+    VK_FORMAT_R8G8B8A8_SRGB,
     VK_FORMAT_B8G8R8_SRGB,
+    VK_FORMAT_R8G8B8_SRGB,
   };
   constexpr VkColorSpaceKHR desired_color_spaces[] = {
     VK_COLOR_SPACE_SRGB_NONLINEAR_KHR,
@@ -2297,7 +2423,8 @@ error_after_presentation_surface:
   VkFormat arr_zbuf_cands[] = {
     VK_FORMAT_D32_SFLOAT,
     VK_FORMAT_D32_SFLOAT_S8_UINT,
-    VK_FORMAT_D24_UNORM_S8_UINT,
+    VK_FORMAT_D24_UNORM_S8_UINT,  // VK_FORMAT_D24_UNORM_S8_UINT is a mandatory format, meaning it's
+                                  //   supported on every GPU supporting Vulkan.
     VK_FORMAT_D16_UNORM,
   };
   VkFormatProperties2 format_props;
@@ -2348,7 +2475,7 @@ error_after_presentation_surface:
   cara_vk.vk_surface_transform_flags = surface_capabilities.currentTransform;
   cara_vk.present_mode = chosen_present_mode;
   cara_vk.max_anisotropy = min(
-      arr_device_props[idx_phys_deviced_picked].properties.limits.maxSamplerAnisotropy, 8.0f );
+      arr_device_props[idx_phys_deviced_picked].properties.limits.maxSamplerAnisotropy, 16.0f );
   cara_vk.swapchain_img_fmt = present_img_fmt;
   cara_vk.swapchain_color_space = color_space;
   cara_vk.presentation_surface = presentation_surface;
@@ -2385,7 +2512,7 @@ void destroy_vk_objs( _typeof_member(struct ms_worker_info, idx_self) worker_idx
   }
 
   for ( unsigned int i = 0; i < cara_vk.nr_old_swapchains; i++ ) {
-    struct dead_swapchain * p_dead = infos_al_get_elem( &cara_vk.old_swapchains, i );
+    struct dead_swapchain * p_dead = infos_al_get_elem_unsafe( &cara_vk.old_swapchains, i );
     vkDestroySwapchainKHR( cara_vk.log_dev, p_dead->swapchain, &vk_alloc_callbacks );
     cara_vk.nr_old_swapchains--;
   }
@@ -2445,7 +2572,7 @@ void destroy_vk_objs( _typeof_member(struct ms_worker_info, idx_self) worker_idx
       enum err_msg err = ma_report_vk_malloc_rel( &cara_vk.vmm,
           &vk_alloc_callbacks, vk_malloc_wrapper,
           ma_pick_best_mtype(&cara_vk.vmm, &req, required_props, preferred_props, tolerable_props),
-          cara_vk.p_malloc_range_zbuf_and_cbuf[fif_idx][fb_idx] );
+          cara_vk.mrange_zbuf_and_cbuf[fif_idx][fb_idx] );
       if ( err ) {
         fprintf( stderr, "[Carbonara] Failure occurred in ma_report_vk_malloc_rel!! "
             "'%s'\n", arr_emsg_txt[err] );
@@ -2455,7 +2582,7 @@ void destroy_vk_objs( _typeof_member(struct ms_worker_info, idx_self) worker_idx
           case emsg_unknown:  // VkDeviceMemory object is somehow missing
             vkDestroyImage( cara_vk.log_dev, cara_vk.zbuf_n_cbuf[fif_idx][fb_idx], &vk_alloc_callbacks );
             cara_vk.zbuf_n_cbuf[fif_idx][fb_idx] = VK_NULL_HANDLE;
-            cara_vk.p_malloc_range_zbuf_and_cbuf[fif_idx][fb_idx] = nullptr;
+            cara_vk.mrange_zbuf_and_cbuf[fif_idx][fb_idx] = invalid_range;
             break;
           default:
             break;
@@ -2463,7 +2590,7 @@ void destroy_vk_objs( _typeof_member(struct ms_worker_info, idx_self) worker_idx
       } else {
         vkDestroyImage( cara_vk.log_dev, cara_vk.zbuf_n_cbuf[fif_idx][fb_idx], &vk_alloc_callbacks );
         cara_vk.zbuf_n_cbuf[fif_idx][fb_idx] = VK_NULL_HANDLE;
-        cara_vk.p_malloc_range_zbuf_and_cbuf[fif_idx][fb_idx] = nullptr;
+        cara_vk.mrange_zbuf_and_cbuf[fif_idx][fb_idx] = invalid_range;
       }
 
       // vkDestroyImageView
@@ -2502,18 +2629,20 @@ void destroy_vk_objs( _typeof_member(struct ms_worker_info, idx_self) worker_idx
     cara_vk.pll_cp2sc = VK_NULL_HANDLE;
   }
 
-  for ( unsigned int sp_idx = 0; sp_idx < cara_nr_subpasses; sp_idx++ ) {
+  for ( unsigned int sp_idx = 0;
+      sp_idx < (unsigned int)cara_nr_subpasses + cara_nr_subpasses_in_2nd_rp;
+      sp_idx++ ) {
     if ( cara_vk.arr_pipelines[sp_idx] ) {
       vkDestroyPipeline( cara_vk.log_dev, cara_vk.arr_pipelines[sp_idx], &vk_alloc_callbacks );
       cara_vk.arr_pipelines[sp_idx] = VK_NULL_HANDLE;
     }
   }
-  for ( unsigned int sp_idx = 0; sp_idx < cara_nr_subpasses_in_2nd_rp; sp_idx++ ) {
-    if ( cara_vk.arr_pipelines2[sp_idx] ) {
-      vkDestroyPipeline( cara_vk.log_dev, cara_vk.arr_pipelines2[sp_idx], &vk_alloc_callbacks );
-      cara_vk.arr_pipelines2[sp_idx] = VK_NULL_HANDLE;
-    }
-  }
+  //for ( unsigned int sp_idx = 0; sp_idx < cara_nr_subpasses_in_2nd_rp; sp_idx++ ) {
+  //  if ( cara_vk.arr_pipelines2[sp_idx] ) {
+  //    vkDestroyPipeline( cara_vk.log_dev, cara_vk.arr_pipelines2[sp_idx], &vk_alloc_callbacks );
+  //    cara_vk.arr_pipelines2[sp_idx] = VK_NULL_HANDLE;
+  //  }
+  //}
 
   if ( cara_vk.ds_main_render ) {
     vkResetDescriptorPool( cara_vk.log_dev, cara_vk.descriptor_pool, 0 );
@@ -2558,7 +2687,7 @@ void destroy_vk_objs( _typeof_member(struct ms_worker_info, idx_self) worker_idx
       enum err_msg err = ma_report_vk_malloc_rel( &cara_vk.vmm,
           &vk_alloc_callbacks, vk_malloc_wrapper,
           cara_vk.vmm.arr_mtype_used[vk_buf_type_texarr_2048],
-          cara_vk.p_malloc_range_albmaps );
+          cara_vk.mrange_albmaps );
       if ( err ) {
         fprintf( stderr, "[Carbonara] Failure occurred in ma_report_vk_malloc_rel!! "
             "'%s'\n", arr_emsg_txt[err] );
@@ -2566,7 +2695,7 @@ void destroy_vk_objs( _typeof_member(struct ms_worker_info, idx_self) worker_idx
           case emsg_already_done:
             [[fallthrough]];
           case emsg_unknown:  // VkDeviceMemory object is somehow missing
-            cara_vk.p_malloc_range_albmaps = nullptr;
+            cara_vk.mrange_albmaps = invalid_range;
             vkDestroyImage( cara_vk.log_dev, cara_vk.albmaps[img_id], &vk_alloc_callbacks );
             cara_vk.albmaps[img_id] = VK_NULL_HANDLE;
             break;
@@ -2574,7 +2703,7 @@ void destroy_vk_objs( _typeof_member(struct ms_worker_info, idx_self) worker_idx
             break;
         }
       } else {  // No error occurred
-        cara_vk.p_malloc_range_albmaps = nullptr;
+        cara_vk.mrange_albmaps = invalid_range;
         vkDestroyImage( cara_vk.log_dev, cara_vk.albmaps[img_id], &vk_alloc_callbacks );
         cara_vk.albmaps[img_id] = VK_NULL_HANDLE;
       }
@@ -2592,7 +2721,7 @@ void destroy_vk_objs( _typeof_member(struct ms_worker_info, idx_self) worker_idx
     enum err_msg err = ma_report_vk_malloc_rel( &cara_vk.vmm,
         &vk_alloc_callbacks, vk_malloc_wrapper,
         mtype_idx,
-        cara_vk.p_malloc_range_vbuf );
+        cara_vk.mrange_vbuf );
     if ( err ) {
       fprintf( stderr, "[Carbonara] Failure occurred in ma_report_vk_malloc_rel!! "
           "'%s'\n", arr_emsg_txt[err] );
@@ -2600,7 +2729,7 @@ void destroy_vk_objs( _typeof_member(struct ms_worker_info, idx_self) worker_idx
         case emsg_already_done:
           [[fallthrough]];
         case emsg_unknown:  // VkDeviceMemory object is somehow missing
-          cara_vk.p_malloc_range_vbuf = nullptr;
+          cara_vk.mrange_vbuf = invalid_range;
           vkDestroyBuffer( cara_vk.log_dev, cara_vk.vert_buf, &vk_alloc_callbacks );
           cara_vk.vert_buf = VK_NULL_HANDLE;
           break;
@@ -2608,7 +2737,7 @@ void destroy_vk_objs( _typeof_member(struct ms_worker_info, idx_self) worker_idx
           break;
       }
     } else {  // No error occurred
-      cara_vk.p_malloc_range_vbuf = nullptr;
+      cara_vk.mrange_vbuf = invalid_range;
       vkDestroyBuffer( cara_vk.log_dev, cara_vk.vert_buf, &vk_alloc_callbacks );
       cara_vk.vert_buf = VK_NULL_HANDLE;
     }
@@ -2625,7 +2754,7 @@ void destroy_vk_objs( _typeof_member(struct ms_worker_info, idx_self) worker_idx
     enum err_msg err = ma_report_vk_malloc_rel( &cara_vk.vmm,
         &vk_alloc_callbacks, vk_malloc_wrapper,
         mtype_idx,
-        cara_vk.p_malloc_range_ibuf );
+        cara_vk.mrange_ibuf );
     if ( err ) {
       fprintf( stderr, "[Carbonara] Failure occurred in ma_report_vk_malloc_rel!! "
           "'%s'\n", arr_emsg_txt[err] );
@@ -2633,7 +2762,7 @@ void destroy_vk_objs( _typeof_member(struct ms_worker_info, idx_self) worker_idx
         case emsg_already_done:
           [[fallthrough]];
         case emsg_unknown:  // VkDeviceMemory object is somehow missing
-          cara_vk.p_malloc_range_ibuf = nullptr;
+          cara_vk.mrange_ibuf = invalid_range;
           vkDestroyBuffer( cara_vk.log_dev, cara_vk.ind_buf, &vk_alloc_callbacks );
           cara_vk.ind_buf = VK_NULL_HANDLE;
           break;
@@ -2641,7 +2770,7 @@ void destroy_vk_objs( _typeof_member(struct ms_worker_info, idx_self) worker_idx
           break;
       }
     } else {  // No error occurred
-      cara_vk.p_malloc_range_ibuf = nullptr;
+      cara_vk.mrange_ibuf = invalid_range;
       vkDestroyBuffer( cara_vk.log_dev, cara_vk.ind_buf, &vk_alloc_callbacks );
       cara_vk.ind_buf = VK_NULL_HANDLE;
     }
@@ -3328,16 +3457,16 @@ enum err_msg create_1st_renderpass_and_framebuffer( struct cara_vk_renderer * re
       //const uint32_t heap_idx = renderer->vmm.arr_heap_indices[mtype_idx];
 
       // Bind the image to a vulkan memory object
-      struct range_u32 * p_malloc_range = nullptr;
+      struct range_u32 malloc_range;
       err = ma_bind_img_to_malloc( &renderer->vmm,
           &vk_alloc_callbacks, vk_malloc_wrapper,
           renderer->log_dev, renderer->zbuf_n_cbuf[fif_idx][fb_idx],
-          mtype_idx, req.size, req.alignment, &p_malloc_range );
+          mtype_idx, req.size, req.alignment, &malloc_range );
       if ( err ) {
         fprintf( stderr, "Error occured in ma_bind_img_to_malloc. (%s)\n", arr_emsg_txt[err] );
         goto stop_everything_after_failure;
       }
-      renderer->p_malloc_range_zbuf_and_cbuf[fif_idx][fb_idx] = p_malloc_range;
+      renderer->mrange_zbuf_and_cbuf[fif_idx][fb_idx] = malloc_range;
     }
   }
 
@@ -3425,7 +3554,7 @@ stop_everything_after_failure:
           &vk_alloc_callbacks, vk_malloc_wrapper,
           ma_pick_best_mtype(&renderer->vmm, &req,
             required_props, preferred_props, tolerable_props),
-          renderer->p_malloc_range_zbuf_and_cbuf[fif_idx][fb_idx] );
+          renderer->mrange_zbuf_and_cbuf[fif_idx][fb_idx] );
       if ( err ) {
         fprintf( stderr, "[Carbonara] Failure occurred in ma_report_vk_malloc_rel!! "
             "'%s'\n", arr_emsg_txt[err] );
@@ -3436,7 +3565,7 @@ stop_everything_after_failure:
             vkDestroyImage( renderer->log_dev,
                 renderer->zbuf_n_cbuf[fif_idx][fb_idx], &vk_alloc_callbacks );
             renderer->zbuf_n_cbuf[fif_idx][fb_idx] = VK_NULL_HANDLE;
-            renderer->p_malloc_range_zbuf_and_cbuf[fif_idx][fb_idx] = nullptr;
+            renderer->mrange_zbuf_and_cbuf[fif_idx][fb_idx] = invalid_range;
             break;
           default:
             break;
@@ -3445,7 +3574,7 @@ stop_everything_after_failure:
         vkDestroyImage( renderer->log_dev,
             renderer->zbuf_n_cbuf[fif_idx][fb_idx], &vk_alloc_callbacks );
         renderer->zbuf_n_cbuf[fif_idx][fb_idx] = VK_NULL_HANDLE;
-        renderer->p_malloc_range_zbuf_and_cbuf[fif_idx][fb_idx] = nullptr;
+        renderer->mrange_zbuf_and_cbuf[fif_idx][fb_idx] = invalid_range;
       }
 
       // vkDestroyImageView
@@ -3498,7 +3627,7 @@ enum err_msg expand_swapchain_and_framebuffer( struct cara_vk_renderer * rendere
   VkFramebuffer new_framebuffers[cara_max_nr_fif][cara_nr_renderpasses] = {0};
   VkImageView new_zbuf_n_cbuf_iv[cara_max_nr_fif][2] = {0};
   VkImage new_zbuf_n_cbuf_img[cara_max_nr_fif][2] = {0};
-  struct range_u32 * arr_p_new_malloc_ranges_zbuf_and_cbuf[cara_max_nr_fif][2] = {0};
+  struct range_u32 arr_new_malloc_ranges_zbuf_and_cbuf[cara_max_nr_fif][2] = {0};
   uint32_t heap_idx = UINT_MAX_(heap_idx);
   unsigned int nr_swapchain_imgs = 0;
 
@@ -3659,16 +3788,16 @@ enum err_msg expand_swapchain_and_framebuffer( struct cara_vk_renderer * rendere
       //const uint32_t heap_idx = renderer->vmm.arr_heap_indices[mtype_idx];
 
       // Bind the image to a vulkan memory object
-      struct range_u32 * p_malloc_range = nullptr;
+      struct range_u32 malloc_range;
       enum err_msg err = ma_bind_img_to_malloc( &renderer->vmm,
           &vk_alloc_callbacks, vk_malloc_wrapper,
           renderer->log_dev, new_zbuf_n_cbuf_img[fif_idx][fb_idx],
-          mtype_idx, req.size, req.alignment, &p_malloc_range );
+          mtype_idx, req.size, req.alignment, &malloc_range );
       if ( err ) {
         fprintf( stderr, "Error occured in ma_bind_img_to_malloc. (%s)\n", arr_emsg_txt[err] );
         goto stop_everything_after_failure;
       }
-      arr_p_new_malloc_ranges_zbuf_and_cbuf[fif_idx][fb_idx] = p_malloc_range;
+      arr_new_malloc_ranges_zbuf_and_cbuf[fif_idx][fb_idx] = malloc_range;
     }
   }
 
@@ -3729,16 +3858,16 @@ enum err_msg expand_swapchain_and_framebuffer( struct cara_vk_renderer * rendere
   old_swapchain = renderer->swapchain;
   if ( _is_aligned_to_power_of_two(
         renderer->nr_old_swapchains, 1u << renderer->old_swapchains.log2_nr_elems
-        ) && !infos_al_get_elem(&renderer->old_swapchains, renderer->nr_old_swapchains)
+        ) && !infos_al_get_elem_unsafe(&renderer->old_swapchains, renderer->nr_old_swapchains)
       ) {
     enum err_msg err = infos_al_grow( &renderer->old_swapchains,
-        &vk_alloc_callbacks, vk_malloc_wrapper, 1, false );
+        &vk_alloc_callbacks, vk_malloc_wrapper, nullptr, nullptr, 1, false, 0 );
     if ( err ) {
       fprintf( stderr, "[Vulkan] A failure occurred in infos_al_grow. %s\n", arr_emsg_txt[err] );
       goto stop_everything_after_failure;
     }
   }
-  struct dead_swapchain * p_dead = infos_al_get_elem(
+  struct dead_swapchain * p_dead = infos_al_get_elem_unsafe(
       &renderer->old_swapchains, renderer->nr_old_swapchains );
   p_dead->swapchain = old_swapchain;
   p_dead->destruct_time = renderer->frame_id + renderer->nr_swapchain_imgs + 4;  // TODO Add `avg_fps/4`
@@ -3876,7 +4005,7 @@ enum err_msg expand_swapchain_and_framebuffer( struct cara_vk_renderer * rendere
           &vk_alloc_callbacks, vk_malloc_wrapper,
           ma_pick_best_mtype(&renderer->vmm, &req,
             required_props, preferred_props, tolerable_props),
-          renderer->p_malloc_range_zbuf_and_cbuf[fif_idx][fb_idx] );
+          renderer->mrange_zbuf_and_cbuf[fif_idx][fb_idx] );
       if ( err ) {
         fprintf( stderr, "[Carbonara] Failure occurred in ma_report_vk_malloc_rel!! "
             "'%s'\n", arr_emsg_txt[err] );
@@ -3887,7 +4016,7 @@ enum err_msg expand_swapchain_and_framebuffer( struct cara_vk_renderer * rendere
             vkDestroyImage( renderer->log_dev,
                 renderer->zbuf_n_cbuf[fif_idx][fb_idx], &vk_alloc_callbacks );
             renderer->zbuf_n_cbuf[fif_idx][fb_idx] = VK_NULL_HANDLE;
-            renderer->p_malloc_range_zbuf_and_cbuf[fif_idx][fb_idx] = nullptr;
+            renderer->mrange_zbuf_and_cbuf[fif_idx][fb_idx] = invalid_range;
             break;
           default:
             break;
@@ -3896,7 +4025,7 @@ enum err_msg expand_swapchain_and_framebuffer( struct cara_vk_renderer * rendere
         vkDestroyImage( renderer->log_dev,
             renderer->zbuf_n_cbuf[fif_idx][fb_idx], &vk_alloc_callbacks );
         renderer->zbuf_n_cbuf[fif_idx][fb_idx] = VK_NULL_HANDLE;
-        renderer->p_malloc_range_zbuf_and_cbuf[fif_idx][fb_idx] = nullptr;
+        renderer->mrange_zbuf_and_cbuf[fif_idx][fb_idx] = invalid_range;
       }
 
       // vkDestroyImageView
@@ -3955,7 +4084,7 @@ stop_everything_after_failure:
           &vk_alloc_callbacks, vk_malloc_wrapper,
           ma_pick_best_mtype(&renderer->vmm, &req,
             required_props, preferred_props, tolerable_props),
-          arr_p_new_malloc_ranges_zbuf_and_cbuf[fif_idx][fb_idx] );
+          arr_new_malloc_ranges_zbuf_and_cbuf[fif_idx][fb_idx] );
       if ( err ) {
         fprintf( stderr, "[Carbonara] Failure occurred in ma_report_vk_malloc_rel!! "
             "'%s'\n", arr_emsg_txt[err] );
@@ -3966,7 +4095,7 @@ stop_everything_after_failure:
             vkDestroyImage( renderer->log_dev,
                 new_zbuf_n_cbuf_img[fif_idx][fb_idx], &vk_alloc_callbacks );
             new_zbuf_n_cbuf_img[fif_idx][fb_idx] = VK_NULL_HANDLE;
-            arr_p_new_malloc_ranges_zbuf_and_cbuf[fif_idx][fb_idx] = nullptr;
+            arr_new_malloc_ranges_zbuf_and_cbuf[fif_idx][fb_idx] = invalid_range;
             break;
           default:
             break;
@@ -3975,7 +4104,7 @@ stop_everything_after_failure:
         vkDestroyImage( renderer->log_dev,
             new_zbuf_n_cbuf_img[fif_idx][fb_idx], &vk_alloc_callbacks );
         new_zbuf_n_cbuf_img[fif_idx][fb_idx] = VK_NULL_HANDLE;
-        arr_p_new_malloc_ranges_zbuf_and_cbuf[fif_idx][fb_idx] = nullptr;
+        arr_new_malloc_ranges_zbuf_and_cbuf[fif_idx][fb_idx] = invalid_range;
       }
 
       // vkDestroyImageView

@@ -12,7 +12,7 @@ struct infos_stack * infos_stack_create(void * buffer, uint32_t buf_len) {
   struct infos_stack * stack = buffer;
   stack->total_len = buf_len - sizeof(struct infos_stack);
   stack->data = buffer + sizeof(struct infos_stack);
-  stack->idx_last_elem = 0;
+  stack->nr_elems = 0;
 
   return stack;
 }
@@ -21,16 +21,16 @@ struct infos_stack * infos_stack_create(void * buffer, uint32_t buf_len) {
 //-------------------------------------------------------------------------------------------------
 uint_fast8_t infos_stack_push( struct infos_stack * restrict stack,
     uint_fast16_t nr_elems, const void * elements, uint_fast8_t log2_elem_len ) {
-  typeof(stack->idx_last_elem) idx_last_slot = stack->total_len >> log2_elem_len; 
-  if ( idx_last_slot - stack->idx_last_elem < nr_elems ) {
+  typeof(stack->nr_elems) idx_last_slot = stack->total_len >> log2_elem_len; 
+  if ( idx_last_slot - stack->nr_elems < nr_elems ) {
     return 0;
   }
 
   uint_fast16_t elem_len = 1 << log2_elem_len;
-  void * ptr = stack->data + stack->idx_last_elem * elem_len;
+  void * ptr = stack->data + stack->nr_elems * elem_len;
   memcpy(ptr, elements, elem_len * nr_elems);
 
-  stack->idx_last_elem += nr_elems;
+  stack->nr_elems += nr_elems;
 
   return UINT_FAST8_MAX;
 }
@@ -38,10 +38,10 @@ uint_fast8_t infos_stack_push( struct infos_stack * restrict stack,
 
 //-------------------------------------------------------------------------------------------------
 void * infos_stack_pop(struct infos_stack * stack, uint_fast16_t elem_len) {
-  if ( stack->idx_last_elem == 0 )
+  if ( stack->nr_elems == 0 )
     return 0;
 
-  void * ret = stack->data + (stack->idx_last_elem - 1) * elem_len;
-  stack->idx_last_elem--;
+  void * ret = stack->data + (stack->nr_elems - 1) * elem_len;
+  stack->nr_elems--;
   return ret;
 }

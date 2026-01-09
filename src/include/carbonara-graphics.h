@@ -163,10 +163,11 @@ struct cara_vk_renderer {
   void * spv_swapchain_frag;
   void * spv_mcsdf_font_vert;
   void * spv_mcsdf_font_frag;
-  struct range_u32 * p_malloc_range_vbuf;
-  struct range_u32 * p_malloc_range_ibuf;
-  struct range_u32 * p_malloc_range_albmaps;
-  struct range_u32 * p_malloc_range_zbuf_and_cbuf[cara_max_nr_fif][2];
+  struct range_u32 mrange_vbuf;  // Memory allocation range in the staging buffer
+  struct range_u32 mrange_ibuf;  // Memory allocation range in the staging buffer
+  struct range_u32 mrange_albmaps;  // Memory allocation range in the staging buffer
+  struct range_u32 mrange_zbuf_and_cbuf[cara_max_nr_fif][2];  ///> Memory allocation ranges in the
+                                                              ///>  staging buffer
   SDL_Window * window;
   VkImage * arr_swapchain_imgs;
   VkImageView * arr_swapchain_iv;
@@ -205,8 +206,8 @@ struct cara_vk_renderer {
   VkPipelineLayout pll_main_render;
   VkPipelineLayout pll_cp2sc;
   VkPipelineLayout pll_mcsdf_font;
-  VkPipeline arr_pipelines[cara_nr_subpasses];
-  VkPipeline arr_pipelines2[cara_nr_subpasses_in_2nd_rp];
+  VkPipeline arr_pipelines[(unsigned int)cara_nr_subpasses + cara_nr_subpasses_in_2nd_rp];
+  //VkPipeline arr_pipelines2[cara_nr_subpasses_in_2nd_rp];
   VkRenderPass arr_renderpasses[cara_nr_renderpasses];
   VkFramebuffer arr_framebuffers[cara_max_nr_fif][cara_nr_renderpasses];
   VkShaderModule sm_z_only;

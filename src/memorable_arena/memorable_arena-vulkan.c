@@ -119,72 +119,104 @@ void ma_destroy_vk_mem_mgr(
     enum err_msg err;
 
     uint32_t heap_idx = p_vmm->arr_heap_indices[type_idx];
-    struct infos_singly_linked_list_node * m_node = &p_vmm->mallocs.lists[type_idx].head;
-    struct infos_singly_linked_list_node * p_node = &p_vmm->page_mgrs.lists[type_idx].head;
-    const uint32_t last_idx = 1 << p_vmm->mallocs.log2_nr_elems;
-    uint32_t node_idx = 0;
-    while(7) {
-      for ( uint32_t malloc_idx = 0; malloc_idx < last_idx; malloc_idx++ ) {
-        struct infos_page_mgr_p2 * p_pm = p_node->data + malloc_idx * sizeof(*p_pm);
-        if ( !p_pm->al_vacancies.list.nr_nodes ) {
-          break;
+    struct linked_list_of_lists_node * m_node = &p_vmm->mallocs.lists[type_idx].head;
+    struct linked_list_of_lists_node * p_node = &p_vmm->page_mgrs.lists[type_idx].head;
+    typeof(p_vmm->page_mgrs.arr_nr_active_blocks[0]) block_idx = 0;
+    const uint_fast16_t nr_elems_in_block = UINT32_C(1) << p_vmm->page_mgrs.log2_nr_elems;
+    do {  // while ( p_node )
+      constexpr uint_fast16_t nr_blocks_in_node = _arr_elem_cnt(p_node->arr_blocks);
+      for ( uint_fast16_t local_block_idx = 0;
+          local_block_idx < nr_blocks_in_node;
+          local_block_idx++, block_idx++ ) {
+        if ( block_idx >= p_vmm->page_mgrs.arr_nr_active_blocks[local_block_idx] ) {
+          goto out_of_nested_loop;
         }
 
-        VkDeviceMemory * p_malloc = m_node->data + malloc_idx * sizeof(VkDeviceMemory);
-        if ( *p_malloc == VK_NULL_HANDLE ) {
-          fprintf( stderr, "[MA-Vulkan] *p_malloc is already VK_NULL_HANDLE "
-              "type_idx=%u node_idx=%u malloc_idx=%u\n",
-              type_idx, node_idx, malloc_idx );
-          continue;
-        }
+        void * p_block = p_node->arr_blocks[local_block_idx];
+        void * m_block = m_node->arr_blocks[local_block_idx];
 
-        vkFreeMemory( logical_dev, *p_malloc, &vk_alloc_callbacks );
-        *p_malloc = VK_NULL_HANDLE;
-#if !defined( ARE_WE_SHIPPING_IT )
-        struct infos_singly_linked_list_node * r_node = &p_pm->al_rental_info.list.head;
-        while( r_node ) {
-          struct range_u32 * p_malloc_range = r_node->data; p_malloc_range--;
-          for ( uint32_t bind_idx = 0; bind_idx < p_pm->idx_last_rental_info; bind_idx++ ) {
-            p_malloc_range++;
-            if ( (*p_malloc_range).start > (*p_malloc_range).stop ) {
-              continue;
-            }
-
-            err = infos_pm_return_via_ptr( (struct infos_page_mgr*)p_pm,
-                userdata_malloc, local_malloc,
-                p_malloc_range );
-            switch ( err ) {
-              case 0:
-                p_vmm->arr_usages[heap_idx] -= get_range_len(*p_malloc_range);
-                break;
-              case emsg_no_such_entry:
-                [[fallthrough]];
-              case emsg_already_done:
-                [[fallthrough]];
-              case emsg_out_of_memory:
-                [[fallthrough]];
-              default:
-                fprintf( stderr, "[MA-Vulkan] Error occured in infos_pm_return_via_ptr: %s\n",
-                    arr_emsg_txt[err] );
-                fprintf( stderr, "[MA-Vulkan] context: "
-                    "type_idx=%u node_idx=%u malloc_idx=%u rnode_idx=? bind_idx=%u\n",
-                    type_idx, node_idx, malloc_idx, bind_idx );
-                break;
-            }
+        for ( uint_fast32_t malloc_idx = 0; malloc_idx < nr_elems_in_block; malloc_idx++ ) {
+          struct infos_page_mgr_p2 * restrict p_pm = p_block + malloc_idx * sizeof(*p_pm);
+          if ( !p_pm->al_vacancies.nr_active_blocks ) {
+            break;
           }
-          r_node = r_node->next;
-        }  // while( r_node )
+
+          VkDeviceMemory * restrict p_malloc = m_block + malloc_idx * sizeof(VkDeviceMemory);
+          if ( *p_malloc == VK_NULL_HANDLE ) {
+            fprintf( stderr, "[MA-Vulkan] *p_malloc is already VK_NULL_HANDLE "
+                "type_idx=%u block_idx=%u malloc_idx=%lu\n",
+                type_idx, block_idx, malloc_idx );
+            continue;
+          }
+          vkFreeMemory( logical_dev, *p_malloc, &vk_alloc_callbacks );
+          *p_malloc = VK_NULL_HANDLE;
+
+#if !defined( ARE_WE_SHIPPING_IT )
+          const uint64_t nr_elems_in_rblock = UINT64_C(1) << p_pm->al_rental_info.log2_nr_elems;
+          uint64_t base_ridx = 0;  // The base idx of current block
+          const uint64_t base_ridx_cap = nr_elems_in_rblock * p_pm->al_rental_info.nr_active_blocks;
+          //uint64_t node_base_idx = 0;
+          uint64_t rblock_idx = 0;
+          typeof(p_pm->nr_rents) nr_rents_to_return = p_pm->nr_rents;
+          struct linked_list_of_lists_node * restrict r_node = &p_pm->al_vacancies.list.head;
+          do {  // while ( base_ridx < base_ridx_cap )
+            void * rblock = r_node->arr_blocks[rblock_idx];
+            for ( uint_fast32_t bind_idx = 0; bind_idx < nr_elems_in_rblock; bind_idx++ ) {
+              if ( nr_rents_to_return == 0 ) {
+                break;
+              }
+
+              struct range_u32 * p_malloc_range = rblock + sizeof(*p_malloc_range) * bind_idx; 
+
+              err = infos_pm_return( (struct infos_page_mgr*)p_pm,
+                  userdata_malloc, local_malloc,
+                  *p_malloc_range );
+              nr_rents_to_return--;
+              switch ( err ) {
+                case 0:
+                  p_vmm->arr_usages[heap_idx] -= get_range_len(*p_malloc_range);
+                  break;
+                case emsg_no_such_entry:
+                  [[fallthrough]];
+                //case emsg_already_done:
+                //  [[fallthrough]];
+                case emsg_out_of_memory:
+                  [[fallthrough]];
+                default:
+                  fprintf( stderr, "[MA-Vulkan] Error occured in infos_pm_return_via_ptr: %s\n",
+                      arr_emsg_txt[err] );
+                  fprintf( stderr, "[MA-Vulkan] context: "
+                      "type_idx=%u block_idx=%u malloc_idx=%lu rnode_idx=? bind_idx=%lu\n",
+                      type_idx, block_idx, malloc_idx, base_ridx + bind_idx );
+                  break;
+              }
+            }  // for ( uint_fast32_t bind_idx = 0; bind_idx < nr_elems_in_rblock; bind_idx++ )
+
+            rblock_idx++;
+            base_ridx += nr_elems_in_rblock;
+            if ( rblock_idx >= _arr_elem_cnt(r_node->arr_blocks) ) {
+              r_node = r_node->next;
+              assume( r_node );
+              //node_base_idx += UINT64_C(1) << ( p_pm->al_rental_info.log2_nr_elems +
+              //    _arr_elem_cnt(p_pm->al_rental_info.list.head.arr_blocks) );
+              rblock_idx = 0;
+            }
+          } while ( base_ridx < base_ridx_cap );
 #endif
-      }  // for ( uint32_t malloc_idx = 0; malloc_idx < last_idx; malloc_idx++ )
+
+        }  // for ( uint_fast32_t malloc_idx = 0; malloc_idx < nr_elems_in_block; malloc_idx++ )
+
+      }  // for ( uint_fast16_t local_block_idx = 0;
+         //     local_block_idx < nr_blocks_in_node; local_block_idx++, block_idx++ )
 
       if ( !p_node->next ) {
         break;
       }
-
       m_node = m_node->next;
       p_node = p_node->next;
-      node_idx++;
-    }  // while(7)
+    } while ( p_node );
+out_of_nested_loop:
+
   }  // for ( unsigned int type_idx = 0; type_idx < p_vmm->type_cnt; type_idx++ )
   infos_multi_al_destroy_except_preallocated_struct( &p_vmm->page_mgrs,
       userdata_free, local_free );
@@ -341,132 +373,162 @@ enum err_msg ma_bind_img_to_malloc(
     uint32_t type_idx,
     VkDeviceSize req_size,  // Required allocation size in bytes
     VkDeviceSize req_alignment,  // Required allocation alignment in bytes
-    struct range_u32 ** pp_malloc_range
+    struct range_u32 * p_malloc_range
     )
 {
   SPALL_BEGIN("bind_img_to_m");
-  VkDeviceSize size_to_req = _align_to_power_of_two( req_size, p_vmm->buf_granularity );
+
+  // Release every memory allocation
+  VkDeviceSize size_to_rqst = _align_to_power_of_two( req_size, p_vmm->buf_granularity );
   VkResult result;
   enum err_msg err;
+
   void * (*local_malloc)(void * userdata, size_t alignment, size_t size);
   local_malloc = custom_malloc ? custom_malloc : default_malloc;
 
   uint32_t heap_idx = p_vmm->arr_heap_indices[type_idx];
-  struct infos_singly_linked_list_node * m_node = &p_vmm->mallocs.lists[type_idx].head;
-  struct infos_singly_linked_list_node * p_node = &p_vmm->page_mgrs.lists[type_idx].head;
-  const uint32_t last_idx = 1 << p_vmm->mallocs.log2_nr_elems;
-  while(7) {
-    for ( uint32_t malloc_idx = 0; malloc_idx < last_idx; malloc_idx++ ) {
-      VkDeviceMemory * p_malloc = m_node->data + malloc_idx * sizeof(VkDeviceMemory);
-      struct infos_page_mgr_p2 * p_pm = p_node->data + malloc_idx * sizeof(*p_pm);
-      if ( *p_malloc == 0 ) {
-        // Create a new VkDeviceMemory
-        VkMemoryAllocateInfo buf_malloc_info;
-        buf_malloc_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-        buf_malloc_info.pNext = nullptr;
-        buf_malloc_info.allocationSize = len_chunk_of_pages;
-        buf_malloc_info.memoryTypeIndex = type_idx;
-        SPALL_BEGIN("alloc_mem");
-        result = vkAllocateMemory( log_dev,
-            &buf_malloc_info, &vk_alloc_callbacks, p_malloc );
+  struct linked_list_of_lists_node * m_node = &p_vmm->mallocs.lists[type_idx].head;
+  struct linked_list_of_lists_node * p_node = &p_vmm->page_mgrs.lists[type_idx].head;
+  typeof(p_vmm->page_mgrs.arr_nr_active_blocks[0]) block_idx = 0;
+  const uint_fast16_t nr_elems_in_block = UINT32_C(1) << p_vmm->page_mgrs.log2_nr_elems;
+  do {  // while ( p_node )
+    constexpr uint_fast16_t nr_blocks_in_node = _arr_elem_cnt(p_node->arr_blocks);
+    for ( uint_fast16_t local_block_idx = 0;
+        local_block_idx < nr_blocks_in_node;
+        local_block_idx++, block_idx++ ) {
+      if ( block_idx >= p_vmm->mallocs.arr_nr_active_blocks[local_block_idx] ) {
+        // We need to create one more node
+        err = infos_multi_al_grow( &p_vmm->mallocs, userdata, local_malloc,
+            1, &type_idx,
+            true, 0 );
+        if ( err ) {
+          fprintf( stderr, "Error occured in infos_multi_al_grow. (%s)\n", arr_emsg_txt[err] );
+          SPALL_END();
+          return err;
+        }
+        err = infos_multi_al_grow( &p_vmm->page_mgrs, userdata, local_malloc,
+            1, &type_idx,
+            true, 0 );
+        if ( err ) {
+          fprintf( stderr, "Error occured in infos_multi_al_grow. (%s)\n", arr_emsg_txt[err] );
+          SPALL_END();
+          return err;
+        }
+      }
+      void * p_block = p_node->arr_blocks[local_block_idx];
+      void * m_block = m_node->arr_blocks[local_block_idx];
+
+      for ( uint_fast32_t malloc_idx = 0; malloc_idx < nr_elems_in_block; malloc_idx++ ) {
+        struct infos_page_mgr_p2 * restrict p_pm = p_block + malloc_idx * sizeof(*p_pm);
+        VkDeviceMemory * restrict p_malloc = m_block + malloc_idx * sizeof(VkDeviceMemory);
+        if ( *p_malloc == 0 ) {
+          // Create a new VkDeviceMemory
+          VkMemoryAllocateInfo buf_malloc_info;
+          buf_malloc_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+          buf_malloc_info.pNext = nullptr;
+          buf_malloc_info.allocationSize = len_chunk_of_pages;
+          buf_malloc_info.memoryTypeIndex = type_idx;
+          SPALL_BEGIN("alloc_mem");
+          result = vkAllocateMemory( log_dev,
+              &buf_malloc_info, &vk_alloc_callbacks, p_malloc );
+          SPALL_END();
+          if ( result != VK_SUCCESS ) {
+            fprintf( stderr, "[Carbonara] vkAllocateMemory failed. "
+                "'%s'\n", string_VkResult(result) );
+            switch ( result ) {
+              case VK_ERROR_OUT_OF_DEVICE_MEMORY:
+                [[fallthrough]];
+              case VK_ERROR_OUT_OF_HOST_MEMORY:
+                SPALL_END();
+                return emsg_out_of_memory;
+
+              case VK_ERROR_INVALID_EXTERNAL_HANDLE:
+                [[fallthrough]];
+              case VK_ERROR_INVALID_OPAQUE_CAPTURE_ADDRESS_KHR:
+                [[fallthrough]];
+              case VK_ERROR_VALIDATION_FAILED:
+                SPALL_END();
+                return emsg_invalid_request;
+
+              default:
+                SPALL_END();
+                return emsg_unknown;
+            }
+          }  // if ( result != VK_SUCCESS )
+
+          // Init struct infos_page_mgr_p2
+          err = infos_pm_init_prealloc( (struct infos_page_mgr*)p_pm, len_chunk_of_pages,
+              userdata, local_malloc );
+          if ( err ) {
+            fprintf( stderr, "Error occured in infos_pm_init_prealloc. (%s)\n", arr_emsg_txt[err] );
+            SPALL_END();
+            return err;
+          }
+        }  // if ( *p_malloc == 0 )
+
+        // We must've failed to init struct infos_page_mgr_p2 before this call
+        if ( !p_pm->al_vacancies.nr_active_blocks ) {
+          err = infos_pm_init_prealloc( (struct infos_page_mgr*)p_pm, len_chunk_of_pages,
+              userdata, local_malloc );
+          if ( err ) {
+            fprintf( stderr, "Error occured in infos_pm_init_prealloc. (%s)\n", arr_emsg_txt[err] );
+            SPALL_END();
+            return err;
+          }
+        }
+
+        // Check if there is enough space
+        struct range_u32 new_rent;
+        new_rent = infos_pm_rent_aligned( (struct infos_page_mgr*)p_pm, userdata, local_malloc,
+            _align_to_power_of_two(size_to_rqst, req_alignment),
+            req_alignment );
+        if ( is_range_u32_invalid(new_rent) ) {
+          continue;
+        }
+        p_vmm->arr_usages[heap_idx] += _align_to_power_of_two( size_to_rqst, req_alignment );
+
+        // Bind the image to *p_malloc
+        SPALL_BEGIN("bind_img_mem");
+        result = vkBindImageMemory( log_dev, vk_img, *p_malloc, new_rent.start );
         SPALL_END();
-        if ( result != VK_SUCCESS ) {
-          fprintf( stderr, "[Carbonara] vkAllocateMemory failed. "
+        if( result != VK_SUCCESS ) {
+          fprintf( stderr, "[Carbonara] Could not bind image to malloc. "
               "'%s'\n", string_VkResult(result) );
+          err = infos_pm_return( (struct infos_page_mgr*)p_pm, userdata, local_malloc, new_rent );
+          if ( err ) {
+            fprintf( stderr, "[Carbonara] Could not return the rented pages!! "
+                "'%s'\n", arr_emsg_txt[err] );
+          } else {
+            p_vmm->arr_usages[heap_idx] -= _align_to_power_of_two( size_to_rqst, req_alignment );
+          }
           switch ( result ) {
             case VK_ERROR_OUT_OF_DEVICE_MEMORY:
               [[fallthrough]];
             case VK_ERROR_OUT_OF_HOST_MEMORY:
               SPALL_END();
               return emsg_out_of_memory;
-
-            case VK_ERROR_INVALID_EXTERNAL_HANDLE:
-              [[fallthrough]];
-            case VK_ERROR_INVALID_OPAQUE_CAPTURE_ADDRESS_KHR:
-              [[fallthrough]];
             case VK_ERROR_VALIDATION_FAILED:
               SPALL_END();
               return emsg_invalid_request;
-
             default:
               SPALL_END();
               return emsg_unknown;
           }
-        }
+        }  // if( result != VK_SUCCESS )
 
-        // Init struct infos_page_mgr_p2
-        err = infos_pm_init_prealloc( (struct infos_page_mgr*)p_pm, len_chunk_of_pages,
-            userdata, local_malloc );
-        if ( err ) {
-          fprintf( stderr, "Error occured in infos_pm_init_prealloc. (%s)\n", arr_emsg_txt[err] );
-          SPALL_END();
-          return err;
-        }
-      }
+        *p_malloc_range = new_rent;
+        SPALL_END();
+        return emsg_no_error;
+      }  // for ( uint_fast32_t malloc_idx = 0; malloc_idx < nr_elems_in_block; malloc_idx++ )
 
-      // We must've failed to init struct infos_page_mgr_p2 before this call
-      if ( !p_pm->al_vacancies.list.nr_nodes ) {
-        err = infos_pm_init_prealloc( (struct infos_page_mgr*)p_pm, len_chunk_of_pages,
-            userdata, local_malloc );
-        if ( err ) {
-          fprintf( stderr, "Error occured in infos_pm_init_prealloc. (%s)\n", arr_emsg_txt[err] );
-          SPALL_END();
-          return err;
-        }
-      }
-
-      // Check if there is enough space
-      struct range_u32 * p_rent;
-      p_rent = infos_pm_rent_aligned( (struct infos_page_mgr*)p_pm, userdata, local_malloc,
-          _align_to_power_of_two(size_to_req, req_alignment),
-          req_alignment );
-      if ( !p_rent ) {
-        continue;
-      }
-      p_vmm->arr_usages[heap_idx] += _align_to_power_of_two( size_to_req, req_alignment );
-
-      // Bind the image with *p_malloc
-      SPALL_BEGIN("bind_img_mem");
-      result = vkBindImageMemory( log_dev, vk_img, *p_malloc, p_rent->start );
-      SPALL_END();
-      if( result != VK_SUCCESS ) {
-        fprintf( stderr, "[Carbonara] Could not bind image to malloc. "
-            "'%s'\n", string_VkResult(result) );
-        err = infos_pm_return( (struct infos_page_mgr*)p_pm, userdata, local_malloc,
-            p_rent->start );
-        if ( err ) {
-          fprintf( stderr, "[Carbonara] Could not return the rented pages!! "
-              "'%s'\n", arr_emsg_txt[err] );
-        } else {
-          p_vmm->arr_usages[heap_idx] -= _align_to_power_of_two( size_to_req, req_alignment );
-        }
-        switch ( result ) {
-          case VK_ERROR_OUT_OF_DEVICE_MEMORY:
-            [[fallthrough]];
-          case VK_ERROR_OUT_OF_HOST_MEMORY:
-            SPALL_END();
-            return emsg_out_of_memory;
-
-          case VK_ERROR_VALIDATION_FAILED:
-            SPALL_END();
-            return emsg_invalid_request;
-
-          default:
-            SPALL_END();
-            return emsg_unknown;
-        }
-      }
-
-      *pp_malloc_range = p_rent;
-      SPALL_END();
-      return 0;
-    }
+    }  // for ( uint_fast16_t local_block_idx = 0;
+       //     local_block_idx < nr_blocks_in_node; local_block_idx++, block_idx++ )
 
     if ( !m_node->next ) {
       // We need to create one more node
       err = infos_multi_al_grow( &p_vmm->mallocs, userdata, local_malloc,
           1, &type_idx,
-          true );
+          true, 0 );
       if ( err ) {
         fprintf( stderr, "Error occured in infos_multi_al_grow. (%s)\n", arr_emsg_txt[err] );
         SPALL_END();
@@ -474,7 +536,7 @@ enum err_msg ma_bind_img_to_malloc(
       }
       err = infos_multi_al_grow( &p_vmm->page_mgrs, userdata, local_malloc,
           1, &type_idx,
-          true );
+          true, 0 );
       if ( err ) {
         fprintf( stderr, "Error occured in infos_multi_al_grow. (%s)\n", arr_emsg_txt[err] );
         SPALL_END();
@@ -484,18 +546,18 @@ enum err_msg ma_bind_img_to_malloc(
       // We must've failed to grow page_mgrs
       err = infos_multi_al_grow( &p_vmm->page_mgrs, userdata, local_malloc,
           1, &type_idx,
-          true );
+          true, 0 );
       if ( err ) {
         fprintf( stderr, "Error occured in infos_multi_al_grow. (%s)\n", arr_emsg_txt[err] );
         SPALL_END();
         return err;
       }
     }
-
     m_node = m_node->next;
     p_node = p_node->next;
-  }
+  } while ( p_node );
 
+  return emsg_unknown;
 }
 
 //-------------------------------------------------------------------------------------------------
@@ -508,132 +570,162 @@ enum err_msg ma_bind_buf_to_malloc(
     uint32_t type_idx,
     VkDeviceSize req_size,  // Required allocation size in bytes
     VkDeviceSize req_alignment,  // Required allocation alignment in bytes
-    struct range_u32 ** pp_malloc_range
+    struct range_u32 * p_malloc_range
     )
 {
   SPALL_BEGIN("bind_buf_to_m");
-  VkDeviceSize size_to_req = _align_to_power_of_two( req_size, p_vmm->buf_granularity );
+
+  // Release every memory allocation
+  VkDeviceSize size_to_rqst = _align_to_power_of_two( req_size, p_vmm->buf_granularity );
   VkResult result;
   enum err_msg err;
+
   void * (*local_malloc)(void * userdata, size_t alignment, size_t size);
   local_malloc = custom_malloc ? custom_malloc : default_malloc;
 
   uint32_t heap_idx = p_vmm->arr_heap_indices[type_idx];
-  struct infos_singly_linked_list_node * m_node = &p_vmm->mallocs.lists[type_idx].head;
-  struct infos_singly_linked_list_node * p_node = &p_vmm->page_mgrs.lists[type_idx].head;
-  const uint32_t last_idx = 1 << p_vmm->mallocs.log2_nr_elems;
-  while(7) {
-    for ( uint32_t malloc_idx = 0; malloc_idx < last_idx; malloc_idx++ ) {
-      VkDeviceMemory * p_malloc = m_node->data + malloc_idx * sizeof(VkDeviceMemory);
-      struct infos_page_mgr_p2 * p_pm = p_node->data + malloc_idx * sizeof(*p_pm);
-      if ( *p_malloc == 0 ) {
-        // Create a new VkDeviceMemory
-        VkMemoryAllocateInfo buf_malloc_info;
-        buf_malloc_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-        buf_malloc_info.pNext = nullptr;
-        buf_malloc_info.allocationSize = len_chunk_of_pages;
-        buf_malloc_info.memoryTypeIndex = type_idx;
-        SPALL_BEGIN("alloc_mem");
-        result = vkAllocateMemory( log_dev,
-            &buf_malloc_info, &vk_alloc_callbacks, p_malloc );
+  struct linked_list_of_lists_node * m_node = &p_vmm->mallocs.lists[type_idx].head;
+  struct linked_list_of_lists_node * p_node = &p_vmm->page_mgrs.lists[type_idx].head;
+  typeof(p_vmm->page_mgrs.arr_nr_active_blocks[0]) block_idx = 0;
+  const uint_fast16_t nr_elems_in_block = UINT32_C(1) << p_vmm->page_mgrs.log2_nr_elems;
+  do {  // while ( p_node )
+    constexpr uint_fast16_t nr_blocks_in_node = _arr_elem_cnt(p_node->arr_blocks);
+    for ( uint_fast16_t local_block_idx = 0;
+        local_block_idx < nr_blocks_in_node;
+        local_block_idx++, block_idx++ ) {
+      if ( block_idx >= p_vmm->mallocs.arr_nr_active_blocks[local_block_idx] ) {
+        // We need to create one more node
+        err = infos_multi_al_grow( &p_vmm->mallocs, userdata, local_malloc,
+            1, &type_idx,
+            true, 0 );
+        if ( err ) {
+          fprintf( stderr, "Error occured in infos_multi_al_grow. (%s)\n", arr_emsg_txt[err] );
+          SPALL_END();
+          return err;
+        }
+        err = infos_multi_al_grow( &p_vmm->page_mgrs, userdata, local_malloc,
+            1, &type_idx,
+            true, 0 );
+        if ( err ) {
+          fprintf( stderr, "Error occured in infos_multi_al_grow. (%s)\n", arr_emsg_txt[err] );
+          SPALL_END();
+          return err;
+        }
+      }
+      void * p_block = p_node->arr_blocks[local_block_idx];
+      void * m_block = m_node->arr_blocks[local_block_idx];
+
+      for ( uint_fast32_t malloc_idx = 0; malloc_idx < nr_elems_in_block; malloc_idx++ ) {
+        struct infos_page_mgr_p2 * restrict p_pm = p_block + malloc_idx * sizeof(*p_pm);
+        VkDeviceMemory * restrict p_malloc = m_block + malloc_idx * sizeof(VkDeviceMemory);
+        if ( *p_malloc == 0 ) {
+          // Create a new VkDeviceMemory
+          VkMemoryAllocateInfo buf_malloc_info;
+          buf_malloc_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+          buf_malloc_info.pNext = nullptr;
+          buf_malloc_info.allocationSize = len_chunk_of_pages;
+          buf_malloc_info.memoryTypeIndex = type_idx;
+          SPALL_BEGIN("alloc_mem");
+          result = vkAllocateMemory( log_dev,
+              &buf_malloc_info, &vk_alloc_callbacks, p_malloc );
+          SPALL_END();
+          if ( result != VK_SUCCESS ) {
+            fprintf( stderr, "[Carbonara] vkAllocateMemory failed. "
+                "'%s'\n", string_VkResult(result) );
+            switch ( result ) {
+              case VK_ERROR_OUT_OF_DEVICE_MEMORY:
+                [[fallthrough]];
+              case VK_ERROR_OUT_OF_HOST_MEMORY:
+                SPALL_END();
+                return emsg_out_of_memory;
+
+              case VK_ERROR_INVALID_EXTERNAL_HANDLE:
+                [[fallthrough]];
+              case VK_ERROR_INVALID_OPAQUE_CAPTURE_ADDRESS_KHR:
+                [[fallthrough]];
+              case VK_ERROR_VALIDATION_FAILED:
+                SPALL_END();
+                return emsg_invalid_request;
+
+              default:
+                SPALL_END();
+                return emsg_unknown;
+            }
+          }  // if ( result != VK_SUCCESS )
+
+          // Init struct infos_page_mgr_p2
+          err = infos_pm_init_prealloc( (struct infos_page_mgr*)p_pm, len_chunk_of_pages,
+              userdata, local_malloc );
+          if ( err ) {
+            fprintf( stderr, "Error occured in infos_pm_init_prealloc. (%s)\n", arr_emsg_txt[err] );
+            SPALL_END();
+            return err;
+          }
+        }  // if ( *p_malloc == 0 )
+
+        // We must've failed to init struct infos_page_mgr_p2 before this call
+        if ( !p_pm->al_vacancies.nr_active_blocks ) {
+          err = infos_pm_init_prealloc( (struct infos_page_mgr*)p_pm, len_chunk_of_pages,
+              userdata, local_malloc );
+          if ( err ) {
+            fprintf( stderr, "Error occured in infos_pm_init_prealloc. (%s)\n", arr_emsg_txt[err] );
+            SPALL_END();
+            return err;
+          }
+        }
+
+        // Check if there is enough space
+        struct range_u32 new_rent;
+        new_rent = infos_pm_rent_aligned( (struct infos_page_mgr*)p_pm, userdata, local_malloc,
+            _align_to_power_of_two(size_to_rqst, req_alignment),
+            req_alignment );
+        if ( is_range_u32_invalid(new_rent) ) {
+          continue;
+        }
+        p_vmm->arr_usages[heap_idx] += _align_to_power_of_two( size_to_rqst, req_alignment );
+
+        // Bind the buffer to *p_malloc
+        SPALL_BEGIN("bind_buf_mem");
+        result = vkBindBufferMemory( log_dev, vk_buf, *p_malloc, new_rent.start );
         SPALL_END();
-        if ( result != VK_SUCCESS ) {
-          fprintf( stderr, "[Carbonara] vkAllocateMemory failed. "
+        if( result != VK_SUCCESS ) {
+          fprintf( stderr, "[Carbonara] Could not bind buffer to malloc. "
               "'%s'\n", string_VkResult(result) );
+          err = infos_pm_return( (struct infos_page_mgr*)p_pm, userdata, local_malloc, new_rent );
+          if ( err ) {
+            fprintf( stderr, "[Carbonara] Could not return the rented pages!! "
+                "'%s'\n", arr_emsg_txt[err] );
+          } else {
+            p_vmm->arr_usages[heap_idx] -= _align_to_power_of_two( size_to_rqst, req_alignment );
+          }
           switch ( result ) {
             case VK_ERROR_OUT_OF_DEVICE_MEMORY:
               [[fallthrough]];
             case VK_ERROR_OUT_OF_HOST_MEMORY:
               SPALL_END();
               return emsg_out_of_memory;
-
-            case VK_ERROR_INVALID_EXTERNAL_HANDLE:
-              [[fallthrough]];
-            case VK_ERROR_INVALID_OPAQUE_CAPTURE_ADDRESS_KHR:
-              [[fallthrough]];
             case VK_ERROR_VALIDATION_FAILED:
               SPALL_END();
               return emsg_invalid_request;
-
             default:
               SPALL_END();
               return emsg_unknown;
           }
-        }
+        }  // if( result != VK_SUCCESS )
 
-        // Init struct infos_page_mgr_p2
-        err = infos_pm_init_prealloc( (struct infos_page_mgr*)p_pm, len_chunk_of_pages,
-            userdata, local_malloc );
-        if ( err ) {
-          fprintf( stderr, "Error occured in infos_pm_init_prealloc. (%s)\n", arr_emsg_txt[err] );
-          SPALL_END();
-          return err;
-        }
-      }
+        *p_malloc_range = new_rent;
+        SPALL_END();
+        return emsg_no_error;
+      }  // for ( uint_fast32_t malloc_idx = 0; malloc_idx < nr_elems_in_block; malloc_idx++ )
 
-      // We must've failed to init struct infos_page_mgr_p2 before this call
-      if ( !p_pm->al_vacancies.list.nr_nodes ) {
-        err = infos_pm_init_prealloc( (struct infos_page_mgr*)p_pm, len_chunk_of_pages,
-            userdata, local_malloc );
-        if ( err ) {
-          fprintf( stderr, "Error occured in infos_pm_init_prealloc. (%s)\n", arr_emsg_txt[err] );
-          SPALL_END();
-          return err;
-        }
-      }
-
-      // Check if there is enough space
-      struct range_u32 * p_rent;
-      p_rent = infos_pm_rent_aligned( (struct infos_page_mgr*)p_pm, userdata, local_malloc,
-          _align_to_power_of_two(size_to_req, req_alignment),
-          req_alignment );
-      if ( !p_rent ) {
-        continue;
-      }
-      p_vmm->arr_usages[heap_idx] += _align_to_power_of_two( size_to_req, req_alignment );
-
-      // Bind the buffer with *p_malloc
-      SPALL_BEGIN("bind_buf_mem");
-      result = vkBindBufferMemory( log_dev, vk_buf, *p_malloc, p_rent->start );
-      SPALL_END();
-      if( result != VK_SUCCESS ) {
-        fprintf( stderr, "[Carbonara] Could not bind buffer to malloc. "
-            "'%s'\n", string_VkResult(result) );
-        err = infos_pm_return( (struct infos_page_mgr*)p_pm, userdata, local_malloc,
-            p_rent->start );
-        if ( err ) {
-          fprintf( stderr, "[Carbonara] Could not return the rented pages!! "
-              "'%s'\n", arr_emsg_txt[err] );
-        } else {
-          p_vmm->arr_usages[heap_idx] -= _align_to_power_of_two( size_to_req, req_alignment );
-        }
-        switch ( result ) {
-          case VK_ERROR_OUT_OF_DEVICE_MEMORY:
-            [[fallthrough]];
-          case VK_ERROR_OUT_OF_HOST_MEMORY:
-            SPALL_END();
-            return emsg_out_of_memory;
-
-          case VK_ERROR_VALIDATION_FAILED:
-            SPALL_END();
-            return emsg_invalid_request;
-
-          default:
-            SPALL_END();
-            return emsg_unknown;
-        }
-      }
-
-      *pp_malloc_range = p_rent;
-      SPALL_END();
-      return 0;
-    }
+    }  // for ( uint_fast16_t local_block_idx = 0;
+       //     local_block_idx < nr_blocks_in_node; local_block_idx++, block_idx++ )
 
     if ( !m_node->next ) {
       // We need to create one more node
       err = infos_multi_al_grow( &p_vmm->mallocs, userdata, local_malloc,
           1, &type_idx,
-          true );
+          true, 0 );
       if ( err ) {
         fprintf( stderr, "Error occured in infos_multi_al_grow. (%s)\n", arr_emsg_txt[err] );
         SPALL_END();
@@ -641,7 +733,7 @@ enum err_msg ma_bind_buf_to_malloc(
       }
       err = infos_multi_al_grow( &p_vmm->page_mgrs, userdata, local_malloc,
           1, &type_idx,
-          true );
+          true, 0 );
       if ( err ) {
         fprintf( stderr, "Error occured in infos_multi_al_grow. (%s)\n", arr_emsg_txt[err] );
         SPALL_END();
@@ -651,17 +743,18 @@ enum err_msg ma_bind_buf_to_malloc(
       // We must've failed to grow page_mgrs
       err = infos_multi_al_grow( &p_vmm->page_mgrs, userdata, local_malloc,
           1, &type_idx,
-          true );
+          true, 0 );
       if ( err ) {
         fprintf( stderr, "Error occured in infos_multi_al_grow. (%s)\n", arr_emsg_txt[err] );
         SPALL_END();
         return err;
       }
     }
-
     m_node = m_node->next;
     p_node = p_node->next;
-  }
+  } while ( p_node );
+
+  return emsg_unknown;
 
 }
 
@@ -672,61 +765,90 @@ enum err_msg ma_report_vk_malloc_rel(
     void * restrict userdata,
     void * (*custom_malloc)(void * userdata, size_t alignment, size_t size),
     uint32_t type_idx,
-    struct range_u32 * p_malloc_range
+    struct range_u32 malloc_range
     )
 {
-  assume( p_malloc_range );
+  SPALL_BEGIN("report_vk_malloc_rel");
+
+  // Release every memory allocation
+  enum err_msg err;
 
   void * (*local_malloc)(void * userdata, size_t alignment, size_t size);
   local_malloc = custom_malloc ? custom_malloc : default_malloc;
 
-  enum err_msg err;
-
   uint32_t heap_idx = p_vmm->arr_heap_indices[type_idx];
 #if !defined( ARE_WE_SHIPPING_IT )
-  struct infos_singly_linked_list_node * m_node = &p_vmm->mallocs.lists[type_idx].head;
+  struct linked_list_of_lists_node * m_node = &p_vmm->mallocs.lists[type_idx].head;
 #endif
-  struct infos_singly_linked_list_node * p_node = &p_vmm->page_mgrs.lists[type_idx].head;
-  const uint32_t last_idx = 1 << p_vmm->mallocs.log2_nr_elems;
-  while(7) {
-    for ( uint32_t idx = 0; idx < last_idx; idx++ ) {
-      struct infos_page_mgr_p2 * p_pm = p_node->data + idx * sizeof(*p_pm);
-      if ( !p_pm->al_vacancies.list.nr_nodes ) {
+  struct linked_list_of_lists_node * p_node = &p_vmm->page_mgrs.lists[type_idx].head;
+  typeof(p_vmm->page_mgrs.arr_nr_active_blocks[0]) block_idx = 0;
+  const uint_fast16_t nr_elems_in_block = UINT32_C(1) << p_vmm->page_mgrs.log2_nr_elems;
+  do {  // while ( p_node )
+    constexpr uint_fast16_t nr_blocks_in_node = _arr_elem_cnt(p_node->arr_blocks);
+    for ( uint_fast16_t local_block_idx = 0;
+        local_block_idx < nr_blocks_in_node;
+        local_block_idx++, block_idx++ ) {
+      if ( block_idx >= p_vmm->mallocs.arr_nr_active_blocks[local_block_idx] ) {
+        SPALL_END();
         return emsg_no_such_entry;
       }
+      void * p_block = p_node->arr_blocks[local_block_idx];
 
-      auto length = get_range_len(*p_malloc_range);
-      err = infos_pm_return_via_ptr( (struct infos_page_mgr*)p_pm, userdata, local_malloc,
-          p_malloc_range );
+      for ( uint_fast32_t malloc_idx = 0; malloc_idx < nr_elems_in_block; malloc_idx++ ) {
+        struct infos_page_mgr_p2 * restrict p_pm = p_block + malloc_idx * sizeof(*p_pm);
 
-      switch ( err ) {
-        case emsg_no_such_entry:
-          continue;
-        case 0:
-          p_vmm->arr_usages[heap_idx] -= length;
+        //// We must've failed to init struct infos_page_mgr_p2 before this call
+        //if ( !p_pm->al_vacancies.nr_active_blocks ) {
+        //  err = infos_pm_init_prealloc( (struct infos_page_mgr*)p_pm, len_chunk_of_pages,
+        //      userdata, local_malloc );
+        //  if ( err ) {
+        //    fprintf( stderr, "Error occured in infos_pm_init_prealloc. (%s)\n", arr_emsg_txt[err] );
+        //    SPALL_END();
+        //    return err;
+        //  }
+        //}
+
+        auto length = get_range_len(malloc_range);
+        err = infos_pm_return( (struct infos_page_mgr*)p_pm, userdata, local_malloc, malloc_range );
+
+        switch ( err ) {
+          case emsg_no_such_entry:
+            continue;
+          case 0:
+            p_vmm->arr_usages[heap_idx] -= length;
 #if !defined( ARE_WE_SHIPPING_IT )
-          VkDeviceMemory * p_malloc = m_node->data + idx * sizeof(VkDeviceMemory);
-          assume( *p_malloc );
+            void * m_block = m_node->arr_blocks[local_block_idx];
+            VkDeviceMemory * restrict p_malloc = m_block + malloc_idx * sizeof(VkDeviceMemory);
+            assume( *p_malloc );
 #endif
-          [[fallthrough]];
-        case emsg_already_done:
-          [[fallthrough]];
-        case emsg_out_of_memory:
-          [[fallthrough]];
-        default:
-          return err;
-      }
-    }
+            [[fallthrough]];
+          case emsg_already_done:
+            [[fallthrough]];
+          case emsg_out_of_memory:
+            [[fallthrough]];
+          default:
+            SPALL_END();
+            return err;
+        }
+
+      }  // for ( uint_fast32_t malloc_idx = 0; malloc_idx < nr_elems_in_block; malloc_idx++ )
+
+    }  // for ( uint_fast16_t local_block_idx = 0;
+       //     local_block_idx < nr_blocks_in_node; local_block_idx++, block_idx++ )
 
     if ( !p_node->next ) {
+      SPALL_END();
       return emsg_no_such_entry;
     }
-
 #if !defined( ARE_WE_SHIPPING_IT )
     m_node = m_node->next;
 #endif
     p_node = p_node->next;
-  }
+  } while ( p_node );
+
+  SPALL_END();
+  return emsg_no_such_entry;
+
 }
 
 

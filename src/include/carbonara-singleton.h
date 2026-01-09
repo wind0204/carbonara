@@ -28,7 +28,7 @@ struct func_call_stack_element {
 struct carbonara {
   struct processor_map * proc_map;
   // struct infos_arr_list * job_arg_pool;
-  struct infos_arr_list * job_list;
+  struct infos_arr_list * job_list;  // contains cara_job_batch_desc_64
   memorable_arena_t * mem_arena;
   struct infos_stack * foremans_quit_stack;
   struct infos_bst * tree_of_times_to_act;

@@ -1,3 +1,4 @@
+#include "info_struct.h"
 #if !defined CARBONARA_JOB_H_
 # define CARBONARA_JOB_H_
 
@@ -119,7 +120,7 @@ constexpr size_t CARBONARA_MAX_NR_JOBS_IN_A_JOB_DESC_64 =
 
 
 //-------------------------------------------------------------------------------------------------
-void cara_init_job_list_node( void * data );
+void cara_init_job_list_node( struct infos_arr_list * p_al );
 
 //-------------------------------------------------------------------------------------------------
 struct cara_job_batch_desc_64 * cara_get_job( const struct ms_worker_info * worker_info );

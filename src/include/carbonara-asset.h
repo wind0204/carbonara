@@ -1,4 +1,5 @@
 #include "util-c_lang-basic.h"
+#include <assert.h>
 #if !defined CARBONARA_ASSET_H
 #define CARBONARA_ASSET_H
 
@@ -21,6 +22,20 @@ enum cara_tex_fmt : unsigned char {
 
 
 //-------------------------------------------------------------------------------------------------
+
+/**
+ * \brief distributed creation
+ */
+struct distr_cr {
+  alignas(CACHELINE_LEN)
+  void * dest;
+  void * src;
+  uint32_t res_id;
+  static_assert( alignof(uint32_t) >= alignof(atomic_uint_least8_t) );
+  atomic_uint_least8_t progress;
+  uint8_t res_type;
+};
+
 enum cara_img_id : uint32_t {
   // Albedo map
   ii_alb_stone = 0x000,
@@ -28,7 +43,11 @@ enum cara_img_id : uint32_t {
 };
 enum cara_io_job_type : uint32_t {
   // 2D Image
-  iojt_ld_albedo_map = 0x00,
+  iojt_ld_albedo_bc7_ml6_11_uc = 0x00,
+  iojt_ld_albedo_bc7_ml3_5_lz4,
+  iojt_ld_albedo_bc7_ml1_2_lz4,
+  iojt_ld_albedo_bc7_ml0_lz4,
+  iojt_ld_albedo_bc7_ml0_12_uc,  // TODO for prototype only
   // SPIR-V code
   iojt_ld_spv_frag = 0x40,
   iojt_ld_spv_vert,
@@ -40,8 +59,8 @@ struct img_load_job {
   SDL_AsyncIO * p_io;
   struct range_u32 * p_malloc_range;
   //uint32_t cur;  // Assign size+1 here when closing is done. XXX We don't really need it
-  uint8_t nr_miplvls;
-  uint8_t lowest_miplv;  // lowest_miplv = highest resolution
+  uint8_t nr_miplvls;  // TODO remove it, job type can tell you about it
+  uint8_t lowest_miplv;  // highest resolution TODO FIXME job type can tell you about it, remove it
   //uint32_t size;
 };
 // SPIR-V code

@@ -575,15 +575,15 @@ stream_more:;
 
 
                 if ( nr_ass_indices >=
-                    ((1 << al_ass_indices->log2_node_size) / sizeof(struct salumi_pack_ass_index)) *
-                    al_ass_indices->list.nr_nodes ) {
+                    ((1 << al_ass_indices->log2_block_size) / sizeof(struct salumi_pack_ass_index)) *
+                    al_ass_indices->nr_active_blocks ) {
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-value"
-                  infos_al_grow(al_ass_indices, NULL, NULL, 1, 0);
+                  infos_al_grow( al_ass_indices, nullptr, nullptr, nullptr, nullptr, 1, false, 0 );
 #pragma GCC diagnostic pop
                 }
 
-                struct salumi_pack_ass_index * ass_index = infos_al_get_elem(
+                struct salumi_pack_ass_index * ass_index = infos_al_get_elem_unsafe(
                     al_ass_indices, nr_ass_indices );
                 ass_index->asset_id = asset_id;
                 ass_index->offset = next_ass_offset;
@@ -741,20 +741,28 @@ stream_more:;
   if ( fseek(output_file, sizeof(header), SEEK_SET) != 0 ) {
     goto failed_to_fseek;
   }
-  for ( struct infos_singly_linked_list_node * node = &al_ass_indices->list.head; node; node = node->next ) {
-    uint32_t nr_elems;
-    if ( nr_ass_indices >= (1 << al_ass_indices->log2_node_size) / sizeof(struct salumi_pack_ass_index) ) {
-      nr_elems = (1 << al_ass_indices->log2_node_size) / sizeof(struct salumi_pack_ass_index);
-    } else {
-      nr_elems = nr_ass_indices;
-    }
+  struct linked_list_of_lists_node * node = &al_ass_indices->list.head;
+  while (-7) {
+    for ( unsigned int data_idx = 0; data_idx < _arr_elem_cnt(node->arr_blocks); data_idx++ ) {
+      if ( !node->arr_blocks[data_idx] ) {
+        goto out_of_nested_loop;
+      }
+      uint32_t nr_elems;
+      if ( nr_ass_indices >=
+          (1 << al_ass_indices->log2_block_size) / sizeof(struct salumi_pack_ass_index) ) {
+        nr_elems = (1 << al_ass_indices->log2_block_size) / sizeof(struct salumi_pack_ass_index);
+      } else {
+        nr_elems = nr_ass_indices;
+      }
 
-    if ( fwrite(node->data, sizeof(struct salumi_pack_ass_index), nr_elems, output_file) != nr_elems ) {
-      goto failed_to_write;
+      if ( fwrite(node->arr_blocks, sizeof(struct salumi_pack_ass_index), nr_elems, output_file) !=
+          nr_elems ) {
+        goto failed_to_write;
+      }
+      nr_ass_indices -= nr_elems;
     }
-    nr_ass_indices -= nr_elems;
   }
-
+out_of_nested_loop:
 
   fclose(csv_file);
   fclose(output_file);

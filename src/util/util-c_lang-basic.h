@@ -221,7 +221,11 @@ uint64_t init_util_c_lang(void);
   } while(0)
 
 #if defined(ARE_WE_SHIPPING_IT)
-  #define assume(expr) __builtin_assume(expr)
+  #define assume(expr)                                \
+    _Pragma ( "GCC diagnostic push" )                 \
+    _Pragma ( "GCC diagnostic ignored \"-Wassume\"" ) \
+    __builtin_assume(expr)                            \
+    _Pragma ( "GCC diagnostic pop" )
 #else
   #define assume(expr) always_assert(expr)
 #endif
@@ -232,6 +236,14 @@ uint64_t init_util_c_lang(void);
  */
 #define _reiterate_under_power_of_two(growing_index, power_of_two) \
   ( (growing_index) & ((power_of_two)-1) )
+
+//-------------------------------------------------------------------------------------------------
+/**
+ * \brief Obtain an increased index that repeats iteration under a power of two
+ * \a log2_power_of_two log2 of the power of two
+ */
+#define _reiterate_under_power_of_two_l2(growing_index, log2_power_of_two) \
+  ( (growing_index) & ~(UINT_MAX_((growing_index)) << (log2_power_of_two)) )
 
 //-------------------------------------------------------------------------------------------------
 /**
@@ -357,8 +369,9 @@ uint64_t init_util_c_lang(void);
  * \brief Align the given length to the specified \a power_of_two, rounding up.
  * \a n_to_align must be greater than 0 and \a power_of_two must be a power of two.
  */
-#define _align_to_power_of_two(n_to_align, power_of_two) \
-  ( ((n_to_align)+(power_of_two)-(typeof(n_to_align))1) & ~((power_of_two)-(typeof(n_to_align))1) )
+#define _align_to_power_of_two(n_to_align, power_of_two)  \
+  ( ((n_to_align)+(power_of_two)-(typeof(n_to_align))1) & \
+    ~((power_of_two)-(typeof(n_to_align))1) )
 
 //-------------------------------------------------------------------------------------------------
 /**
@@ -367,6 +380,24 @@ uint64_t init_util_c_lang(void);
  */
 #define _align_to_power_of_two_downward(n_to_align, power_of_two) \
   ( (n_to_align) & ~((power_of_two)-1) )
+
+//-------------------------------------------------------------------------------------------------
+/**
+ * \brief Align the given length to the specified \a log2_power_of_two, rounding up.
+ * \a n_to_align must be greater than 0 and \a log2_power_of_two must be a log2 of a power of two.
+ */
+#define _align_to_power_of_two_l2(n_to_align, log2_power_of_two)                        \
+  ( ((n_to_align)+((typeof(n_to_align))1<<(log2_power_of_two))-(typeof(n_to_align))1) & \
+    (UINT_MAX_(n_to_align) << (log2_power_of_two)) )
+
+//-------------------------------------------------------------------------------------------------
+/**
+ * \brief Align the given length to the specified \a log2_power_of_two, rounding down.
+ * \a n_to_align must be greater than 0 and \a log2_power_of_two must be a log2 of a power of two
+ */
+#define _align_to_power_of_two_downward_l2(n_to_align, log2_power_of_two) \
+  ( (n_to_align) & (UINT_MAX_(n_to_align) << (log2_power_of_two)) )
+
 
 
 //-------------------------------------------------------------------------------------------------

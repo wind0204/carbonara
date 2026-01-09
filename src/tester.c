@@ -280,7 +280,7 @@ int main( int argc, char * argv[] )
     unsigned int arr[] = { 5, 2, 4, 7, 9, 8, 5, 1 };
     enum err_msg err;
     for ( unsigned int i = 0; i < _arr_elem_cnt(arr); i++ ) {
-      err = infos_hashtable_insert_u32( hashtable, i+1, arr[i] );
+      err = infos_hashtable_insert_u32( hashtable, nullptr, nullptr, i+1, arr[i] );
       if ( err ) {
         fprintf( stderr, "Error: %s\n", arr_emsg_txt[err] );
         return test_nr;

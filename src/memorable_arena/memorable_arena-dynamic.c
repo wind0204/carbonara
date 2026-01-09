@@ -136,8 +136,6 @@ void ma_free_simple_ptr( memorable_arena_t * restrict arena, uint8_t idx_user, v
           remember_to_free_it_later(sub_arena, idx_user, offset);
 
         } else {
-          // When succeeded to lock the sub_arena
-
           // Release the string
           //uint32_t nr_chunks_released;
           enum err_msg err = infos_smm_return_chunks( &sub_arena->smm,
@@ -442,8 +440,27 @@ void * ma_realloc_aligned( struct ma_sub_arena * sub_arena,
     )
 {
   void * new_alloc = infos_smm_realloc_aligned_chunks( &sub_arena->smm, userdata, custom_malloc,
-      orig_ptr, new_length, alignment, LOG2_CACHELINE_LEN );
+      orig_ptr, new_length, max( alignment, CACHELINE_LEN ), LOG2_CACHELINE_LEN );
   return new_alloc;
+}
+
+
+//-------------------------------------------------------------------------------------------------
+size_t ma_get_size( memorable_arena_t * restrict arena, void * restrict ptr )
+{
+  assume( ptr );
+
+  // Look for the right sub_arena
+  struct ma_sub_arena * restrict sub_arena;
+  for ( sub_arena = arena->head; sub_arena; sub_arena = sub_arena->next ) {
+    if ( sub_arena->smm.data <= ptr &&
+        ptr <= (sub_arena->smm.data + sub_arena->smm.data_len * CACHELINE_LEN) ) {
+      auto offset = ptr2ui((ptr) - sub_arena->smm.data) / CACHELINE_LEN;
+      return infos_smm_get_size( &sub_arena->smm, offset );
+    }
+  }
+
+  return 0;
 }
 
 

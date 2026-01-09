@@ -25,6 +25,17 @@
 constexpr _typeof_member(memorable_arena_t, id) ID_HEAD_OF_THE_POOL =
   ( 'M' << (4-1)*8 | 'A' << (4-2)*8 | 'n' << (4-3)*8 | 'a' << (4-4)*8 );
 
+//-------------------------------------------------------------------------------------------------
+/**
+ * \brief Create a new struct ma_sub_arena
+ * \return A pointer to a new struct ma_sub_arena or nullptr; `errno` is set to an enum err_msg when
+ *          the return value is nullptr
+ */
+static struct ma_sub_arena * create_new_node(
+    uint32_t sub_arena_len,
+    uint16_t idx_sub_arena,
+    uint64_t proc_info,
+    typeof(((memorable_arena_t*)0)->nr_users) nr_users );
 
 //-------------------------------------------------------------------------------------------------
 enum err_msg ma_init_arena(
@@ -54,6 +65,8 @@ enum err_msg ma_init_arena(
   mallopt( M_MMAP_THRESHOLD, 1024 * 1024 * 32 );
 #if !defined( ARE_WE_SHIPPING_IT )
   mallopt( M_CHECK_ACTION, 0b11 );
+#else
+  mallopt( M_CHECK_ACTION, 0b00 );
 #endif
 
   uint_fast16_t nr_added_pools = ma_add_sub_arena( proc_info, p_arena, sub_arena_len, 1 );
@@ -128,7 +141,7 @@ static struct ma_sub_arena * create_new_node(
     cur_len_sub_arena = cur_len_sub_arena - page_sizes[x86_proc_info.large_page_size_class];
     if ( cur_len_sub_arena < sub_arena_len - sub_arena_len/4 ) {
       errno = emsg_out_of_memory;
-      return 0;
+      return nullptr;
     }
   }
   madvise( p_alloc, cur_len_sub_arena, MADV_HUGEPAGE );
@@ -174,6 +187,11 @@ static struct ma_sub_arena * create_new_node(
       0,
       0
       );
+  if ( !sub_arena->arr_lrm ) {
+    fprintf( stderr, "[MA] Out of memory\n" );
+    errno = emsg_out_of_memory;
+    return nullptr;
+  }
   for ( int i = 0; i < nr_users; i++ ) {
     struct ma_mem_release_recorder * mrr = &sub_arena->arr_lrm[i];
     atomic_init( &mrr->lock, 0 );
@@ -267,7 +285,7 @@ enum err_msg ma_remove_sub_arena( memorable_arena_t * arena, uint8_t idx_sub_are
   while(-7) {
     next = cur->next;
 
-    if ( cur->smm.total_space_left != cur->capacity >> LOG2_CACHELINE_LEN ) {
+    if ( cur->smm.total_space_left != cur->capacity ) {
       return emsg_get_rid_of_the_old_data_first;
     }
 

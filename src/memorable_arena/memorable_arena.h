@@ -13,7 +13,7 @@
 
 
 //-------------------------------------------------------------------------------------------------
-#define MA_MIN_LEN_CACHE_LINE 32
+#define MA_MIN_LEN_CACHE_LINE 64
 #if CACHELINE_LEN < MA_MIN_LEN_CACHE_LINE
   #error CACHELINE_LEN is below MA_MIN_LEN_CACHE_LINE
 #endif
@@ -44,6 +44,8 @@ struct ma_sub_arena {
   struct ma_sub_arena * restrict prev;
   uint32_t capacity;  ///< The maximum capacity in units of cache-line sized chunks.
   uint16_t idx_sub_arena;  ///< The index number of the sub_arena itself, starts from 1.
+  uint16_t userdata;  // This field is not used/touched by memorable_arena
+  void * padding[4];  // This field is not used/touched by memorable_arena
 
   // 👆 Static
 
@@ -118,9 +120,11 @@ enum err_msg ma_init_arena(
 //-------------------------------------------------------------------------------------------------
 /**
  * \brief Add new structs of ma_sub_arena to the list until the index of the tail is
- * \warning The new sub-arena pools will be locked when they've been created; You should unlock it.
- * \a desired_last_idx of the arena pointed by ptr_arena after the operation
- * \return The number of the new pools added.
+ * \warning The new sub-arena pools will be locked with a UINT_MAX.+ value when they've been created;
+ *            You should unlock it.
+ * \a desired_last_idx The serial no. of the last sub arena pointed by ptr_arena after the operation
+ * \return The number of the new pools added. Even when the return value is greater than 0 `errno`
+ *          will be set to an enum err_msg when it has failed to reach \a desired_last_idx
  *
  * errno enum err_msg
  *     err_msg_corrupted_data_detected
@@ -192,6 +196,13 @@ void * ma_realloc( struct ma_sub_arena * sub_arena,
     void * orig_ptr,
     uint64_t new_length
     );
+
+//-------------------------------------------------------------------------------------------------
+/**
+ * \brief Get the size of the memory allocation in bytes
+ * \return 0 if failed to find the allocation associated with \a orig_ptr
+ */
+size_t ma_get_size( memorable_arena_t * restrict arena, void * restrict ptr );
 
 //-------------------------------------------------------------------------------------------------
 /**
@@ -297,7 +308,7 @@ struct ma_vk_mem_mgr {
   void * p_staging_buf;         // ptr to a mapped memory region for the staging buffer
   VkDeviceSize * arr_usages;    // array of heap_cnt VkDeviceSize
   VkDeviceSize * arr_sizes;     // array of heap_cnt VkDeviceSize
-  //uint32_t * arr_idx_next_unoccupied_elem;          // array of heap_cnt uint32_t for managing mal
+  //uint32_t * arr_idx_next_unoccupied_elem;        // array of heap_cnt uint32_t for managing mal
   uint32_t * arr_heap_indices;  // array of type_cnt uint32_t
   VkMemoryPropertyFlags * arr_mem_property_flags;   // array of type_cnt VkMemoryPropertyFlags
   static_assert( alignof(void*) >= alignof(VkDeviceMemory) );
@@ -312,7 +323,7 @@ struct ma_vk_mem_mgr {
   struct infos_multi_arr_list mallocs;  ///< One array list per memory type. It stores
                                         ///< VkDeviceMemory objects for paging, each VkDeviceMemory
                                         ///< object is one single "chunk of pages"
-  struct infos_page_mgr uploads;        // Bookkeeper of staging buffer allocations
+  struct infos_page_mgr uploads;  // Bookkeeper of staging buffer allocations
   uint32_t heap_cnt;
   uint32_t type_cnt;
   uint32_t len_staging_buf;
@@ -383,7 +394,7 @@ enum err_msg ma_bind_img_to_malloc(
     uint32_t type_idx,
     VkDeviceSize req_size,  // Required allocation size in bytes
     VkDeviceSize req_alignment,  // Required allocation alignment in bytes
-    struct range_u32 ** pp_malloc_range
+    struct range_u32 * p_malloc_range
     );
 enum err_msg ma_bind_buf_to_malloc(
     struct ma_vk_mem_mgr * restrict p_vmm,
@@ -394,7 +405,7 @@ enum err_msg ma_bind_buf_to_malloc(
     uint32_t type_idx,
     VkDeviceSize req_size,  // Required allocation size in bytes
     VkDeviceSize req_alignment,  // Required allocation alignment in bytes
-    struct range_u32 ** pp_malloc_range
+    struct range_u32 * p_malloc_range
     );
 
 //-------------------------------------------------------------------------------------------------
@@ -403,7 +414,7 @@ enum err_msg ma_report_vk_malloc_rel(
     void * restrict userdata,
     void * (*custom_malloc)(void * userdata, size_t alignment, size_t size),
     uint32_t type_idx,
-    struct range_u32 * p_malloc_range
+    struct range_u32 malloc_range
     );
 
 //-------------------------------------------------------------------------------------------------

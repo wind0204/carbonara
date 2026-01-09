@@ -165,7 +165,10 @@ uint_fast8_t infos_gmm_grow( struct infos_growing_mem_manager * restrict manager
   local_malloc = custom_malloc ? custom_malloc : default_malloc;
 
   if ( growth ) {
-    struct infos_singly_linked_list_node * tail = infos_ll_get_last_node(&manager->llf_smm.head);
+    struct infos_singly_linked_list_node * tail = &manager->llf_smm.head;
+    while ( tail->next ) {
+      tail = tail->next;
+    }
     tail->next = local_malloc( userdata, alignof(max_align_t),
         growth + sizeof(struct infos_simple_mem_mgr) +
         sizeof(struct infos_singly_linked_list_node) );
