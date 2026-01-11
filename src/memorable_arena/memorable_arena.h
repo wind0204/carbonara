@@ -338,6 +338,11 @@ constexpr size_t mallocs_node_size = 1024ul * 1024 * 1024 * 8 / len_chunk_of_pag
 constexpr size_t page_mgrs_node_size = mallocs_node_size / sizeof(VkDeviceMemory) *
   sizeof(struct infos_page_mgr_p2);
 
+struct vk_mbind_info {
+  VkDeviceMemory malloc;
+  struct range_u32 range;
+};
+
 //-------------------------------------------------------------------------------------------------
 /**
  * \brief Start managing VkDeviceMemory objects
@@ -394,7 +399,7 @@ enum err_msg ma_bind_img_to_malloc(
     uint32_t type_idx,
     VkDeviceSize req_size,  // Required allocation size in bytes
     VkDeviceSize req_alignment,  // Required allocation alignment in bytes
-    struct range_u32 * p_malloc_range
+    struct vk_mbind_info * p_mbind_info
     );
 enum err_msg ma_bind_buf_to_malloc(
     struct ma_vk_mem_mgr * restrict p_vmm,
@@ -405,7 +410,7 @@ enum err_msg ma_bind_buf_to_malloc(
     uint32_t type_idx,
     VkDeviceSize req_size,  // Required allocation size in bytes
     VkDeviceSize req_alignment,  // Required allocation alignment in bytes
-    struct range_u32 * p_malloc_range
+    struct vk_mbind_info * p_mbind_info
     );
 
 //-------------------------------------------------------------------------------------------------
@@ -414,7 +419,7 @@ enum err_msg ma_report_vk_malloc_rel(
     void * restrict userdata,
     void * (*custom_malloc)(void * userdata, size_t alignment, size_t size),
     uint32_t type_idx,
-    struct range_u32 malloc_range
+    struct vk_mbind_info malloc_range
     );
 
 //-------------------------------------------------------------------------------------------------

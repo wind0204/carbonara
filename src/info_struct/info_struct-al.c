@@ -56,6 +56,7 @@ struct infos_arr_list * infos_al_create(
 
   assume( _is_power_of_two(node_size) );
   p_al->log2_block_size = get_log2( node_size );
+  assume( _is_power_of_two( elem_size ) );
   p_al->log2_elem_size = 31 - _lzcnt_u32( elem_size );
   p_al->log2_nr_elems = p_al->log2_block_size - p_al->log2_elem_size;
 
@@ -91,6 +92,7 @@ struct infos_arr_list * infos_al_create_prealloc( struct infos_arr_list * restri
 
   assume( _is_power_of_two(node_size) );
   p_al->log2_block_size = get_log2( node_size );
+  assume( _is_power_of_two( elem_size ) );
   p_al->log2_elem_size = 31 - _lzcnt_u32( elem_size );
   p_al->log2_nr_elems = p_al->log2_block_size - p_al->log2_elem_size;
 

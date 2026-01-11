@@ -41,7 +41,7 @@ set( SDL_LIBC ON CACHE BOOL "" FORCE )  # Use the C libraries that are globally 
 set( SDL_TESTS OFF CACHE INTERNAL "" )
  set( SDL_TEST_LIBRARY OFF CACHE INTERNAL "" )
 
-# Disable subsystems we don't use
+# Disable the subsystems we don't use
 set( SDL_GPU OFF CACHE INTERNAL "" )
 set( SDL_RENDER OFF CACHE INTERNAL "" )
 set( SDL_CAMERA OFF CACHE INTERNAL "" )

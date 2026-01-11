@@ -1,3 +1,4 @@
+#include <stdatomic.h>
 #if !defined SALAMI_GRAPHICS_H_
 #define SALAMI_GRAPHICS_H_
 
@@ -18,8 +19,8 @@
 //-------------------------------------------------------------------------------------------------
 
 // WSVGA
-constexpr unsigned int small_win_width = 1024;
-constexpr unsigned int small_win_height = 576;  // WSVGA
+constexpr unsigned int small_win_width = 384;
+constexpr unsigned int small_win_height = 240;  // WQVGA
 
 // One meter in game coordinates
 constexpr float cara_1m = 1.0 / 2;
@@ -33,10 +34,10 @@ constexpr float cara_1m_over_256 = 1.0 / 2 / 256;
 // Two frames in flight, two sets of command pools?
 constexpr unsigned int cara_max_nr_fif = 2;
 // Swap the command pool for each batch of vkCmdCopy.+ commands
-constexpr unsigned int nr_trans_cmd_pool_sets =
-  _arr_elem_cnt(
-      _typeof_member(struct cara_io_worker, nr_vram_jobs_to_get_done_and_nr_vram_jobs_done)
-      );
+constexpr unsigned int nr_trans_cmd_pool_sets = 2;
+  //_arr_elem_cnt(
+  //    _typeof_member(struct cara_io_worker, nr_vram_jobs_to_get_done)
+  //    );
 
 // Granularity of the length of framebuffers' sides and swapchain images' sides used when expanding
 constexpr unsigned int framebuf_dims_granularity = 16;
@@ -133,6 +134,8 @@ union win_dims {
     uint16_t height;
   } parts;
   uint32_t whole;
+  atomic_uint_least32_t atomic_whole;
+  static_assert( sizeof(atomic_uint_least32_t) == sizeof(uint32_t) );
 };
 
 typedef uint8_t cara_renderer_flag_bits_t;
@@ -163,15 +166,16 @@ struct cara_vk_renderer {
   void * spv_swapchain_frag;
   void * spv_mcsdf_font_vert;
   void * spv_mcsdf_font_frag;
-  struct range_u32 mrange_vbuf;  // Memory allocation range in the staging buffer
-  struct range_u32 mrange_ibuf;  // Memory allocation range in the staging buffer
-  struct range_u32 mrange_albmaps;  // Memory allocation range in the staging buffer
-  struct range_u32 mrange_zbuf_and_cbuf[cara_max_nr_fif][2];  ///> Memory allocation ranges in the
+  // TODO mrange-> mbi
+  struct vk_mbind_info mbi_vbuf;  // Memory allocation range in the staging buffer
+  struct vk_mbind_info mbi_ibuf;  // Memory allocation range in the staging buffer
+  struct vk_mbind_info mbi_albmaps;  // Memory allocation range in the staging buffer
+  struct vk_mbind_info mbi_zbuf_n_cbuf[cara_max_nr_fif][2];  ///> Memory allocation ranges in the
                                                               ///>  staging buffer
   SDL_Window * window;
   VkImage * arr_swapchain_imgs;
   VkImageView * arr_swapchain_iv;
-  VkSemaphore * arr_sc_present_semaphores;  // One binary semaphore per swapchain img
+  VkSemaphore * arr_sc_present_semphos;  // One binary semaphore per swapchain img
   static_assert( alignof(void*) >= alignof(struct ma_vk_mem_mgr) );
   struct ma_vk_mem_mgr vmm;
   static_assert( alignof(struct ma_vk_mem_mgr) >= alignof(struct infos_arr_list) );
@@ -200,7 +204,7 @@ struct cara_vk_renderer {
   VkDescriptorSetLayout dsl_mcsdf_font;
   VkDescriptorPool descriptor_pool;
   VkDescriptorSet ds_main_render;
-  VkDescriptorSet ds_cp2sc;
+  VkDescriptorSet ds_cp2sc[cara_max_nr_fif];
   VkDescriptorSet ds_mcsdf_font;
   VkPipelineLayout pll_z_only;
   VkPipelineLayout pll_main_render;
@@ -219,19 +223,22 @@ struct cara_vk_renderer {
   VkShaderModule sm_mcsdf_font_vert;
   VkShaderModule sm_mcsdf_font_frag;
 
+  VkCommandPool dummy_pool[cara_max_nr_fif];
+  VkCommandBuffer dummy_cmdbuf[cara_max_nr_fif];
   VkSurfaceKHR presentation_surface;
-  VkSemaphore arr_semaphore_tr[cara_max_nr_fif];  // a timeline semaphore for transfer
-  VkSemaphore arr_semaphore_gr[cara_max_nr_fif];   // a timeline semaphore for graphics
-  VkSemaphore arr_sc_acquire_semaphores[cara_max_nr_fif];  // binary semaphores
+  VkSemaphore arr_semphos_tr[cara_max_nr_fif];  // a timeline semaphore for transfer
+  VkSemaphore arr_semphos_gr[cara_max_nr_fif];   // a timeline semaphore for graphics
+  VkSemaphore arr_sc_acquire_semphos[cara_max_nr_fif];  // binary semaphores
   VkQueue graphics_q;  ///< WARNING This queue can be shared for other tasks
   VkQueue transfer_q;  ///< WARNING This queue can be shared for other tasks
-  VkQueue loader_q;  ///< WARNING A queue for asset loading; This queue can be shared for other tasks
+  VkQueue loader_q;  ///< WARNING A queue for asset loading; It can be same with another queue
   VkQueue compute_q;   ///< WARNING This queue can be shared for other tasks
   static_assert( alignof(VkQueue) >= alignof(struct graphics_cmd_bufs) );
   struct graphics_cmd_bufs arr_graphics_cmdbuf_sets[cara_max_nr_fif];
   static_assert( alignof(struct graphics_cmd_bufs) >= alignof(struct trans_cmd_bufs) );
-  struct trans_cmd_bufs arr_trans_cmdbuf_sets[nr_trans_cmd_pool_sets + 1];  // The last one's graphics
-                                               // The ones before the last one are for asset loading
+  struct trans_cmd_bufs arr_trans_cmdbuf_sets[nr_trans_cmd_pool_sets + cara_max_nr_fif];  //\
+                                      // The last cara_max_nr_fif sets are for general graphics work
+                                      // The first few are for asset loading
   static_assert( alignof(struct trans_cmd_bufs) >= alignof(VkDevice) );
   VkDevice log_dev;  // A logical device. #pointer-size-aligned
   VkInstance vk_instance;  // #pointer-size-aligned
@@ -249,7 +256,8 @@ struct cara_vk_renderer {
   uint32_t loader_q_fam_idx;
   uint32_t compute_q_fam_idx;
   uint32_t nr_old_swapchains;  // It tells how many slots in `old_swapchains` are being used.
-  uint32_t frame_id;  // the frame id of the 1st frame rendered will most likely be 1.
+  atomic_uint_least32_t frame_id;  // the frame id of the 1st frame rendered will be cara_max_nr_fif.
+  static_assert( sizeof(atomic_uint_least32_t) == sizeof(uint32_t) );
   float max_anisotropy;
   union win_dims win_size;  ///< The current dimensions of the window, it can be different from the
                             ///<  the framebuffers and swapchain images. See dims_swapchain_imgs
@@ -269,11 +277,23 @@ struct cara_vk_renderer {
 };
 
 struct dead_swapchain {
+  struct vk_mbind_info arr_mbi_zbuf_n_cbuf[cara_max_nr_fif][2];
+  static_assert( alignof(struct vk_mbind_info) >= alignof(VkImage) );
+  VkImage arr_zbuf_n_cbuf[cara_max_nr_fif][2];
+  static_assert( alignof(VkImage) >= alignof(VkImageView) );
+  VkImageView arr_zbuf_n_cbuf_iv[cara_max_nr_fif][2];
+  static_assert( alignof(VkImageView) >= alignof(VkFramebuffer) );
+  VkFramebuffer arr_framebuffers[cara_max_nr_fif][cara_nr_renderpasses];
+  static_assert( alignof(VkFramebuffer) >= alignof(VkSwapchainKHR) );
   VkSwapchainKHR swapchain;
   static_assert( alignof(VkSwapchainKHR) >=
-      alignof(_typeof_member(struct cara_vk_renderer, frame_id)) );
-  _typeof_member(struct cara_vk_renderer, frame_id) destruct_time;
+      alignof(_typeof_member(struct cara_vk_renderer, frame_id)) &&
+      alignof(uint32_t) == alignof(_typeof_member(struct cara_vk_renderer, frame_id)) );
+  uint32_t mtype[cara_max_nr_fif][2];
+  uint32_t destruct_time;
 };
+static_assert( _sizeof_member(struct dead_swapchain, destruct_time) ==
+    _sizeof_member(struct cara_vk_renderer, frame_id) );
 
 extern struct cara_vk_renderer cara_vk;
 extern thread_local VkAllocationCallbacks vk_alloc_callbacks;
@@ -324,7 +344,8 @@ enum err_msg create_1st_renderpass_and_framebuffer( struct cara_vk_renderer * re
 /*
  * \brief Create a VkRenderPass and a VkFramebuffer
  */
-enum err_msg expand_swapchain_and_framebuffer( struct cara_vk_renderer * renderer );
+enum err_msg expand_swapchain_and_framebuffer( struct cara_vk_renderer * renderer,
+    union win_dims cur_dims );
 
 //-------------------------------------------------------------------------------------------------
 /*

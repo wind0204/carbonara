@@ -373,7 +373,7 @@ enum err_msg ma_bind_img_to_malloc(
     uint32_t type_idx,
     VkDeviceSize req_size,  // Required allocation size in bytes
     VkDeviceSize req_alignment,  // Required allocation alignment in bytes
-    struct range_u32 * p_malloc_range
+    struct vk_mbind_info * p_mbind_info
     )
 {
   SPALL_BEGIN("bind_img_to_m");
@@ -516,7 +516,8 @@ enum err_msg ma_bind_img_to_malloc(
           }
         }  // if( result != VK_SUCCESS )
 
-        *p_malloc_range = new_rent;
+        p_mbind_info->range = new_rent;
+        p_mbind_info->malloc = *p_malloc;
         SPALL_END();
         return emsg_no_error;
       }  // for ( uint_fast32_t malloc_idx = 0; malloc_idx < nr_elems_in_block; malloc_idx++ )
@@ -570,7 +571,7 @@ enum err_msg ma_bind_buf_to_malloc(
     uint32_t type_idx,
     VkDeviceSize req_size,  // Required allocation size in bytes
     VkDeviceSize req_alignment,  // Required allocation alignment in bytes
-    struct range_u32 * p_malloc_range
+    struct vk_mbind_info * p_mbind_info
     )
 {
   SPALL_BEGIN("bind_buf_to_m");
@@ -713,7 +714,8 @@ enum err_msg ma_bind_buf_to_malloc(
           }
         }  // if( result != VK_SUCCESS )
 
-        *p_malloc_range = new_rent;
+        p_mbind_info->range = new_rent;
+        p_mbind_info->malloc = *p_malloc;
         SPALL_END();
         return emsg_no_error;
       }  // for ( uint_fast32_t malloc_idx = 0; malloc_idx < nr_elems_in_block; malloc_idx++ )
@@ -765,7 +767,7 @@ enum err_msg ma_report_vk_malloc_rel(
     void * restrict userdata,
     void * (*custom_malloc)(void * userdata, size_t alignment, size_t size),
     uint32_t type_idx,
-    struct range_u32 malloc_range
+    struct vk_mbind_info mbind_info
     )
 {
   SPALL_BEGIN("report_vk_malloc_rel");
@@ -777,9 +779,7 @@ enum err_msg ma_report_vk_malloc_rel(
   local_malloc = custom_malloc ? custom_malloc : default_malloc;
 
   uint32_t heap_idx = p_vmm->arr_heap_indices[type_idx];
-#if !defined( ARE_WE_SHIPPING_IT )
   struct linked_list_of_lists_node * m_node = &p_vmm->mallocs.lists[type_idx].head;
-#endif
   struct linked_list_of_lists_node * p_node = &p_vmm->page_mgrs.lists[type_idx].head;
   typeof(p_vmm->page_mgrs.arr_nr_active_blocks[0]) block_idx = 0;
   const uint_fast16_t nr_elems_in_block = UINT32_C(1) << p_vmm->page_mgrs.log2_nr_elems;
@@ -793,6 +793,7 @@ enum err_msg ma_report_vk_malloc_rel(
         return emsg_no_such_entry;
       }
       void * p_block = p_node->arr_blocks[local_block_idx];
+      void * m_block = m_node->arr_blocks[local_block_idx];
 
       for ( uint_fast32_t malloc_idx = 0; malloc_idx < nr_elems_in_block; malloc_idx++ ) {
         struct infos_page_mgr_p2 * restrict p_pm = p_block + malloc_idx * sizeof(*p_pm);
@@ -808,19 +809,20 @@ enum err_msg ma_report_vk_malloc_rel(
         //  }
         //}
 
-        auto length = get_range_len(malloc_range);
-        err = infos_pm_return( (struct infos_page_mgr*)p_pm, userdata, local_malloc, malloc_range );
+        VkDeviceMemory * restrict p_malloc = m_block + malloc_idx * sizeof(VkDeviceMemory);
+        if ( mbind_info.malloc != *p_malloc ) {
+          continue;
+        }
+        auto length = get_range_len(mbind_info.range);
+        err = infos_pm_return( (struct infos_page_mgr*)p_pm, userdata, local_malloc,
+            mbind_info.range );
 
         switch ( err ) {
           case emsg_no_such_entry:
             continue;
           case 0:
             p_vmm->arr_usages[heap_idx] -= length;
-#if !defined( ARE_WE_SHIPPING_IT )
-            void * m_block = m_node->arr_blocks[local_block_idx];
-            VkDeviceMemory * restrict p_malloc = m_block + malloc_idx * sizeof(VkDeviceMemory);
             assume( *p_malloc );
-#endif
             [[fallthrough]];
           case emsg_already_done:
             [[fallthrough]];
@@ -840,9 +842,7 @@ enum err_msg ma_report_vk_malloc_rel(
       SPALL_END();
       return emsg_no_such_entry;
     }
-#if !defined( ARE_WE_SHIPPING_IT )
     m_node = m_node->next;
-#endif
     p_node = p_node->next;
   } while ( p_node );
 
@@ -866,8 +866,8 @@ uint32_t ma_pick_best_mtype(
   // preferred_props + required_props + !tolerable_props
   for ( type_idx = 0; type_idx < p_vmm->type_cnt; type_idx++ ) {
     if ( req->memoryTypeBits & (1 << type_idx) ) {
-      if ( (p_vmm->arr_mem_property_flags[type_idx] & preferred_props) &&
-          (p_vmm->arr_mem_property_flags[type_idx] & required_props) &&
+      if ( (!preferred_props || p_vmm->arr_mem_property_flags[type_idx] & preferred_props) &&
+          (!required_props || p_vmm->arr_mem_property_flags[type_idx] & required_props) &&
           !(p_vmm->arr_mem_property_flags[type_idx] & tolerable_props) ) {
         if ( p_vmm->arr_usages[p_vmm->arr_heap_indices[type_idx]] + req->size <=
             p_vmm->arr_sizes[p_vmm->arr_heap_indices[type_idx]] ) {
@@ -882,7 +882,7 @@ uint32_t ma_pick_best_mtype(
   for ( type_idx = 0; type_idx < p_vmm->type_cnt; type_idx++ ) {
     if ( req->memoryTypeBits & (1 << type_idx) ) {
       if ( !(p_vmm->arr_mem_property_flags[type_idx] & preferred_props) &&
-          (p_vmm->arr_mem_property_flags[type_idx] & required_props) &&
+          (!required_props || p_vmm->arr_mem_property_flags[type_idx] & required_props) &&
           !(p_vmm->arr_mem_property_flags[type_idx] & tolerable_props) ) {
         if ( p_vmm->arr_usages[p_vmm->arr_heap_indices[type_idx]] + req->size <=
             p_vmm->arr_sizes[p_vmm->arr_heap_indices[type_idx]] ) {
@@ -896,8 +896,8 @@ uint32_t ma_pick_best_mtype(
   // preferred_props + required_props + tolerable_props
   for ( type_idx = 0; type_idx < p_vmm->type_cnt; type_idx++ ) {
     if ( req->memoryTypeBits & (1 << type_idx) ) {
-      if ( (p_vmm->arr_mem_property_flags[type_idx] & preferred_props) &&
-          (p_vmm->arr_mem_property_flags[type_idx] & required_props) &&
+      if ( (!preferred_props || p_vmm->arr_mem_property_flags[type_idx] & preferred_props) &&
+          (!required_props || p_vmm->arr_mem_property_flags[type_idx] & required_props) &&
           (p_vmm->arr_mem_property_flags[type_idx] & tolerable_props) ) {
         if ( p_vmm->arr_usages[p_vmm->arr_heap_indices[type_idx]] + req->size <=
             p_vmm->arr_sizes[p_vmm->arr_heap_indices[type_idx]] ) {
@@ -912,7 +912,7 @@ uint32_t ma_pick_best_mtype(
   for ( type_idx = 0; type_idx < p_vmm->type_cnt; type_idx++ ) {
     if ( req->memoryTypeBits & (1 << type_idx) ) {
       if ( !(p_vmm->arr_mem_property_flags[type_idx] & preferred_props) &&
-          (p_vmm->arr_mem_property_flags[type_idx] & required_props) &&
+          (!required_props || p_vmm->arr_mem_property_flags[type_idx] & required_props) &&
           (p_vmm->arr_mem_property_flags[type_idx] & tolerable_props) ) {
         if ( p_vmm->arr_usages[p_vmm->arr_heap_indices[type_idx]] + req->size <=
             p_vmm->arr_sizes[p_vmm->arr_heap_indices[type_idx]] ) {
@@ -924,5 +924,6 @@ uint32_t ma_pick_best_mtype(
   }
 
   SPALL_END();
+  assume( false );
   return 0;
 }
