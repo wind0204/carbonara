@@ -48,7 +48,7 @@ extern void jf_end_rainbow_scene( struct cara_worker_state * p_ws );
 extern void jf_start_kill_chain( struct cara_worker_state * p_ws );
 extern void jf_kickstart( struct cara_worker_state * p_ws );
 extern void jf_police_patrol( struct cara_worker_state * p_ws );
-extern void jf_render_frame( struct cara_worker_state * p_ws );
+//extern void jf_render_frame( struct cara_worker_state * p_ws );
 
 
 #endif

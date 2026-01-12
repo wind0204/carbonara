@@ -34,7 +34,7 @@ void (* const known_jobs[])( struct cara_worker_state * p_ws ) = {
   jf_kickstart,
 
   jf_police_patrol,  // #8
-  jf_render_frame,
+  //jf_render_frame,
 #pragma GCC diagnostic pop
 };
 

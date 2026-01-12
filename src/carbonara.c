@@ -53,9 +53,10 @@
 #include "carbonara-singleton.h"
 #include "carbonara-config.h"
 #include "carbonara-mm.h"
+#include "carbonara-math.h"
+#include "carbonara.h"
 #include "list-jobs.h"
 #include "compute-magic.h"
-#include "carbonara.h"
 #include "appdev_support-processor_map.h"
 #include "appdev_support-thread.h"
 #include "memorable_arena.h"
@@ -66,6 +67,7 @@
 #include "info_struct.h"
 #include "util-hwloc.h"
 #include "util-c_lang-basic.h"
+#include "util-c_lang-ieee754.h"
 #include "appdev_support-timer.h"
 //#include "vulkan_functions.h"
 #if defined(__i386) || defined(__i386__) || defined(_M_IX86) || defined(__x86_64) \
@@ -92,13 +94,26 @@ static constexpr float test_verts[] = {
   1.0f, -1.0f, 0,   1.0f, 0, 0,
   -1.0f, 1.0f, 0,   0, 1.0f, 0,
 
-  -.5f, -.5f, 0,    1.0f, 0, 0,
-  .5f, -.5f, 0,     0, 1.0f, 0,
-  0, .5f, 0,        0, 0, 1.0f,
+  -.5f, .5f, .5f,    0, 1.0f, 0,
+  .5f, .5f, .5f,     1.0f, 0, 0,
+  0, -.5f, 0,        0, 0, 1.0f,
+  .5f, .5f, -.5f,    0, 1.0f, 0,
+  -.5f, .5f, -.5f,   1.0f, 0, 0,
 };
+//static constexpr float test_verts[] = {
+//  -1.0f, -1.0f, 0,  0, 0, 0,
+//  1.0f, 1.0f, 0,    1.0f, 1.0f, 0,
+//  1.0f, -1.0f, 0,   1.0f, 0, 0,
+//  -1.0f, 1.0f, 0,   0, 1.0f, 0,
+//
+//  .5f, -.5f, 0,     0, 1.0f, 0,
+//  -.5f, -.5f, 0,    1.0f, 0, 0,
+//  0, .5f, 0,        0, 0, 1.0f,
+//};
 static constexpr uint16_t test_indices[] = {
   0, 1, 2,  0, 3, 1,
-  0, 1, 2
+  0, 2, 1,  3, 2, 4,  4, 2, 0,  3, 1, 2,
+  4, 0, 3,  0, 1, 3,
 };
 
 
@@ -120,6 +135,7 @@ static void handle_sigint( int sig );
 static void handle_sigsegv( int sig );
 static void worker_loop( struct cara_worker_state * worker_state );
 static void foreman_loop( struct cara_worker_state * worker_state );
+void jf_render_frame( uint64_t cur_time_in_5us );
 
 /**
  * \brief Launch a new worker.
@@ -221,7 +237,7 @@ SDL_AppResult SDL_AppEvent( [[maybe_unused]] void *appstate, [[maybe_unused]] SD
       //atomic_store_explicit( &cara_single.render_now, 1, memory_order_release );
       break;
     case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED:
-      union win_dims new_size = {
+      union extent_2d new_size = {
         .parts.width = event->window.data1,
         .parts.height = event->window.data2,
       };
@@ -239,7 +255,7 @@ SDL_AppResult SDL_AppIterate( [[maybe_unused]] void *appstate )
 {
   static uint64_t a = 0;
 
-  constexpr unsigned int cap = 1000000;
+  constexpr unsigned int cap = 3000000;
   //constexpr unsigned int cap = 1000;
   if ( a % cap == 0 ) {
     fprintf( stdout, "[TEST] a = %lu\n", a );
@@ -1368,6 +1384,8 @@ void * launch_worker( void * arg )
 
   worker_state.current_batch = nullptr;
   worker_state.worker_idx = worker->idx_self;
+  
+  SPALL_END();  // worker_loop-init
 
   // The loop.
   if ( worker->deployment_flags & worker_deployment_flag_foreman ) {
@@ -1498,7 +1516,7 @@ static void foreman_loop( struct cara_worker_state * p_ws )
 
     SPALL_BEGIN( "foreman_loop" );
 
-    const uint64_t new_pc = get_performance_counter();
+    const uint64_t new_pc = starting_pc;
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wconditional-uninitialized"
     std_pc += new_pc - prev_pc;
@@ -1511,8 +1529,7 @@ static void foreman_loop( struct cara_worker_state * p_ws )
       cur_time_in_5us_general += nr_5us;
 
       // XXX Do I really need to share this with other processing units?
-      atomic_store_explicit( &cara_single.cur_time_in_5us_general, cur_time_in_5us_general, memory_order_release );
-      //atomic_fetch_add_explicit( &cara_single.cur_time_in_5us_general, 1, memory_order_release );
+      //atomic_store_explicit( &cara_single.cur_time_in_5us_general, cur_time_in_5us_general, memory_order_release );
     }
 
     // See if we should spawn a periodic job or two
@@ -1619,7 +1636,9 @@ static void foreman_loop( struct cara_worker_state * p_ws )
 
     if ( atomic_load_explicit( &cara_single.render_now, memory_order_acquire ) == 1 ) {
       take_a_break = false;
-      jf_render_frame( p_ws );
+      //atomic_store_explicit( &cara_single.cur_time_in_5us_for_render,
+      //    cur_time_in_5us_general, memory_order_release );
+      jf_render_frame( cur_time_in_5us_general );
       atomic_store_explicit( &cara_single.render_now, 0, memory_order_release );
     }
 
@@ -1772,9 +1791,9 @@ void jf_kickstart( [[maybe_unused]] struct cara_worker_state * p_ws )
   if ( err ) {
     goto stop_everything_after_failure;
   }
-  union win_dims new_size = {
-    .parts.width = 1,
-    .parts.height = 1,
+  union extent_2d new_size = {
+    .parts.width = initial_win_width,
+    .parts.height = initial_win_height,
   };
   atomic_init( &cara_vk.win_size.atomic_whole, new_size.whole );
 
@@ -2562,8 +2581,6 @@ static enum err_msg init_renderer( struct cara_worker_state * p_ws )
     .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
     .pNext = nullptr,
     .flags = 0,
-    .bindingCount = 0,
-    .pBindings = nullptr,
   };
 
   // Bindings for cs_draw_opaq_objs
@@ -2586,6 +2603,8 @@ static enum err_msg init_renderer( struct cara_worker_state * p_ws )
     arr_bindings_cp2sc[i].pImmutableSamplers = nullptr;
   }
 
+  dsl_create_info.bindingCount = 0;
+  dsl_create_info.pBindings = nullptr;
   SPALL_BEGIN("create_dsls");
   result = vkCreateDescriptorSetLayout( cara_vk.log_dev, &dsl_create_info,
       &vk_alloc_callbacks, &cara_vk.dsl_z_only
@@ -2916,15 +2935,15 @@ static enum err_msg init_renderer( struct cara_worker_state * p_ws )
   VkViewport viewport = {
     .x = 0,
     .y = 0,
-    .width = small_win_width,
-    .height = small_win_height,
+    .width = initial_win_width,
+    .height = initial_win_height,
     .minDepth = .0f,
     .maxDepth = 1.0f,
   };
   // In Vulkan, the scissor test is always enabled.
   VkRect2D scissor = {
     .offset = (VkOffset2D) {0},
-    .extent = (VkExtent2D) { .width = small_win_width, .height = small_win_height },
+    .extent = (VkExtent2D) { .width = initial_win_width, .height = initial_win_height },
   };
   // If we want to change some of the viewport or scissor test parameters, we need to recreate a
   //  pipeline? Nah, during the pipeline creation, we can specify that the viewport and scissor test
@@ -3025,7 +3044,8 @@ static enum err_msg init_renderer( struct cara_worker_state * p_ws )
   }
   arr_pldss_create_info[cs_z_only].depthTestEnable = VK_TRUE;
   arr_pldss_create_info[cs_z_only].depthWriteEnable = VK_TRUE;
-  arr_pldss_create_info[cs_z_only].depthCompareOp = VK_COMPARE_OP_GREATER;
+  //arr_pldss_create_info[cs_z_only].depthCompareOp = VK_COMPARE_OP_GREATER;
+  arr_pldss_create_info[cs_z_only].depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL;  // TODO reverse
   arr_pldss_create_info[cs_opaq_objs].depthTestEnable = VK_TRUE;
   arr_pldss_create_info[cs_opaq_objs].depthWriteEnable = VK_FALSE;
   arr_pldss_create_info[cs_opaq_objs].depthCompareOp = VK_COMPARE_OP_EQUAL;
@@ -3153,7 +3173,7 @@ static enum err_msg init_renderer( struct cara_worker_state * p_ws )
   // Create renderpasses and framebuffers
   //
   SPALL_BEGIN("1st_fb");
-  err = create_1st_renderpass_and_framebuffer( &cara_vk );
+  err = create_renderpass_and_framebuffer_first_time( &cara_vk );
   SPALL_END();
   if ( err ) {
     goto stop_everything_after_failure;
@@ -3795,7 +3815,7 @@ enum err_msg cara_deal_with_asyncio(
 
 
 //-------------------------------------------------------------------------------------------------
-extern void jf_render_frame( [[maybe_unused]] struct cara_worker_state * p_ws )
+void jf_render_frame( uint64_t cur_time_in_5us )
 {
   SPALL_BEGIN("jf_render_frame");
   //
@@ -3866,14 +3886,28 @@ extern void jf_render_frame( [[maybe_unused]] struct cara_worker_state * p_ws )
   uint32_t img_idx;
   enum err_msg err;
 
-  union win_dims cur_win_dims;
+  union extent_2d cur_win_dims;
   cur_win_dims.whole = atomic_load_explicit( &cara_vk.win_size.atomic_whole, memory_order_acquire );
-  if ( cur_win_dims.parts.width > cara_vk.max_win_size.parts.width ||
-      cur_win_dims.parts.height > cara_vk.max_win_size.parts.height ) {
-    // Recreate the swapchain
-    err = expand_swapchain_and_framebuffer( &cara_vk, cur_win_dims );
-    if ( err ) {
-      atomic_fetch_or_explicit( &cara_single.sign_to_end, 2, memory_order_release );
+  static uint64_t prev_sc_creation_time = 0;
+  if ( cur_win_dims.parts.width != cara_vk.dims_swapchain_imgs.width ||
+      cur_win_dims.parts.height != cara_vk.dims_swapchain_imgs.height ) {
+    auto fb_width = cara_vk.dims_swapchain_imgs.width;
+    auto fb_height = cara_vk.dims_swapchain_imgs.height;
+    float aspect_ratio = (float)fb_width / (float) fb_height;
+
+    typeof(cur_time_in_5us) tolerance = (typeof(cur_time_in_5us)) (1000.0 / 60 * 1000 / 5);
+    if ( fabsf(aspect_ratio - (
+          (float)cur_win_dims.parts.width / (float)cur_win_dims.parts.height )) > 0.18 ) {
+      tolerance *= 2;
+    }
+
+    if ( cur_time_in_5us - prev_sc_creation_time > tolerance ) {
+      // Recreate the swapchain
+      err = expand_swapchain_and_framebuffer( &cara_vk, cur_win_dims );
+      if ( err ) {
+        atomic_fetch_or_explicit( &cara_single.sign_to_end, 2, memory_order_release );
+      }
+      prev_sc_creation_time = cur_time_in_5us;
     }
   }
 
@@ -3946,32 +3980,24 @@ acquire_swapchain_image:
   switch ( result_2 ) {
     default:
 #if defined( DEBUG_MODE )
-      fprintf( stdout, "[Renderer-Debug] vkAcquireNextImageKHR=%d\n", result_2 );
+      fprintf( stdout, "[Renderer-Debug] vkAcquireNextImageKHR result=%d\n", result_2 );
       fprintf( stdout, "  cara_vk.win_size.parts.width and height = %u*%u\n",
           cara_vk.win_size.parts.width, cara_vk.win_size.parts.height );
-      fprintf( stdout, "  cara_vk.max_win_size.parts.width and height = %u*%u\n",
-          cara_vk.max_win_size.parts.width, cara_vk.max_win_size.parts.height );
 #endif
       // Recreate the swapchain ( VK_ERROR_OUT_OF_DATE_KHR )
       cur_win_dims.whole =
         atomic_load_explicit( &cara_vk.win_size.atomic_whole, memory_order_acquire );
-      if ( cur_win_dims.parts.width > cara_vk.max_win_size.parts.width ||
-          cur_win_dims.parts.height > cara_vk.max_win_size.parts.height ) {
-        // Recreate the swapchain
-        err = expand_swapchain_and_framebuffer( &cara_vk, cur_win_dims );
-        if ( err ) {
-          atomic_fetch_or_explicit( &cara_single.sign_to_end, 2, memory_order_release );
-        }
+      err = expand_swapchain_and_framebuffer( &cara_vk, cur_win_dims );
+      if ( err ) {
+        atomic_fetch_or_explicit( &cara_single.sign_to_end, 2, memory_order_release );
       }
 
       goto acquire_swapchain_image;
     case VK_SUBOPTIMAL_KHR:
 #if defined( DEBUG_MODE )
-      fprintf( stdout, "[Renderer-Debug] vkAcquireNextImageKHR=VK_SUBOPTIMAL_KHR\n" );
-      fprintf( stdout, "  cara_vk.win_size.parts.width and height = %u*%u\n",
-          cara_vk.win_size.parts.width, cara_vk.win_size.parts.height );
-      fprintf( stdout, "  cara_vk.max_win_size.parts.width and height = %u*%u\n",
-          cara_vk.max_win_size.parts.width, cara_vk.max_win_size.parts.height );
+      //fprintf( stdout, "[Renderer-Debug] vkAcquireNextImageKHR=VK_SUBOPTIMAL_KHR\n" );
+      //fprintf( stdout, "  cara_vk.win_size.parts.width and height = %u*%u\n",
+      //    cara_vk.win_size.parts.width, cara_vk.win_size.parts.height );
 #endif
       break;
     case VK_SUCCESS:
@@ -4075,9 +4101,6 @@ acquire_swapchain_image:
   //  worker_idx * cara_max_nr_subpasses];
   VkCommandBuffer main_cmd_buf =
     cara_vk.arr_graphics_cmdbuf_sets[frame_id % cara_max_nr_fif].primary_cmd_buf;
-#ifdef DEBUG_MODE
-  fprintf( stderr, "[Vulkan-Debug] GP cmd_buf=%#018lx\n", ptr2ui(main_cmd_buf) );
-#endif
 
 
   //// XXX No recording yet... just mark that work has been done.
@@ -4149,7 +4172,8 @@ acquire_swapchain_image:
     .attachmentCount = _arr_elem_cnt( arr_att_ivs ),
     .pAttachments = arr_att_ivs,
   };
-  constexpr VkClearValue clear_val = { .depthStencil.depth = .0f };  // Reversed Z
+  //constexpr VkClearValue clear_val = { .depthStencil.depth = .0f };  // Reversed Z
+  constexpr VkClearValue clear_val = { .depthStencil.depth = 1.0f };  // TODO reverse
   VkRenderPassBeginInfo rp_begin_info = {
     .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
     .pNext = &rp_att_begin_info,
@@ -4187,8 +4211,6 @@ acquire_swapchain_image:
 
   auto fb_width = cara_vk.dims_swapchain_imgs.width;
   auto fb_height = cara_vk.dims_swapchain_imgs.height;
-  fb_width = min( fb_width, cur_win_dims.parts.width );
-  fb_height = min( fb_height, cur_win_dims.parts.height );
 
   VkViewport viewport = {
     .x = 0, .y = 0,
@@ -4215,7 +4237,62 @@ acquire_swapchain_image:
   SPALL_END();
 
   // TODO cs_depth_only
-  vkCmdDrawIndexed( main_cmd_buf, 3, 1, 6, 4, 0 );
+  constexpr uint64_t nr_5us_in_1s = 1000*1000 / 5;
+  constexpr double pi_per_sec = M_PI / nr_5us_in_1s;
+  const struct mat4x4 rotate = rot_aya_4x4( (float) ((double)cur_time_in_5us * pi_per_sec * .5) );
+  const struct mat4x4 translate = translate_4x4( 0, 0, 3.0f );
+  const struct mat4x4 pp = get_perspective_proj_mat(
+      (float)(M_PI / 2.0), (float)fb_width/(float)fb_height, 1.5f, 10000.0f );
+  const struct mat4x4 consts = mul_4x4_4x4( mul_4x4_4x4( rotate, translate ), pp );
+  vkCmdPushConstants( main_cmd_buf, cara_vk.pll_z_only, VK_SHADER_STAGE_VERTEX_BIT,
+      0, 4*4*4, &consts );
+  vkCmdDrawIndexed( main_cmd_buf, 3*6, 1, 6, 4, 0 );
+  //vkCmdDrawIndexed( main_cmd_buf, 3, 1, 6, 4, 0 );
+
+
+  //VkImageMemoryBarrier2KHR img_bar = {
+  //  .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2_KHR,
+  //  .pNext = nullptr,
+  //  .srcStageMask = VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT_KHR |
+  //    VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT_KHR,
+  //  .dstStageMask = VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT_KHR |
+  //    VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT_KHR,
+  //// Prior to the intro. of VK_DEPENDENCY_QUEUE_FAMILY_OWNERSHIP_TRANSFER_USE_ALL_STAGES_BIT_KHR,
+  ////  VK_PIPELINE_STAGE_ALL_COMMANDS_BIT is the only valid stage to wait on or wait for these
+  ////  operations, as the acquire and release operations do not occur in a defined stage.
+  //  .srcAccessMask = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT_KHR,
+  //  .dstAccessMask = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT,
+  //  .oldLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
+  //  .newLayout = VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_OPTIMAL,
+  //  .srcQueueFamilyIndex = cara_vk.graphics_q_fam_idx,
+  //  .dstQueueFamilyIndex = cara_vk.graphics_q_fam_idx,
+  //// If the values of srcQueueFamilyIndex and dstQueueFamilyIndex are equal, no ownership transfer
+  ////  is performed, and the barrier operates as if they were both set to VK_QUEUE_FAMILY_IGNORED.
+  //  .image = cara_vk.zbuf_n_cbuf[frame_id % cara_max_nr_fif][fb_zbuf],
+  //  .subresourceRange = (VkImageSubresourceRange) {
+  //    .aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT,
+  //    .baseMipLevel = 0,
+  //    .levelCount = 1,
+  //    .baseArrayLayer = 0,
+  //    .layerCount = 1,
+  //  },
+  //};
+
+  //VkDependencyInfoKHR dependency_info = {
+  //  .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO_KHR,
+  //  .pNext = nullptr,
+  //  .dependencyFlags = VK_DEPENDENCY_QUEUE_FAMILY_OWNERSHIP_TRANSFER_USE_ALL_STAGES_BIT_KHR,
+  //  .memoryBarrierCount = 0,
+  //  .pMemoryBarriers = nullptr,
+  //  .bufferMemoryBarrierCount = 0,
+  //  .pBufferMemoryBarriers = nullptr,
+  //  .imageMemoryBarrierCount = 1,
+  //  .pImageMemoryBarriers = &img_bar,
+  //};
+
+  //SPALL_BEGIN("vkCmdPipelineBarrier2KHR");
+  //vkCmdPipelineBarrier2KHR( main_cmd_buf, &dependency_info );
+  //SPALL_END();
 
 
 
@@ -4244,7 +4321,10 @@ acquire_swapchain_image:
   SPALL_END();
 
   // TODO cs_draw_opaq_objs
-  vkCmdDrawIndexed( main_cmd_buf, 3, 1, 6, 4, 0 );
+  vkCmdPushConstants( main_cmd_buf, cara_vk.pll_main_render, VK_SHADER_STAGE_VERTEX_BIT,
+      64, 4*4*4, &consts );
+  vkCmdDrawIndexed( main_cmd_buf, 3*6, 1, 6, 4, 0 );
+  //vkCmdDrawIndexed( main_cmd_buf, 3, 1, 6, 4, 0 );
 
 
 
@@ -4328,8 +4408,6 @@ acquire_swapchain_image:
 
   auto sb_width = cara_vk.dims_swapchain_imgs.width;
   auto sb_height = cara_vk.dims_swapchain_imgs.height;
-  sb_width = min( sb_width, cur_win_dims.parts.width );
-  sb_height = min( sb_height, cur_win_dims.parts.height );
 
   VkViewport viewport2 = {
     .x = 0, .y = 0,
@@ -4628,13 +4706,6 @@ acquire_swapchain_image:
 
   switch( result ) {
     case VK_SUBOPTIMAL_KHR:
-#if defined( DEBUG_MODE )
-      fprintf( stdout, "[Renderer-Debug] vkQueuePresentKHR=VK_SUBOPTIMAL_KHR\n" );
-      fprintf( stdout, "  cara_vk.win_size.parts.width and height = %u*%u\n",
-          cara_vk.win_size.parts.width, cara_vk.win_size.parts.height );
-      fprintf( stdout, "  cara_vk.max_win_size.parts.width and height = %u*%u\n",
-          cara_vk.max_win_size.parts.width, cara_vk.max_win_size.parts.height );
-#endif
       [[fallthrough]];
     case VK_SUCCESS:
       break;

@@ -1,3 +1,4 @@
+#include "util-c_lang-basic.h"
 #if !defined SALAMI_VERTEX_H_
 #define SALAMI_VERTEX_H_
 
@@ -6,24 +7,33 @@
 #include <math.h>
 
 
+typedef float float4 __attribute__((ext_vector_type(4)));
+typedef float float3 __attribute__((ext_vector_type(3)));
+typedef float float2 __attribute__((ext_vector_type(2)));
+typedef float4 vec4;
+typedef float3 vec3;
+typedef float2 vec2;
+
+
 //-------------------------------------------------------------------------------------------------
-//struct vec3 {
-//  float x;
-//  float y;
-//  float z;
-//};
+struct mat4x4 {
+  alignas(ALIGN_FOR_AVX)
+  vec4 rows[4];
+};
+struct plain_mat4x4 {
+  alignas(ALIGN_FOR_AVX)
+  float arr_elems[4*4];
+};
 
 //-------------------------------------------------------------------------------------------------
 __attribute__((always_inline))
-inline void normalize_vector( const float * restrict src, float * restrict dst )
+inline void normalize_vec3( const vec3 * restrict src, vec3 * restrict dst )
 {
-  float length = sqrtf(src[0]*src[0] + src[1]*src[1] + src[2]*src[2]);
-  dst[0] = src[0] / length;
-  dst[1] = src[1] / length;
-  dst[2] = src[2] / length;
+  float length = sqrtf( src->x * src->x +  src->y * src->y +  src->z * src->z );
+  dst->x = src->x / length;
+  dst->y = src->y / length;
+  dst->z = src->z / length;
 }
-//void normalize_vectors( const float * restrict src, float * restrict dst );
-//void normalize_vectors_ap( const float * restrict src, float * restrict dst );
 
 
 //-------------------------------------------------------------------------------------------------
@@ -42,45 +52,72 @@ inline void normalize_vector( const float * restrict src, float * restrict dst )
 // │ 0 0 0 1 │ │ 0 0 0 1 │ │ 0 0 0 1 │ │ 0 0 0 1 │ │ 0 0-1 0 │ │ 0 0 0 1 │
 // └         ┘ └         ┘ └         ┘ └         ┘ └ Mv=v'   ┘ └         ┘
 
-constexpr float identity_matrix[] = {
-  1.0f, 0.0f, 0.0f, 0.0f,
-  0.0f, 1.0f, 0.0f, 0.0f,
-  0.0f, 0.0f, 1.0f, 0.0f,
-  0.0f, 0.0f, 0.0f, 1.0f,
+constexpr struct mat4x4 identity_4x4 = {
+  .rows = {
+    {1.0f, 0, 0, 0},
+    {0, 1.0f, 0, 0},
+    {0, 0, 1.0f, 0},
+    {0, 0, 0, 1.0f},
+  },
 };
-//struct matrix translation_matrix = {
-//  {1.0f, 0.0f, 0.0f, 0.0f},
-//  {0.0f, 1.0f, 0.0f, 0.0f},
-//  {0.0f, 0.0f, 1.0f, 0.0f},
-//  {   x,    y,    z, 1.0f},
-//};
 
 //-------------------------------------------------------------------------------------------------
 __attribute__((always_inline))
-inline void get_translation_matrix( float x, float y, float z, float * dst )
+inline struct mat4x4 translate_4x4( float x, float y, float z )
 {
-  dst[4*0 + 0] = 1.0f;
-  dst[4*0 + 1] = 0.0f;
-  dst[4*0 + 2] = 0.0f;
-  dst[4*0 + 3] = 0.0f;
-
-  dst[4*1 + 0] = 0.0f;
-  dst[4*1 + 1] = 1.0f;
-  dst[4*1 + 2] = 0.0f;
-  dst[4*1 + 3] = 0.0f;
-
-  dst[4*2 + 0] = 0.0f;
-  dst[4*2 + 1] = 0.0f;
-  dst[4*2 + 2] = 1.0f;
-  dst[4*2 + 3] = 0.0f;
-
-  dst[4*3 + 0] = x;
-  dst[4*3 + 1] = y;
-  dst[4*3 + 2] = z;
-  dst[4*3 + 3] = 1.0f;
+  struct mat4x4 ret = {
+    (vec4) { 1.0f, 0, 0, 0 },
+    (vec4) { 0, 1.0f, 0, 0 },
+    (vec4) { 0, 0, 1.0f, 0 },
+    (vec4) { x, y, z, 1.0f },
+  };
+  return ret;
 }
-//void get_translation_matrices(const float * restrict arr_xyz, float * restrict dst, uint_fast16_t nr_matrices);
-//void get_translation_matrices_ap(const float * restrict arr_xyz, float * restrict dst, uint_fast16_t nr_matrices);
+
+//-------------------------------------------------------------------------------------------------
+__attribute__((always_inline))
+inline struct mat4x4 rot_axa_4x4( float angle )
+{  // TODO it's rotation around the cardinal y axis
+  float sin = sinf(angle);
+  float cos = cosf(angle);
+  struct mat4x4 ret = {
+    (vec4) { cos, 0, -sin, 0 },
+    (vec4) { 0, 1.0f, 0, 0 },
+    (vec4) { sin, 0, cos, 0 },
+    (vec4) { 0, 0, 0, 1.0f },
+  };
+  return ret;
+}
+
+//-------------------------------------------------------------------------------------------------
+__attribute__((always_inline))
+inline struct mat4x4 rot_aya_4x4( float angle )
+{
+  float sin = sinf(angle);
+  float cos = cosf(angle);
+  struct mat4x4 ret = {
+    (vec4) { cos, 0, -sin, 0 },
+    (vec4) { 0, 1.0f, 0, 0 },
+    (vec4) { sin, 0, cos, 0 },
+    (vec4) { 0, 0, 0, 1.0f },
+  };
+  return ret;
+}
+
+//-------------------------------------------------------------------------------------------------
+__attribute__((always_inline))
+inline struct mat4x4 rot_aza_4x4( float angle )
+{  // TODO it's rotation around the cardinal y axis
+  float sin = sinf(angle);
+  float cos = cosf(angle);
+  struct mat4x4 ret = {
+    (vec4) { cos, 0, -sin, 0 },
+    (vec4) { 0, 1.0f, 0, 0 },
+    (vec4) { sin, 0, cos, 0 },
+    (vec4) { 0, 0, 0, 1.0f },
+  };
+  return ret;
+}
 
 //-------------------------------------------------------------------------------------------------
 /**
@@ -123,40 +160,32 @@ inline void get_scaling_matrix( float x, float y, float z, float * dst )
 
 //-------------------------------------------------------------------------------------------------
 /**
- * \param fov The angle of the vertical field of view.
- * \param aspect_raito The width divided by the height of the renderable area.
- * \param near_plane The distance from the viewer to the near clipping plane.
- * \param far_plane The distance from the viewer to the far clipping plane.
+ * \param vfov The angle of the vertical field of view.
+ * \param aspect_ratio The width divided by the height of the render target.
+ * \param near The distance from the viewer to the near clipping plane.
+ * \param far The distance from the viewer to the far clipping plane.
  */
 __attribute__((always_inline))
-inline void get_perspective_proj_matrix(
-    float fov,
-    float aspect_raito,
-    float near_plane,
-    float far_plane,
-    float * dst )
+inline struct mat4x4 get_perspective_proj_mat(
+    float vfov,
+    float aspect_ratio,
+    float near,
+    float far )
 {
-  const float f = 1.0f / tanf(0.5f * fov);
-
-  dst[4*0 + 0] = f / aspect_raito;
-  dst[4*0 + 1] = 0.0f;
-  dst[4*0 + 2] = 0.0f;
-  dst[4*0 + 3] = 0.0f;
-
-  dst[4*1 + 0] = 0.0f;
-  dst[4*1 + 1] = -f;
-  dst[4*1 + 2] = 0.0f;
-  dst[4*1 + 3] = 0.0f;
-
-  dst[4*2 + 0] = 0.0f;
-  dst[4*2 + 1] = 0.0f;
-  dst[4*2 + 2] = far_plane / (near_plane - far_plane);
-  dst[4*2 + 3] = -1.0f;
-
-  dst[4*3 + 0] = 0.0f;
-  dst[4*3 + 1] = 0.0f;
-  dst[4*3 + 2] = (near_plane * far_plane) / (near_plane - far_plane);
-  dst[4*3 + 3] = 0.0f;
+  float x = tanf( vfov * (1.0f/2.0f) );
+  //struct mat4x4 ret = {
+  //  (vec4) { 1.0f / (aspect_ratio * x), 0,        0,                  0 },
+  //  (vec4) { 0,                         1.0f / x, 0,                  0 },
+  //  (vec4) { 0,                         0,        far / (far - near), -far*near / (far - near) },
+  //  (vec4) { 0,                         0,        1.0f,               0 },
+  //};
+  struct mat4x4 ret = {
+    (vec4) { 1.0f / (aspect_ratio * x), 0,        0,                        0 },
+    (vec4) { 0,                         1.0f / x, 0,                        0 },
+    (vec4) { 0,                         0,        far / (far - near),       1.0f },
+    (vec4) { 0,                         0,        -far*near / (far - near), 0 },
+  };
+  return ret;
 }
 
 //-------------------------------------------------------------------------------------------------
@@ -192,6 +221,69 @@ inline void get_orthographic_proj_matrix(
   dst[4*3 + 1] = -(bottom + top) / (bottom - top);
   dst[4*3 + 2] = near_plane / (near_plane - far_plane);
   dst[4*3 + 3] = 1.0f;
+}
+
+
+//-------------------------------------------------------------------------------------------------
+__attribute__((always_inline))
+inline struct mat4x4 mul_4x4_4x4(
+    struct mat4x4 a, struct mat4x4 b )
+{
+  struct mat4x4 ret;
+
+  ret.rows[0].x =
+    a.rows[0].x * b.rows[0].x +  a.rows[0].y * b.rows[1].x +
+    a.rows[0].z * b.rows[2].x +  a.rows[0].w * b.rows[3].x;
+  ret.rows[0].y =
+    a.rows[0].x * b.rows[0].y +  a.rows[0].y * b.rows[1].y +
+    a.rows[0].z * b.rows[2].y +  a.rows[0].w * b.rows[3].y;
+  ret.rows[0].z =
+    a.rows[0].x * b.rows[0].z +  a.rows[0].y * b.rows[1].z +
+    a.rows[0].z * b.rows[2].z +  a.rows[0].w * b.rows[3].z;
+  ret.rows[0].w =
+    a.rows[0].x * b.rows[0].w +  a.rows[0].y * b.rows[1].w +
+    a.rows[0].z * b.rows[2].w +  a.rows[0].w * b.rows[3].w;
+
+  ret.rows[1].x =
+    a.rows[1].x * b.rows[0].x +  a.rows[1].y * b.rows[1].x +
+    a.rows[1].z * b.rows[2].x +  a.rows[1].w * b.rows[3].x;
+  ret.rows[1].y =
+    a.rows[1].x * b.rows[0].y +  a.rows[1].y * b.rows[1].y +
+    a.rows[1].z * b.rows[2].y +  a.rows[1].w * b.rows[3].y;
+  ret.rows[1].z =
+    a.rows[1].x * b.rows[0].z +  a.rows[1].y * b.rows[1].z +
+    a.rows[1].z * b.rows[2].z +  a.rows[1].w * b.rows[3].z;
+  ret.rows[1].w =
+    a.rows[1].x * b.rows[0].w +  a.rows[1].y * b.rows[1].w +
+    a.rows[1].z * b.rows[2].w +  a.rows[1].w * b.rows[3].w;
+
+  ret.rows[2].x =
+    a.rows[2].x * b.rows[0].x +  a.rows[2].y * b.rows[1].x +
+    a.rows[2].z * b.rows[2].x +  a.rows[2].w * b.rows[3].x;
+  ret.rows[2].y =
+    a.rows[2].x * b.rows[0].y +  a.rows[2].y * b.rows[1].y +
+    a.rows[2].z * b.rows[2].y +  a.rows[2].w * b.rows[3].y;
+  ret.rows[2].z =
+    a.rows[2].x * b.rows[0].z +  a.rows[2].y * b.rows[1].z +
+    a.rows[2].z * b.rows[2].z +  a.rows[2].w * b.rows[3].z;
+  ret.rows[2].w =
+    a.rows[2].x * b.rows[0].w +  a.rows[2].y * b.rows[1].w +
+    a.rows[2].z * b.rows[2].w +  a.rows[2].w * b.rows[3].w;
+
+  ret.rows[3].x =
+    a.rows[3].x * b.rows[0].x +  a.rows[3].y * b.rows[1].x +
+    a.rows[3].z * b.rows[2].x +  a.rows[3].w * b.rows[3].x;
+  ret.rows[3].y =
+    a.rows[3].x * b.rows[0].y +  a.rows[3].y * b.rows[1].y +
+    a.rows[3].z * b.rows[2].y +  a.rows[3].w * b.rows[3].y;
+  ret.rows[3].z =
+    a.rows[3].x * b.rows[0].z +  a.rows[3].y * b.rows[1].z +
+    a.rows[3].z * b.rows[2].z +  a.rows[3].w * b.rows[3].z;
+  ret.rows[3].w =
+    a.rows[3].x * b.rows[0].w +  a.rows[3].y * b.rows[1].w +
+    a.rows[3].z * b.rows[2].w +  a.rows[3].w * b.rows[3].w;
+
+  return ret;
 }
 
 

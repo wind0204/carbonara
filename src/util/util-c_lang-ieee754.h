@@ -95,11 +95,11 @@ static inline bool is_close_d( double a, double b, double rel_tol, double abs_to
 }
 
 //-------------------------------------------------------------------------------------------------
-#define is_close( a, b ) _Generic((a), \
-    float : \
-        is_close_f, \
-    double : \
-        is_close_d, \
+#define is_close( a, b ) _Generic((a),      \
+    float :                                 \
+        is_close_f,                         \
+    double :                                \
+        is_close_d                          \
     )( (a), (b), DEF_REL_TOL, DEF_ABS_TOL )
 
 //-------------------------------------------------------------------------------------------------

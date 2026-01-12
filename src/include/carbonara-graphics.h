@@ -19,8 +19,8 @@
 //-------------------------------------------------------------------------------------------------
 
 // WSVGA
-constexpr unsigned int small_win_width = 384;
-constexpr unsigned int small_win_height = 240;  // WQVGA
+constexpr unsigned int initial_win_width = 384;
+constexpr unsigned int initial_win_height = 240;  // WQVGA
 
 // One meter in game coordinates
 constexpr float cara_1m = 1.0 / 2;
@@ -128,7 +128,7 @@ struct trans_cmd_bufs {
 };
 
 
-union win_dims {
+union extent_2d {
   struct {
     uint16_t width;
     uint16_t height;
@@ -259,12 +259,12 @@ struct cara_vk_renderer {
   atomic_uint_least32_t frame_id;  // the frame id of the 1st frame rendered will be cara_max_nr_fif.
   static_assert( sizeof(atomic_uint_least32_t) == sizeof(uint32_t) );
   float max_anisotropy;
-  union win_dims win_size;  ///< The current dimensions of the window, it can be different from the
+  union extent_2d win_size;  ///< The current dimensions of the window, it can be different from the
                             ///<  the framebuffers and swapchain images. See dims_swapchain_imgs
-  union win_dims max_win_size;  // The width and height of the framebuffers and swapchain images
-  union win_dims max_win_size_avail;  // The maximum size available on the presentation surface
-  static_assert( alignof(int32_t) == alignof(float) && alignof(float) >= alignof(union win_dims) &&
-      alignof(union win_dims) >= alignof(VkSurfaceTransformFlagBitsKHR));
+  union extent_2d max_win_size;  // The width and height of the framebuffers and swapchain images
+  union extent_2d max_win_size_avail;  // The maximum size available on the presentation surface
+  static_assert( alignof(int32_t) == alignof(float) && alignof(float) >= alignof(union extent_2d) &&
+      alignof(union extent_2d) >= alignof(VkSurfaceTransformFlagBitsKHR));
   VkSurfaceTransformFlagBitsKHR vk_surface_transform_flags;  // Can I assume it's always .*identity?
   static_assert( alignof(VkSurfaceTransformFlagBitsKHR) >= alignof(VkPresentModeKHR) );
   VkPresentModeKHR present_mode;
@@ -338,14 +338,14 @@ static inline VkCommandBuffer * cara_get_arr_cmd_bufs_for_transfer(
 /*
  * \brief Create a VkRenderPass and a VkFramebuffer
  */
-enum err_msg create_1st_renderpass_and_framebuffer( struct cara_vk_renderer * renderer );
+enum err_msg create_renderpass_and_framebuffer_first_time( struct cara_vk_renderer * renderer );
 
 //-------------------------------------------------------------------------------------------------
 /*
  * \brief Create a VkRenderPass and a VkFramebuffer
  */
 enum err_msg expand_swapchain_and_framebuffer( struct cara_vk_renderer * renderer,
-    union win_dims cur_dims );
+    union extent_2d cur_dims );
 
 //-------------------------------------------------------------------------------------------------
 /*

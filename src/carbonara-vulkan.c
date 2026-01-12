@@ -70,10 +70,6 @@ static const char * const names_device_extensions_required[] = {
                                             //VkPhysicalDeviceVulkan12Features::scalarBlockLayout
 };
 
-// TODO remove these below
-static constexpr unsigned int win_width_to_try = small_win_width;
-static constexpr unsigned int win_height_to_try = small_win_height;
-
 // I just picked 1.2 for vkCmdDrawIndexedIndirectCount
 static constexpr unsigned int vulkan_version_minor = 2;
 static constexpr unsigned int vulkan_version_major = 1;
@@ -803,7 +799,7 @@ uint8_t init_vulkan(
   // Make a window and a presentation surface
   //
   SDL_Window * window =
-    SDL_CreateWindow( Carbonara_APP_NAME, win_width_to_try, win_height_to_try,
+    SDL_CreateWindow( Carbonara_APP_NAME, initial_win_width, initial_win_height,
       SDL_WINDOW_RESIZABLE |
       SDL_WINDOW_HIDDEN |
       //SDL_WINDOW_BORDERLESS |
@@ -1642,8 +1638,8 @@ we_have_already_recorded_that_q_fam:
   }
 
   VkExtent2D image_size = {
-    .width = small_win_width,
-    .height = small_win_height,
+    .width = initial_win_width,
+    .height = initial_win_height,
   };
   if ( surface_capabilities.currentExtent.width == 0xffffffff ) {
     if ( image_size.width < surface_capabilities.minImageExtent.width ) {
@@ -2227,7 +2223,10 @@ we_have_already_recorded_that_q_fam:
 
   if ( !infos_al_create_prealloc(&cara_vk.old_swapchains,
         &vk_alloc_callbacks, vk_malloc_wrapper,
-        4096, _align_to_the_close_power_of_two(sizeof(struct dead_swapchain)), true) ) {
+        4096,
+        _align_to_the_close_power_of_two(sizeof(struct dead_swapchain)),  // NOLINT(
+                                                                      // bugprone-sizeof-expression)
+        true) ) {
     fprintf( stderr, "[Vulkan] A failure occurred in infos_al_create_prealloc.\n" );
     goto error_after_swapchain_images;
   }
@@ -3121,11 +3120,6 @@ static enum err_msg create_2nd_renderpass( struct cara_vk_renderer * renderer )
     VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL : VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
   arr_att_refs[local_fb_zbuf].aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
 
-  // The color buffer
-  //arr_att_refs[fb_cbuf].attachment = fb_cbuf;
-  //arr_att_refs[fb_cbuf].layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-  //arr_att_refs[fb_cbuf].aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-
   // The swapchain image
   arr_att_refs[local_fb_swapchain].attachment = local_fb_swapchain;
   arr_att_refs[local_fb_swapchain].layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
@@ -3224,7 +3218,7 @@ static enum err_msg create_2nd_renderpass( struct cara_vk_renderer * renderer )
 
 
 //-------------------------------------------------------------------------------------------------
-enum err_msg create_1st_renderpass_and_framebuffer( struct cara_vk_renderer * renderer )
+enum err_msg create_renderpass_and_framebuffer_first_time( struct cara_vk_renderer * renderer )
 {
   //
   // Define attachments
@@ -3265,7 +3259,7 @@ enum err_msg create_1st_renderpass_and_framebuffer( struct cara_vk_renderer * re
 
 
   // Prepare the array of VkAttachmentReference2
-  VkAttachmentReference2 arr_att_refs[cara_nr_framebuffers];
+  VkAttachmentReference2 arr_att_refs[cara_nr_framebuffers - 1];
   for ( unsigned int att_idx = 0; att_idx < _arr_elem_cnt( arr_att_refs ); att_idx++ ) {
     arr_att_refs[att_idx].sType = VK_STRUCTURE_TYPE_ATTACHMENT_REFERENCE_2;
     arr_att_refs[att_idx].pNext = nullptr;
@@ -3282,10 +3276,10 @@ enum err_msg create_1st_renderpass_and_framebuffer( struct cara_vk_renderer * re
   arr_att_refs[fb_cbuf].layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
   arr_att_refs[fb_cbuf].aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 
-  // The swapchain image
-  arr_att_refs[fb_swapchain].attachment = fb_swapchain;
-  arr_att_refs[fb_swapchain].layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-  arr_att_refs[fb_swapchain].aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+  //// The swapchain image
+  //arr_att_refs[fb_swapchain].attachment = fb_swapchain;
+  //arr_att_refs[fb_swapchain].layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+  //arr_att_refs[fb_swapchain].aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 
   //
   // Define subpasses
@@ -3360,12 +3354,10 @@ enum err_msg create_1st_renderpass_and_framebuffer( struct cara_vk_renderer * re
   sp_dep[0].dstSubpass = cs_opaq_objs;  // The index of a subpass whose operations depend on
                                         // the previous set of commands (or a VK_SUBPASS_EXTERNAL
                                         // value for operations after the render pass).
-  sp_dep[0].srcStageMask = VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT_KHR |
-    VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT_KHR;  // The set of pipeline stages which produce
-                                                       //   the result read by the "consuming"
-                                                       //   commands.
-  sp_dep[0].dstStageMask = VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT_KHR |
-    VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT_KHR;
+  sp_dep[0].srcStageMask = VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;  // The set of pipeline stages
+                                                        // which produce the result read by the
+                                                        // "consuming" commands.
+  sp_dep[0].dstStageMask = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
   sp_dep[0].srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
   sp_dep[0].dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT;
   sp_dep[0].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;  // For dependencyFlags, use a
@@ -3441,8 +3433,8 @@ enum err_msg create_1st_renderpass_and_framebuffer( struct cara_vk_renderer * re
     fb_att_img_info1[att_idx].sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_ATTACHMENT_IMAGE_INFO;
     fb_att_img_info1[att_idx].pNext = nullptr;
     fb_att_img_info1[att_idx].flags = 0;
-    fb_att_img_info1[att_idx].width = small_win_width;
-    fb_att_img_info1[att_idx].height = small_win_height;
+    fb_att_img_info1[att_idx].width = initial_win_width;
+    fb_att_img_info1[att_idx].height = initial_win_height;
     fb_att_img_info1[att_idx].layerCount = 1;
     fb_att_img_info1[att_idx].viewFormatCount = 1;
   }
@@ -3460,8 +3452,8 @@ enum err_msg create_1st_renderpass_and_framebuffer( struct cara_vk_renderer * re
     fb_att_img_info2[att_idx].sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_ATTACHMENT_IMAGE_INFO;
     fb_att_img_info2[att_idx].pNext = nullptr;
     fb_att_img_info2[att_idx].flags = 0;
-    fb_att_img_info2[att_idx].width = small_win_width;
-    fb_att_img_info2[att_idx].height = small_win_height;
+    fb_att_img_info2[att_idx].width = initial_win_width;
+    fb_att_img_info2[att_idx].height = initial_win_height;
     fb_att_img_info2[att_idx].layerCount = 1;
     fb_att_img_info2[att_idx].viewFormatCount = 1;
   }
@@ -3487,8 +3479,8 @@ enum err_msg create_1st_renderpass_and_framebuffer( struct cara_vk_renderer * re
                                                    // `VkRenderPassAttachmentBeginInfo`.
     .attachmentCount = _arr_elem_cnt( fb_att_img_info1 ),
     .pAttachments = nullptr,
-    .width = small_win_width,
-    .height = small_win_height,
+    .width = initial_win_width,
+    .height = initial_win_height,
     .layers = 1,
   };
   for ( unsigned int fif_idx = 0; fif_idx < cara_max_nr_fif; fif_idx++ ) {
@@ -3532,7 +3524,7 @@ enum err_msg create_1st_renderpass_and_framebuffer( struct cara_vk_renderer * re
     .pNext = nullptr,
     .flags = 0,
     .imageType = VK_IMAGE_TYPE_2D,
-    .extent = (VkExtent3D) { small_win_width, small_win_height, 1 },
+    .extent = (VkExtent3D) { initial_win_width, initial_win_height, 1 },
     .mipLevels = 1,
     .arrayLayers = 1,
     .samples = VK_SAMPLE_COUNT_1_BIT,
@@ -3649,8 +3641,8 @@ enum err_msg create_1st_renderpass_and_framebuffer( struct cara_vk_renderer * re
   }
 
   renderer->dims_swapchain_imgs = (VkExtent2D) {
-    .width = small_win_width,
-    .height = small_win_height,
+    .width = initial_win_width,
+    .height = initial_win_height,
   };
 
 
@@ -3733,20 +3725,21 @@ stop_everything_after_failure:
 
 
 //-------------------------------------------------------------------------------------------------
-enum err_msg expand_swapchain_and_framebuffer( struct cara_vk_renderer * renderer,
-    union win_dims cur_dims )
+enum err_msg expand_swapchain_and_framebuffer(
+    struct cara_vk_renderer * renderer,
+    union extent_2d cur_dims )
 {
   unsigned int new_width = cur_dims.parts.width;
-  if ( renderer->max_win_size.parts.width > new_width ) {
-    new_width = renderer->max_win_size.parts.width;
-  }
-  new_width = _align_to_power_of_two( new_width, framebuf_dims_granularity );
+  //if ( renderer->max_win_size.parts.width > new_width ) {
+  //  new_width = renderer->max_win_size.parts.width;
+  //}
+  //new_width = _align_to_power_of_two( new_width, framebuf_dims_granularity );
 
   unsigned int new_height = cur_dims.parts.height;
-  if ( renderer->max_win_size.parts.height > new_height ) {
-    new_height = renderer->max_win_size.parts.height;
-  }
-  new_height = _align_to_power_of_two( new_height, framebuf_dims_granularity );
+  //if ( renderer->max_win_size.parts.height > new_height ) {
+  //  new_height = renderer->max_win_size.parts.height;
+  //}
+  //new_height = _align_to_power_of_two( new_height, framebuf_dims_granularity );
 
   //if ( new_width > renderer->max_win_size_avail.parts.width ) {
   //  new_width = renderer->max_win_size_avail.parts.width;

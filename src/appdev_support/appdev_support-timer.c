@@ -1,4 +1,3 @@
-#include "util-c_lang-ieee754.h"
 #if defined(__linux)
 #include <bits/posix_opt.h>
 #include <linux/perf_event.h>  // Definition of PERF_* constants
@@ -231,7 +230,7 @@ static enum err_msg get_nr_tsc_in_1s_without_help_from_os(
 base_freq_determined:
 
   // TODO Stop being verbose.
-  fprintf(stdout, "[Timer] ms_cpu_base_freq = %lu, max_nonturbo_ratio = %lu\n",
+  fprintf(stdout, "[Timer] cpu_base_freq = %lu, max_nonturbo_ratio = %lu\n",
       nr_cpu_cycles_per_1s, max_nonturbo_ratio);
 
   struct timespec spec, orig_spec;
@@ -286,7 +285,7 @@ base_freq_determined:
 //#endif
 //    goto start_calibration;
 //  }
-  //ms_cpu_base_freq = (tsc - orig_tsc) / time_elapsed;
+  //cpu_base_freq = (tsc - orig_tsc) / time_elapsed;
   //nr_cpu_cycles_per_1s = (typeof(nr_cpu_cycles_per_1s))
   //  ( (typeof(time_elapsed))(new_tsc - starting_tsc) / time_elapsed );
   typeof(nr_cpu_cycles_per_1s) bigger, smaller, test_result;

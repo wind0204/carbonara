@@ -1,3 +1,13 @@
+struct Transform_4x4 {
+  row_major float4x4 mat;
+};
+
+struct PushConstants {
+  struct Transform_4x4 mat1;
+};
+
+[[vk::push_constant]] PushConstants consts;
+
 struct VertexShaderInput {
   [[vk::location(0)]] float3 pos : POSITION0;
   [[vk::location(1)]] float3 col : COLOR0;
@@ -23,7 +33,8 @@ VertexShaderOutput vert_main(
 {
   VertexShaderOutput output;
   //output.pos = mul( ubo.model_to_clip, float4(input.position.xyz, 1.0) );
-  output.pos = float4(input.pos.xyz, 1.0);
+  output.pos = mul( float4(input.pos.xyz, 1.0), consts.mat1.mat );
+  //output.pos = float4(input.pos.xyz, 1.0);
   output.col = input.col;
   return output;
 }

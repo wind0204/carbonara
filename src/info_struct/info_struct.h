@@ -155,7 +155,7 @@ static inline void take_care_of_next_and_nr_nodes_after_putting_head_lists_2_fh(
         take_care_of_next_and_nr_nodes_after_putting_head_lists_2_uh,                 \
     struct linked_list_of_lists_2_fh * :                                              \
         take_care_of_next_and_nr_nodes_after_putting_head_lists_2_fh                  \
-    )((ptr_ll))
+    )( (ptr_ll) )
 
     //struct infos_linked_list * :                                                      \
     //    infos_take_care_of_tail_next_prev_and_nr_nodes_after_putting_head_uh,         \
