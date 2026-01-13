@@ -2013,10 +2013,10 @@ we_have_already_recorded_that_q_fam:
 
 
   for ( uint_fast8_t set_idx = 0;
-      set_idx < nr_trans_cmd_pool_sets + cara_max_nr_fif;
+      set_idx < nr_al_cmd_pool_sets + cara_max_nr_fif;
       set_idx++ ) {
     // Prepare transfer command buffers
-    cmd_pool_create_info.queueFamilyIndex = set_idx < nr_trans_cmd_pool_sets ?
+    cmd_pool_create_info.queueFamilyIndex = set_idx < nr_al_cmd_pool_sets ?
       cara_vk.loader_q_fam_idx : cara_vk.transfer_q_fam_idx;
 
     static_assert( alignof(VkCommandPool) >= alignof(VkCommandBuffer),
@@ -2375,7 +2375,7 @@ error_after_swapchain_images:
       }
 error_after_logical_device:
       for ( uint_fast8_t set_idx = 0;
-          set_idx < nr_trans_cmd_pool_sets + cara_max_nr_fif;
+          set_idx < nr_al_cmd_pool_sets + cara_max_nr_fif;
           set_idx++ ) {
         if ( cara_vk.arr_trans_cmdbuf_sets[set_idx].arr_cmd_pools ) {
           for ( uint_fast8_t cmd_pool_idx = 0;
@@ -2964,7 +2964,7 @@ void destroy_vk_objs( _typeof_member(struct ms_worker_info, idx_self) worker_idx
   }
 
   for ( uint_fast8_t set_idx = 0;
-      set_idx < nr_trans_cmd_pool_sets + cara_max_nr_fif;
+      set_idx < nr_al_cmd_pool_sets + cara_max_nr_fif;
       set_idx++ ) {
     if ( cara_vk.arr_trans_cmdbuf_sets[set_idx].arr_cmd_pools ) {
       for ( uint_fast8_t cmd_pool_idx = 0;
@@ -3730,16 +3730,16 @@ enum err_msg expand_swapchain_and_framebuffer(
     union extent_2d cur_dims )
 {
   unsigned int new_width = cur_dims.parts.width;
-  //if ( renderer->max_win_size.parts.width > new_width ) {
-  //  new_width = renderer->max_win_size.parts.width;
-  //}
-  //new_width = _align_to_power_of_two( new_width, framebuf_dims_granularity );
+  if ( renderer->max_win_size.parts.width > new_width ) {
+    new_width = renderer->max_win_size.parts.width;
+  }
+  new_width = _align_to_power_of_two( new_width, framebuf_dims_granularity );
 
   unsigned int new_height = cur_dims.parts.height;
-  //if ( renderer->max_win_size.parts.height > new_height ) {
-  //  new_height = renderer->max_win_size.parts.height;
-  //}
-  //new_height = _align_to_power_of_two( new_height, framebuf_dims_granularity );
+  if ( renderer->max_win_size.parts.height > new_height ) {
+    new_height = renderer->max_win_size.parts.height;
+  }
+  new_height = _align_to_power_of_two( new_height, framebuf_dims_granularity );
 
   //if ( new_width > renderer->max_win_size_avail.parts.width ) {
   //  new_width = renderer->max_win_size_avail.parts.width;

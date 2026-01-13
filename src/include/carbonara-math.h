@@ -77,13 +77,13 @@ inline struct mat4x4 translate_4x4( float x, float y, float z )
 //-------------------------------------------------------------------------------------------------
 __attribute__((always_inline))
 inline struct mat4x4 rot_axa_4x4( float angle )
-{  // TODO it's rotation around the cardinal y axis
+{
   float sin = sinf(angle);
   float cos = cosf(angle);
   struct mat4x4 ret = {
-    (vec4) { cos, 0, -sin, 0 },
-    (vec4) { 0, 1.0f, 0, 0 },
-    (vec4) { sin, 0, cos, 0 },
+    (vec4) { 1.0f, 0, 0, 0 },
+    (vec4) { 0, cos, sin, 0 },
+    (vec4) { 0, -sin, cos, 0 },
     (vec4) { 0, 0, 0, 1.0f },
   };
   return ret;
@@ -107,13 +107,13 @@ inline struct mat4x4 rot_aya_4x4( float angle )
 //-------------------------------------------------------------------------------------------------
 __attribute__((always_inline))
 inline struct mat4x4 rot_aza_4x4( float angle )
-{  // TODO it's rotation around the cardinal y axis
+{
   float sin = sinf(angle);
   float cos = cosf(angle);
   struct mat4x4 ret = {
-    (vec4) { cos, 0, -sin, 0 },
-    (vec4) { 0, 1.0f, 0, 0 },
-    (vec4) { sin, 0, cos, 0 },
+    (vec4) { cos, sin, 0, 0 },
+    (vec4) { -sin, cos, 0, 0 },
+    (vec4) { 0, 0, 1.0f, 0 },
     (vec4) { 0, 0, 0, 1.0f },
   };
   return ret;

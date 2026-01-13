@@ -24,6 +24,10 @@ constexpr unsigned int initial_win_height = 240;  // WQVGA
 
 // One meter in game coordinates
 constexpr float cara_1m = 1.0 / 2;
+// Two meters in game coordinates
+constexpr float two_m = 1.0;
+// Four meters in game coordinates
+constexpr float fourm = 1.0 * 2;
 // The length of the side of each square tile
 constexpr float cara_tilesize = cara_1m * 8;
 // 1.5625 centimeters in game coordinates
@@ -33,8 +37,8 @@ constexpr float cara_1m_over_256 = 1.0 / 2 / 256;
 
 // Two frames in flight, two sets of command pools?
 constexpr unsigned int cara_max_nr_fif = 2;
-// Swap the command pool for each batch of vkCmdCopy.+ commands
-constexpr unsigned int nr_trans_cmd_pool_sets = 2;
+// The number of asset loader command pools
+constexpr unsigned int nr_al_cmd_pool_sets = 2;
   //_arr_elem_cnt(
   //    _typeof_member(struct cara_io_worker, nr_vram_jobs_to_get_done)
   //    );
@@ -236,7 +240,7 @@ struct cara_vk_renderer {
   static_assert( alignof(VkQueue) >= alignof(struct graphics_cmd_bufs) );
   struct graphics_cmd_bufs arr_graphics_cmdbuf_sets[cara_max_nr_fif];
   static_assert( alignof(struct graphics_cmd_bufs) >= alignof(struct trans_cmd_bufs) );
-  struct trans_cmd_bufs arr_trans_cmdbuf_sets[nr_trans_cmd_pool_sets + cara_max_nr_fif];  //\
+  struct trans_cmd_bufs arr_trans_cmdbuf_sets[nr_al_cmd_pool_sets + cara_max_nr_fif];  //\
                                       // The last cara_max_nr_fif sets are for general graphics work
                                       // The first few are for asset loading
   static_assert( alignof(struct trans_cmd_bufs) >= alignof(VkDevice) );

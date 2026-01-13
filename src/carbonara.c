@@ -67,7 +67,6 @@
 #include "info_struct.h"
 #include "util-hwloc.h"
 #include "util-c_lang-basic.h"
-#include "util-c_lang-ieee754.h"
 #include "appdev_support-timer.h"
 //#include "vulkan_functions.h"
 #if defined(__i386) || defined(__i386__) || defined(_M_IX86) || defined(__x86_64) \
@@ -88,17 +87,21 @@ static char * asset_buf5;
 static char * asset_buf6;
 static char * asset_buf7;
 static char * asset_buf8;
-static constexpr float test_verts[] = {
-  -1.0f, -1.0f, 0,  0, 0, 0,
-  1.0f, 1.0f, 0,    1.0f, 1.0f, 0,
-  1.0f, -1.0f, 0,   1.0f, 0, 0,
-  -1.0f, 1.0f, 0,   0, 1.0f, 0,
+static float test_verts[] = {
+  //-1.0f, -1.0f, 0,  0, 0, 0,
+  //1.0f, 1.0f, 0,    1.0f, 1.0f, 0,
+  //1.0f, -1.0f, 0,   1.0f, 0, 0,
+  //-1.0f, 1.0f, 0,   0, 1.0f, 0,
+  -cara_1m/2, 0, cara_1m/2,   .25f, 0, 0,  // 0
+  cara_1m/2, 0, cara_1m/2,    .75f, 0, 0,
+  0, -two_m, 0,             .5f, .5f, 0,
+  cara_1m/2, 0, -cara_1m/2,   .75f, .75f, 0,
+  -cara_1m/2, 0, -cara_1m/2,  .25f, .75f, 0,  // 4
 
-  -.5f, .5f, .5f,    0, 1.0f, 0,
-  .5f, .5f, .5f,     1.0f, 0, 0,
-  0, -.5f, 0,        0, 0, 1.0f,
-  .5f, .5f, -.5f,    0, 1.0f, 0,
-  -.5f, .5f, -.5f,   1.0f, 0, 0,
+  -two_m, 0, two_m,    0, 0, UINT32_C(1),  // 5
+  -two_m, 0, -two_m,   0, fourm/2, UINT32_C(1),
+  two_m, 0, -two_m,    fourm/2, fourm/2, UINT32_C(1),
+  two_m, 0, two_m,     fourm/2, 0, UINT32_C(1),  // 8
 };
 //static constexpr float test_verts[] = {
 //  -1.0f, -1.0f, 0,  0, 0, 0,
@@ -111,9 +114,10 @@ static constexpr float test_verts[] = {
 //  0, .5f, 0,        0, 0, 1.0f,
 //};
 static constexpr uint16_t test_indices[] = {
-  0, 1, 2,  0, 3, 1,
+  //0, 1, 2,  0, 3, 1,
   0, 2, 1,  3, 2, 4,  4, 2, 0,  3, 1, 2,
   4, 0, 3,  0, 1, 3,
+  5, 6, 7,  5, 7, 8,
 };
 
 
@@ -255,6 +259,8 @@ SDL_AppResult SDL_AppIterate( [[maybe_unused]] void *appstate )
 {
   static uint64_t a = 0;
 
+  SPALL_BEGIN("SDL_AppIterate");
+
   constexpr unsigned int cap = 3000000;
   //constexpr unsigned int cap = 1000;
   if ( a % cap == 0 ) {
@@ -270,8 +276,10 @@ SDL_AppResult SDL_AppIterate( [[maybe_unused]] void *appstate )
   if ( unlikely(sign_to_end > 0) ) {
     switch( sign_to_end ) {
       case 1:
+        SPALL_END();
         return SDL_APP_SUCCESS;
       case 2:
+        SPALL_END();
         return SDL_APP_FAILURE;
       default:
         unreachable();
@@ -279,6 +287,8 @@ SDL_AppResult SDL_AppIterate( [[maybe_unused]] void *appstate )
   }
 
   atomic_store_explicit( &cara_single.render_now, 1, memory_order_release );
+
+  SPALL_END();
   return SDL_APP_CONTINUE;
 }
 
@@ -1787,6 +1797,11 @@ void jf_start_kill_chain( struct cara_worker_state * p_ws )
 //-------------------------------------------------------------------------------------------------
 void jf_kickstart( [[maybe_unused]] struct cara_worker_state * p_ws )
 {
+  uint32_t * p_va;
+  for ( unsigned int i = 5; i <= 8; i++ ) {
+    p_va = (void*)( test_verts + (6*i) );
+    p_va[5] = 1;
+  }
   enum err_msg err = init_renderer( p_ws );
   if ( err ) {
     goto stop_everything_after_failure;
@@ -2138,7 +2153,7 @@ static enum err_msg init_renderer( struct cara_worker_state * p_ws )
 
   // Begin recording on the primary buffer
   VkCommandBuffer trans_buf =
-    cara_vk.arr_trans_cmdbuf_sets[nr_trans_cmd_pool_sets + frame_id % cara_max_nr_fif].
+    cara_vk.arr_trans_cmdbuf_sets[nr_al_cmd_pool_sets + frame_id % cara_max_nr_fif].
       primary_cmd_buf;
 #ifdef DEBUG_MODE
   fprintf( stderr, "[Vulkan-Debug] TP cmd_buf=%#018lx\n", ptr2ui(trans_buf) );
@@ -2146,12 +2161,12 @@ static enum err_msg init_renderer( struct cara_worker_state * p_ws )
   SPALL_BEGIN("begin_trans_buf");
   // TODO synchronization needed
   result = vkBeginCommandBuffer( trans_buf, &cmd_buf_begin_info );
+  SPALL_END();
   if( result != VK_SUCCESS ) {
     fprintf( stderr, "[Carbonara] Could not begin command(transfer) buffer recording operation. "
         "'%s'\n", string_VkResult(result) );
     goto stop_everything_after_failure;
   }
-  SPALL_END();
 
 
 
@@ -2361,16 +2376,39 @@ static enum err_msg init_renderer( struct cara_worker_state * p_ws )
   vkCmdPipelineBarrier2KHR( trans_buf, &dependency_info );
   SPALL_END();
 
+  VkCommandBuffer main_cmd_buf =
+    cara_vk.arr_graphics_cmdbuf_sets[frame_id % cara_max_nr_fif].primary_cmd_buf;
+  SPALL_BEGIN("vkBeginCommandBuffer");
+  // TODO synchronization needed
+  result = vkBeginCommandBuffer( main_cmd_buf, &cmd_buf_begin_info );
+  SPALL_END();
+  if( result != VK_SUCCESS ) {
+    fprintf( stderr, "[Carbonara] Could not begin command(G) buffer recording operation. "
+        "'%s'\n", string_VkResult(result) );
+    goto stop_everything_after_failure;
+  }
+  SPALL_BEGIN("barrier?");
+  vkCmdPipelineBarrier2KHR( main_cmd_buf, &dependency_info );
+  SPALL_END();
+  SPALL_BEGIN("vkEndCommandBuffer");
+  result = vkEndCommandBuffer( main_cmd_buf );
+  SPALL_END();
+  if( result != VK_SUCCESS ) {
+    fprintf( stderr, "[Carbonara] Error occurred ending command buffer recording.(G) '%s'\n",
+        string_VkResult(result) );
+    goto stop_everything_after_failure;
+  }
+
 
   // End recording
   SPALL_BEGIN("end_trans_buf");
   result = vkEndCommandBuffer( trans_buf );
+  SPALL_END();
   if( result != VK_SUCCESS ) {
     fprintf( stderr, "[Carbonara] Error occurred ending command buffer recording.(1t) '%s'\n",
         string_VkResult(result) );
     goto stop_everything_after_failure;
   }
-  SPALL_END();
 
   //
   // Prepare to submit the command buffer
@@ -2402,6 +2440,30 @@ static enum err_msg init_renderer( struct cara_worker_state * p_ws )
   };
   SPALL_BEGIN("vkQueueSubmit2KHR");
   result = vkQueueSubmit2KHR( cara_vk.transfer_q, 1, &submit_info, VK_NULL_HANDLE );
+  SPALL_END();
+  if ( result != VK_SUCCESS ) {
+    fprintf( stderr, "[Carbonara-Debug] vkQueueSubmit2KHR failed.. (result=%s)\n",
+        string_VkResult(result) );
+    goto stop_everything_after_failure;
+  }
+
+  cmd_buf_submit_info.commandBuffer = main_cmd_buf;
+  sempho_sgnl_info.semaphore = cara_vk.arr_semphos_gr[frame_id % cara_max_nr_fif];
+  sempho_sgnl_info.value = csb_present_swapchain_img +
+    frame_id / cara_max_nr_fif * cara_nr_signs_gr;
+  sempho_sgnl_info.stageMask = VK_PIPELINE_STAGE_2_ALL_GRAPHICS_BIT_KHR;
+  VkSemaphoreSubmitInfoKHR sempho_wait_info = {
+    .sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO_KHR,
+    .pNext = nullptr,
+    .semaphore = cara_vk.arr_semphos_tr[frame_id % cara_max_nr_fif],
+    .value = csb_data_trans_done + frame_id / cara_max_nr_fif * cara_nr_signs_tr,
+    .stageMask = VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT_KHR,
+    .deviceIndex = 0,
+  };
+  submit_info.waitSemaphoreInfoCount = 1;
+  submit_info.pWaitSemaphoreInfos = &sempho_wait_info;
+  SPALL_BEGIN("vkQueueSubmit2KHR");
+  result = vkQueueSubmit2KHR( cara_vk.graphics_q, 1, &submit_info, VK_NULL_HANDLE );
   SPALL_END();
   if ( result != VK_SUCCESS ) {
     fprintf( stderr, "[Carbonara-Debug] vkQueueSubmit2KHR failed.. (result=%s)\n",
@@ -2857,7 +2919,8 @@ static enum err_msg init_renderer( struct cara_worker_state * p_ws )
   // Vertex input binding description for depth-only prepass
   VkVertexInputBindingDescription vib_desc_depth_only = {
     .binding = 0,
-    .stride = sizeof(float)*3 + sizeof(float)*3,
+    //.stride = sizeof(float)*3 + sizeof(float)*3,
+    .stride = sizeof(float)*3 + sizeof(float)*2 + sizeof(uint32_t),  // position, uv, texid
     .inputRate = VK_VERTEX_INPUT_RATE_VERTEX,
   };
   VkVertexInputAttributeDescription arr_via_desc_depth_only[] = {
@@ -2876,13 +2939,15 @@ static enum err_msg init_renderer( struct cara_worker_state * p_ws )
   // Vertex input binding description for cs_draw_opaq_objs
   VkVertexInputBindingDescription vib_desc_main_render = {
     .binding = 0,
-    .stride = sizeof(float)*3 + sizeof(float)*3,  // position and color
+    //.stride = sizeof(float)*3 + sizeof(float)*3,  // position and color
+    .stride = sizeof(float)*3 + sizeof(float)*2 + sizeof(uint32_t),  // position, uv, texid
     .inputRate = VK_VERTEX_INPUT_RATE_VERTEX,
   };
   VkVertexInputAttributeDescription arr_via_desc_main_render[] = {
     // location, binding, format, offset
     { 0, 0, VK_FORMAT_R32G32B32_SFLOAT, 0 },
-    { 1, 0, VK_FORMAT_R32G32B32_SFLOAT, sizeof(float)*3 },
+    { 1, 0, VK_FORMAT_R32G32_SFLOAT, sizeof(float)*3 },
+    { 2, 0, VK_FORMAT_R32_UINT, sizeof(float)*3 + sizeof(float)*2 },
   };
   VkPipelineVertexInputStateCreateInfo plvis_create_info_main_render = {
     .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
@@ -2894,24 +2959,28 @@ static enum err_msg init_renderer( struct cara_worker_state * p_ws )
     .pVertexAttributeDescriptions = arr_via_desc_main_render,
   };
   // Vertex input binding description for cs_copy_to_swapchain_img
-  VkVertexInputBindingDescription vib_desc_cp2sc = {
-    .binding = 0,
-    .stride = sizeof(float)*3 + sizeof(float)*3,
-    .inputRate = VK_VERTEX_INPUT_RATE_VERTEX,
-  };
-  VkVertexInputAttributeDescription arr_via_desc_cp2sc[] = {
-    // location, binding, format, offset
-    { 0, 0, VK_FORMAT_R32G32B32_SFLOAT, 0 },
-    { 1, 0, VK_FORMAT_R32G32_SFLOAT, sizeof(float)*3 },
-  };
+  //VkVertexInputBindingDescription vib_desc_cp2sc = {
+  //  .binding = 0,
+  //  .stride = sizeof(float)*3 + sizeof(float)*3,
+  //  .inputRate = VK_VERTEX_INPUT_RATE_VERTEX,
+  //};
+  //VkVertexInputAttributeDescription arr_via_desc_cp2sc[] = {
+  //  // location, binding, format, offset
+  //  { 0, 0, VK_FORMAT_R32G32B32_SFLOAT, 0 },
+  //  { 1, 0, VK_FORMAT_R32G32_SFLOAT, sizeof(float)*3 },
+  //};
   VkPipelineVertexInputStateCreateInfo plvis_create_info_cp2sc = {
     .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
     .pNext = nullptr,
     .flags = 0,
-    .vertexBindingDescriptionCount = 1,
-    .pVertexBindingDescriptions = &vib_desc_cp2sc,
-    .vertexAttributeDescriptionCount = _arr_elem_cnt( arr_via_desc_cp2sc ),
-    .pVertexAttributeDescriptions = arr_via_desc_cp2sc,
+    //.vertexBindingDescriptionCount = 1,
+    //.pVertexBindingDescriptions = &vib_desc_cp2sc,
+    .vertexBindingDescriptionCount = 0,
+    .pVertexBindingDescriptions = nullptr,
+    //.vertexAttributeDescriptionCount = _arr_elem_cnt( arr_via_desc_cp2sc ),
+    //.pVertexAttributeDescriptions = arr_via_desc_cp2sc,
+    .vertexAttributeDescriptionCount = 0,
+    .pVertexAttributeDescriptions = nullptr,
   };
 
   //
@@ -2983,6 +3052,21 @@ static enum err_msg init_renderer( struct cara_worker_state * p_ws )
                                           // immediately before the rasterization stage.
     .polygonMode = VK_POLYGON_MODE_FILL,
     .cullMode = VK_CULL_MODE_BACK_BIT,  // TODO Consider culling them yourself
+    .frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE,
+    .depthBiasEnable = VK_FALSE,
+    .depthBiasConstantFactor = .0f,
+    .depthBiasClamp = .0f,  // It must be 0.0 when depthBiasEnable is VK_FALSE
+    .depthBiasSlopeFactor = .0f,
+    .lineWidth = 1.0f,
+  };
+  VkPipelineRasterizationStateCreateInfo plrs_create_info_nocull = {
+    .sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
+    .pNext = nullptr,
+    .flags = 0,
+    .depthClampEnable = VK_FALSE,
+    .rasterizerDiscardEnable = VK_FALSE,
+    .polygonMode = VK_POLYGON_MODE_FILL,
+    .cullMode = VK_CULL_MODE_NONE,  // No culling will be done by the vulkan driver
     .frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE,
     .depthBiasEnable = VK_FALSE,
     .depthBiasConstantFactor = .0f,
@@ -3144,7 +3228,7 @@ static enum err_msg init_renderer( struct cara_worker_state * p_ws )
         string_VkResult(result) );
     goto stop_everything_after_failure;
   }
-  arr_pc_ranges[0].offset = 64;  assume( arr_pc_ranges[0].offset % 4 == 0 );
+  arr_pc_ranges[0].offset = 0;  assume( arr_pc_ranges[0].offset % 4 == 0 );
   arr_pc_ranges[0].size = 64;  assume( arr_pc_ranges[0].size % 4 == 0 );
   pll_create_info.pSetLayouts = &cara_vk.dsl_main_render;
   result = vkCreatePipelineLayout( cara_vk.log_dev, &pll_create_info,
@@ -3259,7 +3343,7 @@ static enum err_msg init_renderer( struct cara_worker_state * p_ws )
   cp2sc_gpl_create_info->pInputAssemblyState = &plias_create_info;
   cp2sc_gpl_create_info->pTessellationState = nullptr;
   cp2sc_gpl_create_info->pViewportState = &plvps_create_info;
-  cp2sc_gpl_create_info->pRasterizationState = &plrs_create_info;
+  cp2sc_gpl_create_info->pRasterizationState = &plrs_create_info_nocull;
   cp2sc_gpl_create_info->pMultisampleState = &plmss_create_info;
   cp2sc_gpl_create_info->pDepthStencilState =
     &arr_pldss_create_info[(unsigned int)cara_nr_subpasses + cs2_copy_to_sc];
@@ -3361,7 +3445,8 @@ static enum err_msg init_renderer( struct cara_worker_state * p_ws )
   atomic_store_explicit( &cara_vk.frame_id, cara_max_nr_fif, memory_order_release );
 
   // Signal semaphores so that the very first rendering function won't be hanging forever.
-  for ( unsigned int fif_idx = 0; fif_idx < cara_max_nr_fif; fif_idx++ ) {
+  // fif_idx 0 is signaled in a submit in init_renderer()
+  for ( unsigned int fif_idx = 1; fif_idx < cara_max_nr_fif; fif_idx++ ) {
     VkSemaphoreSignalInfo sgnl_info = {
       .sType = VK_STRUCTURE_TYPE_SEMAPHORE_SIGNAL_INFO,
       .pNext = nullptr,
@@ -3596,7 +3681,7 @@ enum err_msg cara_deal_with_asyncio(
 {
   SPALL_BEGIN("deal_with_aio");
   constexpr unsigned int mask = 0b1;
-  static_assert( mask + 1 == nr_trans_cmd_pool_sets && _is_power_of_two(mask + 1) );
+  static_assert( mask + 1 == nr_al_cmd_pool_sets && _is_power_of_two(mask + 1) );
   typeof(p_ws->io_work.local_vram_batch_cntr) cur_cntr =
     atomic_load_explicit( &p_ws->io_work.vram_batch_cntr, memory_order_acquire );
   unsigned int set_idx = mask & cur_cntr;
@@ -3888,28 +3973,36 @@ void jf_render_frame( uint64_t cur_time_in_5us )
 
   union extent_2d cur_win_dims;
   cur_win_dims.whole = atomic_load_explicit( &cara_vk.win_size.atomic_whole, memory_order_acquire );
-  static uint64_t prev_sc_creation_time = 0;
-  if ( cur_win_dims.parts.width != cara_vk.dims_swapchain_imgs.width ||
-      cur_win_dims.parts.height != cara_vk.dims_swapchain_imgs.height ) {
-    auto fb_width = cara_vk.dims_swapchain_imgs.width;
-    auto fb_height = cara_vk.dims_swapchain_imgs.height;
-    float aspect_ratio = (float)fb_width / (float) fb_height;
-
-    typeof(cur_time_in_5us) tolerance = (typeof(cur_time_in_5us)) (1000.0 / 60 * 1000 / 5);
-    if ( fabsf(aspect_ratio - (
-          (float)cur_win_dims.parts.width / (float)cur_win_dims.parts.height )) > 0.18 ) {
-      tolerance *= 2;
-    }
-
-    if ( cur_time_in_5us - prev_sc_creation_time > tolerance ) {
-      // Recreate the swapchain
-      err = expand_swapchain_and_framebuffer( &cara_vk, cur_win_dims );
-      if ( err ) {
-        atomic_fetch_or_explicit( &cara_single.sign_to_end, 2, memory_order_release );
-      }
-      prev_sc_creation_time = cur_time_in_5us;
+  if ( cur_win_dims.parts.width > cara_vk.max_win_size.parts.width ||
+      cur_win_dims.parts.height > cara_vk.max_win_size.parts.height ) {
+    // Recreate the swapchain
+    err = expand_swapchain_and_framebuffer( &cara_vk, cur_win_dims );
+    if ( err ) {
+      atomic_fetch_or_explicit( &cara_single.sign_to_end, 2, memory_order_release );
     }
   }
+  //static uint64_t prev_sc_creation_time = 0;
+  //if ( cur_win_dims.parts.width != cara_vk.dims_swapchain_imgs.width ||
+  //    cur_win_dims.parts.height != cara_vk.dims_swapchain_imgs.height ) {
+  //  auto fb_width = cara_vk.dims_swapchain_imgs.width;
+  //  auto fb_height = cara_vk.dims_swapchain_imgs.height;
+  //  float aspect_ratio = (float)fb_width / (float) fb_height;
+
+  //  typeof(cur_time_in_5us) tolerance = (typeof(cur_time_in_5us)) (1000.0 / 60 * 1000 / 5);
+  //  if ( fabsf(aspect_ratio - (
+  //        (float)cur_win_dims.parts.width / (float)cur_win_dims.parts.height )) > 0.18 ) {
+  //    tolerance *= 2;
+  //  }
+
+  //  if ( cur_time_in_5us - prev_sc_creation_time > tolerance ) {
+  //    // Recreate the swapchain
+  //    err = expand_swapchain_and_framebuffer( &cara_vk, cur_win_dims );
+  //    if ( err ) {
+  //      atomic_fetch_or_explicit( &cara_single.sign_to_end, 2, memory_order_release );
+  //    }
+  //    prev_sc_creation_time = cur_time_in_5us;
+  //  }
+  //}
 
   //VkCommandBuffer dummy_cmdbuf = cara_vk.dummy_cmdbuf[(frame_id + 1) / cara_max_nr_fif];
 acquire_swapchain_image:
@@ -4027,7 +4120,7 @@ acquire_swapchain_image:
   SPALL_BEGIN("vkResetCommandPool-T");
   result = vkResetCommandPool(
       cara_vk.log_dev,
-      cara_vk.arr_trans_cmdbuf_sets[nr_trans_cmd_pool_sets + frame_id % cara_max_nr_fif].
+      cara_vk.arr_trans_cmdbuf_sets[nr_al_cmd_pool_sets + frame_id % cara_max_nr_fif].
         arr_cmd_pools[cara_single.proc_map->nr_processors],
       0 );
   SPALL_END();
@@ -4039,7 +4132,7 @@ acquire_swapchain_image:
 
   // Begin recording on the primary buffer
   VkCommandBuffer pri_trans_buf =
-    cara_vk.arr_trans_cmdbuf_sets[nr_trans_cmd_pool_sets + frame_id % cara_max_nr_fif].
+    cara_vk.arr_trans_cmdbuf_sets[nr_al_cmd_pool_sets + frame_id % cara_max_nr_fif].
       primary_cmd_buf;
   result = vkBeginCommandBuffer( pri_trans_buf, &cmd_buf_begin_info );
   if( result != VK_SUCCESS ) {
@@ -4211,6 +4304,8 @@ acquire_swapchain_image:
 
   auto fb_width = cara_vk.dims_swapchain_imgs.width;
   auto fb_height = cara_vk.dims_swapchain_imgs.height;
+  fb_width = min( fb_width, cur_win_dims.parts.width );
+  fb_height = min( fb_height, cur_win_dims.parts.height );
 
   VkViewport viewport = {
     .x = 0, .y = 0,
@@ -4240,14 +4335,14 @@ acquire_swapchain_image:
   constexpr uint64_t nr_5us_in_1s = 1000*1000 / 5;
   constexpr double pi_per_sec = M_PI / nr_5us_in_1s;
   const struct mat4x4 rotate = rot_aya_4x4( (float) ((double)cur_time_in_5us * pi_per_sec * .5) );
-  const struct mat4x4 translate = translate_4x4( 0, 0, 3.0f );
+  const struct mat4x4 translate = translate_4x4( 0, cara_1m * 1.75f, cara_1m * 4 );
   const struct mat4x4 pp = get_perspective_proj_mat(
-      (float)(M_PI / 2.0), (float)fb_width/(float)fb_height, 1.5f, 10000.0f );
+      (float)(M_PI / 3.0), (float)fb_width/(float)fb_height, cara_1m * .25f, 10000.0f );
   const struct mat4x4 consts = mul_4x4_4x4( mul_4x4_4x4( rotate, translate ), pp );
   vkCmdPushConstants( main_cmd_buf, cara_vk.pll_z_only, VK_SHADER_STAGE_VERTEX_BIT,
       0, 4*4*4, &consts );
-  vkCmdDrawIndexed( main_cmd_buf, 3*6, 1, 6, 4, 0 );
-  //vkCmdDrawIndexed( main_cmd_buf, 3, 1, 6, 4, 0 );
+  vkCmdDrawIndexed( main_cmd_buf, 3*6 + 3*2, 1, 0, 0, 0 );
+  //vkCmdDrawIndexed( main_cmd_buf, 3*6, 1, 6, 4, 0 );
 
 
   //VkImageMemoryBarrier2KHR img_bar = {
@@ -4322,9 +4417,9 @@ acquire_swapchain_image:
 
   // TODO cs_draw_opaq_objs
   vkCmdPushConstants( main_cmd_buf, cara_vk.pll_main_render, VK_SHADER_STAGE_VERTEX_BIT,
-      64, 4*4*4, &consts );
-  vkCmdDrawIndexed( main_cmd_buf, 3*6, 1, 6, 4, 0 );
-  //vkCmdDrawIndexed( main_cmd_buf, 3, 1, 6, 4, 0 );
+      0, 4*4*4, &consts );
+  vkCmdDrawIndexed( main_cmd_buf, 3*6 + 3*2, 1, 0, 0, 0 );
+  //vkCmdDrawIndexed( main_cmd_buf, 3*6, 1, 6, 4, 0 );
 
 
 
@@ -4408,6 +4503,8 @@ acquire_swapchain_image:
 
   auto sb_width = cara_vk.dims_swapchain_imgs.width;
   auto sb_height = cara_vk.dims_swapchain_imgs.height;
+  //sb_width = min( sb_width, cur_win_dims.parts.width );
+  //sb_height = min( sb_height, cur_win_dims.parts.height );
 
   VkViewport viewport2 = {
     .x = 0, .y = 0,
@@ -4479,7 +4576,8 @@ acquire_swapchain_image:
   SPALL_END();
 
   // TODO cs2_copy_to_sc
-  vkCmdDrawIndexed( main_cmd_buf, 6, 1, 0, 0, 0 );
+  vkCmdDraw( main_cmd_buf, 3, 1, 0, 0 );
+  //vkCmdDrawIndexed( main_cmd_buf, 6, 1, 0, 0, 0 );
 
   //SPALL_BEGIN("vkCmdNextSubpass");
   //vkCmdNextSubpass( main_cmd_buf, VK_SUBPASS_CONTENTS_INLINE );
