@@ -91,7 +91,7 @@ enum cara_framebuffers : unsigned char {
 };
 
 constexpr unsigned int cara_nr_tex_in_texarr = 4;
-constexpr unsigned int cara_max_nr_texarrs = 128;
+constexpr unsigned int cara_max_nr_albmaps = 128;
 
 //-------------------------------------------------------------------------------------------------
 
@@ -172,10 +172,11 @@ struct cara_vk_renderer {
   void * spv_mcsdf_font_frag;
   // TODO mrange-> mbi
   struct vk_mbind_info mbi_vbuf;  // Memory allocation range in the staging buffer
+  struct vk_mbind_info mbi_abuf;
   struct vk_mbind_info mbi_ibuf;  // Memory allocation range in the staging buffer
-  struct vk_mbind_info mbi_albmaps;  // Memory allocation range in the staging buffer
+  struct vk_mbind_info mbi_albmaps[cara_max_nr_albmaps];  // Memory allocation range in staging buffer
   struct vk_mbind_info mbi_zbuf_n_cbuf[cara_max_nr_fif][2];  ///> Memory allocation ranges in the
-                                                              ///>  staging buffer
+                                                             ///>  staging buffer
   SDL_Window * window;
   VkImage * arr_swapchain_imgs;
   VkImageView * arr_swapchain_iv;
@@ -194,20 +195,29 @@ struct cara_vk_renderer {
   // (similarly to OpenGL). We can render into images, in which case we use images as color or depth
   // attachments (render targets).
 
+  static_assert( alignof(VkSwapchainKHR) >=
+      alignof(VkPhysicalDeviceDescriptorIndexingPropertiesEXT) );
+  VkPhysicalDeviceDescriptorIndexingPropertiesEXT desc_indexing_props;
+
   VkBuffer vert_buf;  // vertex attributes
+  VkBuffer attr_buf;
   VkBuffer ind_buf;  // vertex indices
   VkImage zbuf_n_cbuf[cara_max_nr_fif][2];
   VkImageView zbuf_n_cbuf_iv[cara_max_nr_fif][2];
-  VkSampler screen_sampler;
-  VkImage albmaps[cara_max_nr_texarrs];  // n-layer image of 2048*2048
-  VkImageView albmap_ivs[cara_max_nr_texarrs];
+  VkSampler cbuf_sampler;
+  VkImage albmaps[cara_max_nr_albmaps];  // n-layer image of 2048*2048
+  VkImageView albmap_ivs[cara_max_nr_albmaps];
   VkSampler albmap_sampler;
   VkDescriptorSetLayout dsl_z_only;
-  VkDescriptorSetLayout dsl_main_render;
+  VkDescriptorSetLayout dsl_main_render_img;
+  VkDescriptorSetLayout dsl_main_render_sampler;
   VkDescriptorSetLayout dsl_cp2sc;
   VkDescriptorSetLayout dsl_mcsdf_font;
-  VkDescriptorPool descriptor_pool;
-  VkDescriptorSet ds_main_render;
+  VkDescriptorPool descriptor_pool_main_img;
+  VkDescriptorPool descriptor_pool_main_sampler;
+  VkDescriptorPool descriptor_pool_cbuf;
+  VkDescriptorSet ds_main_render_img;
+  VkDescriptorSet ds_main_render_sampler;
   VkDescriptorSet ds_cp2sc[cara_max_nr_fif];
   VkDescriptorSet ds_mcsdf_font;
   VkPipelineLayout pll_z_only;

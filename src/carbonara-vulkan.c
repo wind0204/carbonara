@@ -63,11 +63,13 @@ static const char * const names_instance_extensions_required[] = {
 static const char * const names_device_extensions_required[] = {
   VK_KHR_SWAPCHAIN_EXTENSION_NAME,  // To draw image on screen
   VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME,  // VkPhysicalDeviceVulkan13Features::synchronization2
-  //VK_KHR_MAINTENANCE1_EXTENSION_NAME,  // Do we need this?
+  //VK_KHR_MAINTENANCE3_EXTENSION_NAME,   // It is required for descriptor indexing but it has been
+                                          //promoted to Vulkan 1.1
   VK_KHR_MAINTENANCE_8_EXTENSION_NAME,  // To make src/dst sync scopes to work when doing a queue
                                         //  family ownership transfer.
   VK_EXT_SCALAR_BLOCK_LAYOUT_EXTENSION_NAME,  //\
                                             //VkPhysicalDeviceVulkan12Features::scalarBlockLayout
+  VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME,  // Descriptor indexing
 };
 
 // I just picked 1.2 for vkCmdDrawIndexedIndirectCount
@@ -443,6 +445,7 @@ uint8_t init_vulkan(
   // Check the properties and supported features of each device
   //
   VkPhysicalDeviceProperties2 * arr_device_props;
+  VkPhysicalDeviceDescriptorIndexingPropertiesEXT arr_descriptor_indexing_props[nr_phys_devices];
 
   arr_device_props = cara_malloc(
       &worker_state->malloc_helper, _alignof_arr_elem(arr_device_props),
@@ -456,9 +459,12 @@ uint8_t init_vulkan(
     memset( &arr_device_props[idx_phys_dev], 0, _sizeof_arr_elem(arr_device_props) );
     arr_device_props[idx_phys_dev].sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
 
+    VkPhysicalDeviceVulkan11Features vk11_features = {0};
+    vk11_features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES;
+    vk11_features.pNext = nullptr;
     VkPhysicalDeviceVulkan12Features vk12_features = {0};
     vk12_features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
-    vk12_features.pNext = nullptr;
+    vk12_features.pNext = &vk11_features;
     VkPhysicalDeviceVulkan13Features vk13_features = {0};
     vk13_features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;
     vk13_features.pNext = &vk12_features;
@@ -477,6 +483,7 @@ uint8_t init_vulkan(
     memset(&device_features, 0, sizeof(device_features));
     device_features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
     device_features.pNext = &vk13_features;
+
     // The VkPhysicalDeviceFeatures structure lists additional features that may be supported by
     // the given hardware, but are not required by the core Vulkan specification. Features include
     // items such as geometry and tessellation shaders, depth clamp and bias, multiple viewports,
@@ -500,12 +507,104 @@ uint8_t init_vulkan(
     // If we want to enable all features supported by a given physical device, we just need to
     // query for the available features and provide the acquired data during logical device
     // creation.
+
     vkGetPhysicalDeviceFeatures2( arr_phys_devices[idx_phys_dev], &device_features );
+
+    // There are lot of properties associated with descriptor_indexing, grab them here.
+    arr_descriptor_indexing_props[idx_phys_dev].sType =
+      VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_PROPERTIES_EXT;
+    arr_descriptor_indexing_props[idx_phys_dev].pNext = nullptr;
+    arr_device_props[idx_phys_dev].pNext = &arr_descriptor_indexing_props[idx_phys_dev];
+
+    vkGetPhysicalDeviceProperties2( arr_phys_devices[idx_phys_dev],
+        &arr_device_props[idx_phys_dev] );
+
+    if ( !vk11_features.shaderDrawParameters ) {
+#ifdef DEBUG_MODE
+      fprintf( stdout, "[Vulkan] %s doesn't support %s.\n",
+          arr_device_props[idx_phys_dev].properties.deviceName,
+          "shaderDrawParameters"
+          );
+#endif
+      arr_phys_devices[idx_phys_dev] = 0;
+      continue;
+    }
+
     if ( !device_features.features.samplerAnisotropy ) {
 #ifdef DEBUG_MODE
       fprintf( stdout, "[Vulkan] %s doesn't support %s.\n",
           arr_device_props[idx_phys_dev].properties.deviceName,
           "samplerAnisotropy"
+          );
+#endif
+      arr_phys_devices[idx_phys_dev] = 0;
+      continue;
+    }
+
+
+    //
+    // Descriptor indexing for update-after-bind
+    //
+
+    if ( !device_features.features.shaderSampledImageArrayDynamicIndexing ) {
+#ifdef DEBUG_MODE
+      fprintf( stdout, "[Vulkan] %s doesn't support %s.\n",
+          arr_device_props[idx_phys_dev].properties.deviceName,
+          "shaderSampledImageArrayDynamicIndexing"
+          );
+#endif
+      arr_phys_devices[idx_phys_dev] = 0;
+      continue;
+    }
+
+    // These are required to support the 4 descriptor binding flags we use in this renderer.
+    if ( !vk12_features.descriptorBindingSampledImageUpdateAfterBind ) {
+#ifdef DEBUG_MODE
+      fprintf( stdout, "[Vulkan] %s doesn't support %s.\n",
+          arr_device_props[idx_phys_dev].properties.deviceName,
+          "descriptorBindingSampledImageUpdateAfterBind"
+          );
+#endif
+      arr_phys_devices[idx_phys_dev] = 0;
+      continue;
+    }
+    if ( !vk12_features.descriptorBindingPartiallyBound ) {
+#ifdef DEBUG_MODE
+      fprintf( stdout, "[Vulkan] %s doesn't support %s.\n",
+          arr_device_props[idx_phys_dev].properties.deviceName,
+          "descriptorBindingPartiallyBound"
+          );
+#endif
+      arr_phys_devices[idx_phys_dev] = 0;
+      continue;
+    }
+    if ( !vk12_features.descriptorBindingUpdateUnusedWhilePending ) {
+#ifdef DEBUG_MODE
+      fprintf( stdout, "[Vulkan] %s doesn't support %s.\n",
+          arr_device_props[idx_phys_dev].properties.deviceName,
+          "descriptorBindingUpdateUnusedWhilePending"
+          );
+#endif
+      arr_phys_devices[idx_phys_dev] = 0;
+      continue;
+    }
+    if ( !vk12_features.descriptorBindingVariableDescriptorCount ) {
+#ifdef DEBUG_MODE
+      fprintf( stdout, "[Vulkan] %s doesn't support %s.\n",
+          arr_device_props[idx_phys_dev].properties.deviceName,
+          "descriptorBindingVariableDescriptorCount"
+          );
+#endif
+      arr_phys_devices[idx_phys_dev] = 0;
+      continue;
+    }
+
+    // Enables use of runtimeDescriptorArrays in SPIR-V shaders.
+    if ( !vk12_features.runtimeDescriptorArray ) {
+#ifdef DEBUG_MODE
+      fprintf( stdout, "[Vulkan] %s doesn't support %s.\n",
+          arr_device_props[idx_phys_dev].properties.deviceName,
+          "runtimeDescriptorArray"
           );
 #endif
       arr_phys_devices[idx_phys_dev] = 0;
@@ -756,9 +855,6 @@ uint8_t init_vulkan(
 //      arr_phys_devices[idx_phys_dev] = 0;
 //      continue;
 //    }
-
-    vkGetPhysicalDeviceProperties2( arr_phys_devices[idx_phys_dev],
-        &arr_device_props[idx_phys_dev] );
 
     // TODO Player might want to choose a specific device name.
 
@@ -1429,18 +1525,33 @@ we_have_already_recorded_that_q_fam:
   // logical device.
   VkPhysicalDeviceFeatures2 device_features = {0};
   device_features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
-
+  VkPhysicalDeviceVulkan11Features vk11_features = {0};
+  vk11_features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES;
   VkPhysicalDeviceVulkan12Features vk12_features = {0};
   vk12_features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
-  vk12_features.pNext = nullptr;
+  VkPhysicalDeviceVulkan13Features vk13_features = {0};
+  vk13_features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;
+  device_features.pNext = &vk13_features;
+  vk13_features.pNext = &vk12_features;
+  vk12_features.pNext = &vk11_features;
+  vk11_features.pNext = nullptr;
+
+  vk11_features.shaderDrawParameters = VK_TRUE;
+
   vk12_features.timelineSemaphore = VK_TRUE;
   vk12_features.drawIndirectCount = VK_TRUE;
   vk12_features.imagelessFramebuffer = VK_TRUE;
   vk12_features.separateDepthStencilLayouts = VK_TRUE;
   vk12_features.scalarBlockLayout = VK_TRUE;
-  VkPhysicalDeviceVulkan13Features vk13_features = {0};
-  vk13_features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;
-  vk13_features.pNext = &vk12_features;
+
+  vk12_features.descriptorIndexing = VK_TRUE;
+  device_features.features.shaderSampledImageArrayDynamicIndexing = VK_TRUE;
+  vk12_features.descriptorBindingSampledImageUpdateAfterBind = VK_TRUE;
+  vk12_features.descriptorBindingPartiallyBound = VK_TRUE;
+  vk12_features.descriptorBindingUpdateUnusedWhilePending = VK_TRUE;
+  vk12_features.descriptorBindingVariableDescriptorCount = VK_TRUE;
+  vk12_features.runtimeDescriptorArray = VK_TRUE;
+
   vk13_features.synchronization2 = VK_TRUE;
   vk13_features.robustImageAccess = VK_FALSE;   // I make it clear that I do not use it.
                                                 // I redundantly zero it once again.
@@ -1456,10 +1567,8 @@ we_have_already_recorded_that_q_fam:
   //timeline_semaphore_features.pNext = &vk13_features;
   //timeline_semaphore_features.timelineSemaphore = VK_TRUE;
 
-  device_features.pNext = &vk13_features;
   //device_features.features.multiDrawIndirect = VK_TRUE;
-  device_features.features.robustBufferAccess = VK_FALSE;  // I make it clear that I do not use it.
-                                                           // I redundantly zero it once again.
+
   device_features.features.samplerAnisotropy = VK_TRUE;
 
   device_features.features.sparseResidencyImage2D = VK_TRUE;
@@ -1735,20 +1844,16 @@ we_have_already_recorded_that_q_fam:
             surface_format->colorSpace == desired_color_spaces[idx_pair] ) {
           present_img_fmt = surface_format->format;
           color_space = surface_format->colorSpace;
-          // End the nested loop
           idx_supported_format = UINT_FAST8_MAX;
-          break;
+          goto end_of_nested_loop;
         }
-        // End the nested loop
-        if ( idx_supported_format == UINT_FAST8_MAX ) {
-          break;
-        }
-      }
-      // End the nested loop
-      if ( idx_supported_format == UINT_FAST8_MAX ) {
-        break;
-      }
-    }
+
+      }  // for ( idx_supported_format = 0;
+         //     idx_supported_format < nr_supported_surface_formats; idx_supported_format++ )
+
+    }  // for ( uint_fast8_t idx_pair = 0;
+       //     idx_pair < _arr_elem_cnt(desired_img_formats_for_present); idx_pair++ )
+end_of_nested_loop:
 
     if ( idx_supported_format != UINT_FAST8_MAX ) {
       fprintf( stderr,
@@ -2516,6 +2621,47 @@ error_after_presentation_surface:
   cara_vk.swapchain_color_space = color_space;
   cara_vk.presentation_surface = presentation_surface;
 
+
+  memcpy( &cara_vk.desc_indexing_props, &arr_descriptor_indexing_props[idx_phys_deviced_picked],
+      sizeof(VkPhysicalDeviceDescriptorIndexingPropertiesEXT) );
+#if defined(DEBUG_MODE)
+  fprintf( stdout, "[Vulkan-Debug] limits related to descriptor indexing:\n" );
+
+  // Similar to maxDescriptorSetSampledImages but counts descriptors from descriptor sets created
+  // with or without the VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT bit set.
+  // maxDescriptorSetSampledImages is the maximum number of sampled images that can be included in a
+  // pipeline layout. Descriptors with a type of VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+  // VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, or VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER count against this
+  // limit.
+  fprintf( stdout, "  maxDescriptorSetUpdateAfterBindSampledImages: %u\n",
+      cara_vk.desc_indexing_props.maxDescriptorSetUpdateAfterBindSampledImages );
+
+  // A boolean value indicating whether implicit LOD calculations for image operations have
+  // well-defined results when the image and/or sampler objects used for the instruction are not
+  // uniform within a quad.
+  fprintf( stdout, "  quadDivergentImplicitLod: %u\n",
+      cara_vk.desc_indexing_props.quadDivergentImplicitLod );
+
+  //fprintf( stdout, "  shaderSampledImageArrayNonUniformIndexingNative: %u\n",
+  //    cara_vk.desc_indexing_props.shaderSampledImageArrayNonUniformIndexingNative );
+
+  // maxPerStageUpdateAfterBindResources is similar to maxPerStageResources but counts descriptors
+  // from descriptor sets created with or without the
+  // VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT bit set.
+  // maxPerStageResources is the maximum number of resources that can be accessible to a single
+  // shader stage in a pipeline layout.
+  fprintf( stdout, "  maxPerStageUpdateAfterBindResources: %u\n",
+      cara_vk.desc_indexing_props.maxPerStageUpdateAfterBindResources );
+
+  // The maximum number of descriptors (summed over all descriptor types) that can be created across
+  // all pools that are created with the VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT bit set.
+  // Pool creation may fail when this limit is exceeded, or when the space this limit represents is
+  // unable to satisfy a pool creation due to fragmentation.
+  fprintf( stdout, "  maxUpdateAfterBindDescriptorsInAllPools: %u\n",
+      cara_vk.desc_indexing_props.maxUpdateAfterBindDescriptorsInAllPools );
+#endif
+
+
   ma_free(cara_single.mem_arena, worker_state->worker_idx, arr_q_create_info);
   ma_free(cara_single.mem_arena, worker_state->worker_idx, arr_qfam_props);
   ma_free(cara_single.mem_arena, worker_state->worker_idx, arr_device_props);
@@ -2762,14 +2908,34 @@ void destroy_vk_objs( _typeof_member(struct ms_worker_info, idx_self) worker_idx
   //  }
   //}
 
-  if ( cara_vk.ds_main_render ) {
-    vkResetDescriptorPool( cara_vk.log_dev, cara_vk.descriptor_pool, 0 );
-    cara_vk.ds_main_render = VK_NULL_HANDLE;
+  if ( cara_vk.ds_main_render_img ) {
+    vkResetDescriptorPool( cara_vk.log_dev, cara_vk.descriptor_pool_main_img, 0 );
+    cara_vk.ds_main_render_img = VK_NULL_HANDLE;
+  }
+  if ( cara_vk.ds_main_render_sampler ) {
+    vkResetDescriptorPool( cara_vk.log_dev, cara_vk.descriptor_pool_main_sampler, 0 );
+    cara_vk.ds_main_render_sampler = VK_NULL_HANDLE;
+  }
+  for ( unsigned int fif_idx = 0; fif_idx < cara_max_nr_fif; fif_idx++ ) {
+    if ( cara_vk.ds_cp2sc[fif_idx] ) {
+      vkResetDescriptorPool( cara_vk.log_dev, cara_vk.descriptor_pool_cbuf, 0 );
+      cara_vk.ds_cp2sc[fif_idx] = VK_NULL_HANDLE;
+      break;
+    }
   }
 
-  if ( cara_vk.descriptor_pool ) {
-    vkDestroyDescriptorPool( cara_vk.log_dev, cara_vk.descriptor_pool, &vk_alloc_callbacks );
-    cara_vk.descriptor_pool = VK_NULL_HANDLE;
+  if ( cara_vk.descriptor_pool_main_img ) {
+    vkDestroyDescriptorPool( cara_vk.log_dev, cara_vk.descriptor_pool_main_img, &vk_alloc_callbacks );
+    cara_vk.descriptor_pool_main_img = VK_NULL_HANDLE;
+  }
+  if ( cara_vk.descriptor_pool_main_sampler ) {
+    vkDestroyDescriptorPool(
+        cara_vk.log_dev, cara_vk.descriptor_pool_main_sampler, &vk_alloc_callbacks );
+    cara_vk.descriptor_pool_main_sampler = VK_NULL_HANDLE;
+  }
+  if ( cara_vk.descriptor_pool_cbuf ) {
+    vkDestroyDescriptorPool( cara_vk.log_dev, cara_vk.descriptor_pool_cbuf, &vk_alloc_callbacks );
+    cara_vk.descriptor_pool_cbuf = VK_NULL_HANDLE;
   }
 
   if ( cara_vk.dsl_z_only ) {
@@ -2777,10 +2943,15 @@ void destroy_vk_objs( _typeof_member(struct ms_worker_info, idx_self) worker_idx
         &vk_alloc_callbacks );
     cara_vk.dsl_z_only = VK_NULL_HANDLE;
   }
-  if ( cara_vk.dsl_main_render ) {
-    vkDestroyDescriptorSetLayout( cara_vk.log_dev, cara_vk.dsl_main_render,
+  if ( cara_vk.dsl_main_render_img ) {
+    vkDestroyDescriptorSetLayout( cara_vk.log_dev, cara_vk.dsl_main_render_img,
         &vk_alloc_callbacks );
-    cara_vk.dsl_main_render = VK_NULL_HANDLE;
+    cara_vk.dsl_main_render_img = VK_NULL_HANDLE;
+  }
+  if ( cara_vk.dsl_main_render_sampler ) {
+    vkDestroyDescriptorSetLayout( cara_vk.log_dev, cara_vk.dsl_main_render_sampler,
+        &vk_alloc_callbacks );
+    cara_vk.dsl_main_render_sampler = VK_NULL_HANDLE;
   }
   if ( cara_vk.dsl_cp2sc ) {
     vkDestroyDescriptorSetLayout( cara_vk.log_dev, cara_vk.dsl_cp2sc,
@@ -2788,9 +2959,9 @@ void destroy_vk_objs( _typeof_member(struct ms_worker_info, idx_self) worker_idx
     cara_vk.dsl_cp2sc = VK_NULL_HANDLE;
   }
 
-  if ( cara_vk.screen_sampler ) {
-    vkDestroySampler( cara_vk.log_dev, cara_vk.screen_sampler, &vk_alloc_callbacks );
-    cara_vk.screen_sampler = VK_NULL_HANDLE;
+  if ( cara_vk.cbuf_sampler ) {
+    vkDestroySampler( cara_vk.log_dev, cara_vk.cbuf_sampler, &vk_alloc_callbacks );
+    cara_vk.cbuf_sampler = VK_NULL_HANDLE;
   }
   if ( cara_vk.albmap_sampler ) {
     vkDestroySampler( cara_vk.log_dev, cara_vk.albmap_sampler, &vk_alloc_callbacks );
@@ -2805,7 +2976,7 @@ void destroy_vk_objs( _typeof_member(struct ms_worker_info, idx_self) worker_idx
       enum err_msg err = ma_report_vk_malloc_rel( &cara_vk.vmm,
           &vk_alloc_callbacks, vk_malloc_wrapper,
           cara_vk.vmm.arr_mtype_used[vk_buf_type_texarr_2048],
-          cara_vk.mbi_albmaps );
+          cara_vk.mbi_albmaps[img_id] );
       if ( err ) {
         fprintf( stderr, "[Carbonara] Failure occurred in ma_report_vk_malloc_rel!! %s:%d "
             "'%s'\n", __FILE__, __LINE__, arr_emsg_txt[err] );
@@ -2813,8 +2984,8 @@ void destroy_vk_objs( _typeof_member(struct ms_worker_info, idx_self) worker_idx
           case emsg_already_done:
             [[fallthrough]];
           case emsg_unknown:  // VkDeviceMemory object is somehow missing
-            cara_vk.mbi_albmaps.range = invalid_range;
-            cara_vk.mbi_albmaps.malloc = VK_NULL_HANDLE;
+            cara_vk.mbi_albmaps[img_id].range = invalid_range;
+            cara_vk.mbi_albmaps[img_id].malloc = VK_NULL_HANDLE;
             vkDestroyImage( cara_vk.log_dev, cara_vk.albmaps[img_id], &vk_alloc_callbacks );
             cara_vk.albmaps[img_id] = VK_NULL_HANDLE;
             break;
@@ -2822,8 +2993,8 @@ void destroy_vk_objs( _typeof_member(struct ms_worker_info, idx_self) worker_idx
             break;
         }
       } else {  // No error occurred
-        cara_vk.mbi_albmaps.range = invalid_range;
-        cara_vk.mbi_albmaps.malloc = VK_NULL_HANDLE;
+        cara_vk.mbi_albmaps[img_id].range = invalid_range;
+        cara_vk.mbi_albmaps[img_id].malloc = VK_NULL_HANDLE;
         vkDestroyImage( cara_vk.log_dev, cara_vk.albmaps[img_id], &vk_alloc_callbacks );
         cara_vk.albmaps[img_id] = VK_NULL_HANDLE;
       }
@@ -2862,6 +3033,41 @@ void destroy_vk_objs( _typeof_member(struct ms_worker_info, idx_self) worker_idx
       cara_vk.mbi_vbuf.malloc = VK_NULL_HANDLE;
       vkDestroyBuffer( cara_vk.log_dev, cara_vk.vert_buf, &vk_alloc_callbacks );
       cara_vk.vert_buf = VK_NULL_HANDLE;
+    }
+  }
+
+  if ( cara_vk.attr_buf ) {
+    VkMemoryRequirements req;
+    vkGetBufferMemoryRequirements( cara_vk.log_dev, cara_vk.attr_buf, &req );
+    VkMemoryPropertyFlags preferred_props = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+    VkMemoryPropertyFlags required_props = 0;
+    VkMemoryPropertyFlags tolerable_props = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT;
+    uint32_t mtype_idx = ma_pick_best_mtype(
+      &cara_vk.vmm, &req, required_props, preferred_props, tolerable_props );
+    enum err_msg err = ma_report_vk_malloc_rel( &cara_vk.vmm,
+        &vk_alloc_callbacks, vk_malloc_wrapper,
+        mtype_idx,
+        cara_vk.mbi_abuf );
+    if ( err ) {
+      fprintf( stderr, "[Carbonara] Failure occurred in ma_report_vk_malloc_rel!! %s:%d '%s'\n",
+          __FILE__, __LINE__, arr_emsg_txt[err] );
+      switch ( err ) {
+        case emsg_already_done:
+          [[fallthrough]];
+        case emsg_unknown:  // VkDeviceMemory object is somehow missing
+          cara_vk.mbi_abuf.range = invalid_range;
+          cara_vk.mbi_abuf.malloc = VK_NULL_HANDLE;
+          vkDestroyBuffer( cara_vk.log_dev, cara_vk.attr_buf, &vk_alloc_callbacks );
+          cara_vk.attr_buf = VK_NULL_HANDLE;
+          break;
+        default:
+          break;
+      }
+    } else {
+      cara_vk.mbi_abuf.range = invalid_range;
+      cara_vk.mbi_abuf.malloc = VK_NULL_HANDLE;
+      vkDestroyBuffer( cara_vk.log_dev, cara_vk.attr_buf, &vk_alloc_callbacks );
+      cara_vk.attr_buf = VK_NULL_HANDLE;
     }
   }
 
@@ -3439,7 +3645,7 @@ enum err_msg create_renderpass_and_framebuffer_first_time( struct cara_vk_render
     fb_att_img_info1[att_idx].viewFormatCount = 1;
   }
   constexpr VkFormat rgba_unorm = VK_FORMAT_R8G8B8A8_UNORM;
-  fb_att_img_info1[fb_cbuf].usage =
+  fb_att_img_info1[fb_cbuf].usage = //VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
     VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
   fb_att_img_info1[fb_cbuf].pViewFormats = &rgba_unorm;
 
@@ -3775,7 +3981,7 @@ enum err_msg expand_swapchain_and_framebuffer(
     fb_att_img_info1[att_idx].viewFormatCount = 1;
   }
   constexpr VkFormat rgba_unorm = VK_FORMAT_R8G8B8A8_UNORM;
-  fb_att_img_info1[fb_cbuf].usage =
+  fb_att_img_info1[fb_cbuf].usage = //VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
     VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
   fb_att_img_info1[fb_cbuf].pViewFormats = &rgba_unorm;
 

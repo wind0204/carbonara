@@ -3,7 +3,7 @@ struct Transform_4x4 {
 };
 
 struct PushConstants {
-  struct Transform_4x4 mat1;
+  [[vk::offset(0)]] struct Transform_4x4 mat1;
 };
 
 [[vk::push_constant]] PushConstants consts;
@@ -12,7 +12,7 @@ struct VertexShaderInput {
   [[vk::location(0)]] float3 pos : POSITION0;
   //[[vk::location(1)]] float3 col : COLOR0;
   [[vk::location(1)]] float2 tex_coords : TEXCOORD0;
-  [[vk::location(2)]] uint tex_id : TEXCOORD1;
+  //[[vk::location(2)]] uint tex_id : TEXCOORD1;
 };
 
 //struct UBO {
@@ -33,29 +33,34 @@ struct VertexShaderOutput {
 [shader("vertex")]
 VertexShaderOutput vert_main(
     VertexShaderInput input,
-    uint vert_idx : SV_VertexID )
+    uint instance_id : SV_InstanceID,
+    uint base_instance_id : SV_StartInstanceLocation
+    )
 {
   VertexShaderOutput output;
   output.pos = mul( float4(input.pos.xyz, 1.0), consts.mat1.mat );
   //output.pos = float4(input.pos.xyz, 1.0);
   //output.col = input.col;
   output.tex_coords = input.tex_coords;
-  output.tex_id = input.tex_id;
+  output.tex_id = base_instance_id;
   return output;
 }
 
-Texture2DArray texture_arr : register(t0);  // t0 is a texture slot
-SamplerState my_sampler : register(s0);     // s0 is a sampler slot
+//Texture2DArray texture_arr : register(t0);
+//SamplerState my_sampler : register(s0);
+[[vk::binding(0, 0)]]
+Texture2D textures[] : register(t0, space0);
+[[vk::binding(0, 1)]]
+SamplerState immut_sampler : register(s0, space1);
+
 [shader("pixel")]
 float4 frag_main( VertexShaderOutput input ) : SV_TARGET
 {
+  //float3 sample_coords =
+  //  float3( input.tex_coords.x, input.tex_coords.y, input.tex_id ? input.tex_id : 0 );
+  //float4 color = texture_arr.Sample( my_sampler, sample_coords );
 
-  // Combine UV and array index into a float3
-  float3 sample_coords = float3( input.tex_coords.x, input.tex_coords.y, input.tex_id ? input.tex_id : 0 );
-
-  // Sample the texture array
-  float4 color = texture_arr.Sample( my_sampler, sample_coords );
+  float4 color = textures[input.tex_id].Sample(immut_sampler, input.tex_coords);
 
   return color;
-  //return float4(input.col, 1.0);
 }
