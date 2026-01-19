@@ -24,7 +24,7 @@ struct VertexShaderOutput {
   float4 pos : SV_POSITION;
   //[[vk::location(0)]] float3 col : COLOR0;
   [[vk::location(0)]] float2 tex_coords : TEXCOORD0;
-  [[vk::location(1)]] uint tex_id : TEXCOORD1;
+  [[vk::location(1)]] nointerpolation uint tex_id : TEXCOORD1;
 };
 
 
@@ -46,19 +46,21 @@ VertexShaderOutput vert_main(
   return output;
 }
 
+// For combined sampler array:
 //Texture2DArray texture_arr : register(t0);
-//SamplerState my_sampler : register(s0);
-[[vk::binding(0, 0)]]
+//SamplerState std_sampler : register(s0);
+
+[[vk::binding(0, 0)]]  // binding 0, descriptor set 0
 Texture2D textures[] : register(t0, space0);
-[[vk::binding(0, 1)]]
+[[vk::binding(0, 1)]]  // binding 0, descriptor set 1
 SamplerState immut_sampler : register(s0, space1);
 
 [shader("pixel")]
 float4 frag_main( VertexShaderOutput input ) : SV_TARGET
 {
-  //float3 sample_coords =
-  //  float3( input.tex_coords.x, input.tex_coords.y, input.tex_id ? input.tex_id : 0 );
-  //float4 color = texture_arr.Sample( my_sampler, sample_coords );
+  // For combind sampler array:
+  //float3 sample_coords = float3( input.tex_coords.x, input.tex_coords.y, input.tex_id );
+  //float4 color = texture_arr.Sample( std_sampler, sample_coords );
 
   float4 color = textures[input.tex_id].Sample(immut_sampler, input.tex_coords);
 

@@ -1,4 +1,3 @@
-#include <stdatomic.h>
 #if !defined SALAMI_GRAPHICS_H_
 #define SALAMI_GRAPHICS_H_
 
@@ -43,7 +42,7 @@ constexpr unsigned int nr_al_cmd_pool_sets = 2;
   //    _typeof_member(struct cara_io_worker, nr_vram_jobs_to_get_done)
   //    );
 
-// Granularity of the length of framebuffers' sides and swapchain images' sides used when expanding
+// Granularity of the length of framebuffers' sides and swapchain images' sides
 constexpr unsigned int framebuf_dims_granularity = 16;
 static_assert( _is_power_of_two(framebuf_dims_granularity) );
 

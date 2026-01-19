@@ -20,9 +20,10 @@ struct mat4x4 {
   alignas(ALIGN_FOR_AVX)
   vec4 rows[4];
 };
-struct plain_mat4x4 {
+union u_mat4x4 {
   alignas(ALIGN_FOR_AVX)
-  float arr_elems[4*4];
+  float simple_arr[4*4];
+  struct mat4x4 mat4x4;
 };
 
 
@@ -237,15 +238,15 @@ inline struct mat4x4 get_perspective_proj_mat_vk(
     bool reverse_z
     )
 {
-  float x = tanf( vfov * (1/2.0f) );
+  float tan_half_theta = tanf( vfov * (1/2.0f) );
   if ( reverse_z ) {
     _swap( &near, &far );
   }
   struct mat4x4 ret = {
-    (vec4) { 1 / (aspect_ratio * x),  0,      0,                        0 },
-    (vec4) { 0,                       1 / x,  0,                        0 },
-    (vec4) { 0,                       0,      far / (far - near),       1 },
-    (vec4) { 0,                       0,      -far*near / (far - near), 0 },
+    (vec4) { 1 / (aspect_ratio * tan_half_theta), 0,                  0,                        0 },
+    (vec4) { 0,                                   -1/tan_half_theta,  0,                        0 },
+    (vec4) { 0,                                   0,                  far / (far - near),       1 },
+    (vec4) { 0,                                   0,                  -far*near / (far - near), 0 },
   };
 
   return ret;

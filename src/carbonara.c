@@ -1,7 +1,8 @@
 #include <SDL3/SDL_asyncio.h>
 #include <SDL3/SDL_error.h>
 #include <SDL3/SDL_init.h>
-#include <stdatomic.h>
+#include <SDL3/SDL_log.h>
+#include <SDL3/SDL_hints.h>
 #if defined(__i386) || defined(__i386__) || defined(_M_IX86) || defined(__x86_64) \
     || defined(__x86_64__) || defined(__amd64) || defined(_M_X64)
   #ifdef _MSC_VER
@@ -29,7 +30,6 @@
 #endif  // defined(ENABLE_PROFILING)
 
 
-#include <SDL3/SDL.h>
 
 #define SDL_MAIN_USE_CALLBACKS
 #include <SDL3/SDL_main.h>  // include SDL3/SDL_main.h in the source where "main" function is
@@ -54,6 +54,7 @@
 #include "carbonara-config.h"
 #include "carbonara-mm.h"
 #include "carbonara-math.h"
+#include "carbonara-renderer.h"
 #include "carbonara.h"
 #include "list-jobs.h"
 #include "compute-magic.h"
@@ -87,34 +88,40 @@ static char * asset_buf5;
 static char * asset_buf6;
 static char * asset_buf7;
 static char * asset_buf8;
-static float vert_buf[] = {
-  -cara_1m/2, 0, cara_1m/2,  // 0
-  cara_1m/2, 0, cara_1m/2,
-  0, -(two_m), 0,
-  cara_1m/2, 0, -cara_1m/2,
-  -cara_1m/2, 0, -cara_1m/2,  // 4
+static constexpr struct v_pos arr_vert_pos[] = {
+  {-cara_1m/2, .y=0, cara_1m/2},  // 0
+  {cara_1m/2, .y=0, cara_1m/2},
+  {0, .y=(two_m), 0},
+  {cara_1m/2, .y=0, -cara_1m/2},
+  {-cara_1m/2, .y=0, -cara_1m/2},  // 4
 
-  -two_m, 0, two_m,  // 5
-  -two_m, 0, -two_m,
-  two_m, 0, -two_m,
-  two_m, 0, two_m,  // 8
+  {-two_m, .y=0, two_m},  // 5
+  {-two_m, .y=0, -two_m},
+  {two_m, .y=0, -two_m},
+  {two_m, .y=0, two_m},  // 8
 };
-static float attr_buf[] = {
-  .25f, 0,  // 0
-  .75f, 0,
-  .5f, .5f,
-  .75f, .75f,
-  .25f, .75f,  // 4
+static constexpr struct uv_coords arr_uv_coords[] = {
+  {.u=.25f, 0},  // 0
+  {.u=.75f, 0},
+  {.u=.5f, .5f},
+  {.u=.75f, .75f},
+  {.u=.25f, .75f},  // 4
 
-  0, 0,  // 5
-  0, fourm/2,
-  fourm/2, fourm/2,
-  fourm/2, 0,  // 8
+  {.u=0, 0},  // 5
+  {.u=0, fourm/2},  // Four meters = 2048 texels in mip level 0
+  {.u=fourm/2, fourm/2},
+  {.u=fourm/2, 0},  // 8
 };
-static constexpr uint16_t index_buf[] = {
-  0, 2, 1,  3, 2, 4,  4, 2, 0,  3, 1, 2,
-  4, 0, 3,  0, 1, 3,
-  5, 6, 7,  5, 7, 8,
+static constexpr struct v_idx arr_v_indices[] = {
+  {0, 2, 1},
+  {3, 2, 4},
+  {4, 2, 0},
+  {3, 1, 2},
+  {4, 0, 3},
+  {0, 1, 3},
+
+  {5, 6, 7},
+  {5, 7, 8},
 };
 constexpr _typeof_member(VkDescriptorPoolSize, descriptorCount)
   max_nr_img_descriptors_in_set = 2048;
@@ -315,7 +322,8 @@ SDL_AppResult SDL_AppInit(
     fprintf( stderr, "[Carbonara] The CPU doesn't support AVX2 instructions.\n" );
     if ( x86_proc_info.sse42 ) {
       fprintf( stderr, "[Carbonara] Please run the SSE4.2 version instead.\n" );
-    } else {
+    }
+    else {
       fprintf( stderr,
           "[Carbonara] SSE4.2 is not supported either, The CPU is not supported!\n" );
     }
@@ -329,12 +337,14 @@ SDL_AppResult SDL_AppInit(
     if ( x86_proc_info.sse42 ) {
       fprintf( stdout, "[Carbonara] launching the SSE4.2 version anyway. "
           "You might see a different performance.\n" );
-    } else {
+    }
+    else {
       fprintf( stderr,
           "[Carbonara] It's weird that SSE4.2 is not supported while AVX2 is. aborting!\n" );
       return SDL_APP_FAILURE;
     }
-  } else {
+  }
+  else {
     if ( !x86_proc_info.sse42 ) {
       fprintf( stderr, "[Carbonara] SSE4.2 is not supported by the CPU. aborting!\n" );
       return SDL_APP_FAILURE;
@@ -863,7 +873,8 @@ do_it_synchronoously_for_now:
   if ( *p_dds_head != magic_dw ) {
     fprintf( stderr, "[Carbonara-Debug] DDS header magic value is wrong! "
         "%#010x instead of %#010x\n", *p_dds_head, magic_dw );
-  } else {
+  }
+  else {
     cara_vk.alb_stone = asset_buf1;
     cara_vk.asset_size = file_size;
   }
@@ -930,7 +941,8 @@ do_it_synchronoously_for_now2:
   if ( *p_dds_head2 != magic_dw ) {
     fprintf( stderr, "[Carbonara-Debug] DDS header magic value is wrong! "
         "%#010x instead of %#010x\n", *p_dds_head2, magic_dw );
-  } else {
+  }
+  else {
     cara_vk.alb_sand = asset_buf2;
     assume( cara_vk.asset_size == file_size );
   }
@@ -943,7 +955,8 @@ done_with_sand:
   if ( p_dds_head->dwMagic != magic_dw ) {
     fprintf( stderr, "[Carbonara-Debug] DDS header magic value is wrong! %#010x instead of %#010x\n",
         p_dds_head->dwMagic, magic_dw );
-  } else {
+  }
+  else {
     fprintf( stdout, "[Carbonara-Debug] dwSize = %u; dwFlags = %#010x; extent = %u*%u;\n",
         p_dds_head->dwSize, p_dds_head->dwFlags, p_dds_head->dwWidth, p_dds_head->dwHeight );
     if ( p_dds_head->dwFlags ) {
@@ -992,7 +1005,8 @@ done_with_sand:
       fprintf( stderr, "[Carbonara] The reason behind the failure:'%s'\n", SDL_GetError() );
     }
     assume( ptr2ui(async_io_outcome.userdata) == 33 );
-  } else {  // if ( async_io_outcome.result != SDL_ASYNCIO_COMPLETE )
+  }  // if ( async_io_outcome.result != SDL_ASYNCIO_COMPLETE )
+  else {
     fprintf( stdout, "[Carbonara-Debug] requested:%lu, transferred:%lu, offset:%lu\n",
         async_io_outcome.bytes_requested,
         async_io_outcome.bytes_transferred,
@@ -1002,7 +1016,8 @@ done_with_sand:
     }
     if ( !SDL_WaitAsyncIOResult(p_my_io_queue, &async_io_outcome, 1000*10) ) {
       fprintf( stderr, "[Carbonara] SDL_WaitAsyncIOResult after a close request failed!\n" );
-    } else if ( async_io_outcome.result != SDL_ASYNCIO_COMPLETE ) {
+    }
+    else if ( async_io_outcome.result != SDL_ASYNCIO_COMPLETE ) {
       fprintf( stdout, "[Carbonara-Debug] closed? result=%s\n",
           async_io_outcome.result == SDL_ASYNCIO_CANCELED ? "cancelled" : "failure" );
     }
@@ -1035,7 +1050,8 @@ done_with_sand:
       fprintf( stderr, "[Carbonara] The reason behind the failure:'%s'\n", SDL_GetError() );
     }
     assume( ptr2ui(async_io_outcome.userdata) == 33 );
-  } else {  // if ( async_io_outcome.result != SDL_ASYNCIO_COMPLETE )
+  }  // if ( async_io_outcome.result != SDL_ASYNCIO_COMPLETE )
+  else {
     fprintf( stdout, "[Carbonara-Debug] requested:%lu, transferred:%lu, offset:%lu\n",
         async_io_outcome.bytes_requested,
         async_io_outcome.bytes_transferred,
@@ -1078,7 +1094,8 @@ done_with_sand:
       fprintf( stderr, "[Carbonara] The reason behind the failure:'%s'\n", SDL_GetError() );
     }
     assume( ptr2ui(async_io_outcome.userdata) == 33 );
-  } else {  // if ( async_io_outcome.result != SDL_ASYNCIO_COMPLETE )
+  }  // if ( async_io_outcome.result != SDL_ASYNCIO_COMPLETE )
+  else {
     fprintf( stdout, "[Carbonara-Debug] requested:%lu, transferred:%lu, offset:%lu\n",
         async_io_outcome.bytes_requested,
         async_io_outcome.bytes_transferred,
@@ -1088,7 +1105,8 @@ done_with_sand:
     }
     if ( !SDL_WaitAsyncIOResult(p_my_io_queue, &async_io_outcome, 1000*10) ) {
       fprintf( stderr, "[Carbonara] SDL_WaitAsyncIOResult after a close request failed!\n" );
-    } else if ( async_io_outcome.result != SDL_ASYNCIO_COMPLETE ) {
+    }
+    else if ( async_io_outcome.result != SDL_ASYNCIO_COMPLETE ) {
       fprintf( stdout, "[Carbonara-Debug] closed? result=%s\n",
           async_io_outcome.result == SDL_ASYNCIO_CANCELED ? "cancelled" : "failure" );
     }
@@ -1121,7 +1139,8 @@ done_with_sand:
       fprintf( stderr, "[Carbonara] The reason behind the failure:'%s'\n", SDL_GetError() );
     }
     assume( ptr2ui(async_io_outcome.userdata) == 33 );
-  } else {  // if ( async_io_outcome.result != SDL_ASYNCIO_COMPLETE )
+  }  // if ( async_io_outcome.result != SDL_ASYNCIO_COMPLETE )
+  else {
     fprintf( stdout, "[Carbonara-Debug] requested:%lu, transferred:%lu, offset:%lu\n",
         async_io_outcome.bytes_requested,
         async_io_outcome.bytes_transferred,
@@ -1131,7 +1150,8 @@ done_with_sand:
     }
     if ( !SDL_WaitAsyncIOResult(p_my_io_queue, &async_io_outcome, 1000*10) ) {
       fprintf( stderr, "[Carbonara] SDL_WaitAsyncIOResult after a close request failed!\n" );
-    } else if ( async_io_outcome.result != SDL_ASYNCIO_COMPLETE ) {
+    }
+    else if ( async_io_outcome.result != SDL_ASYNCIO_COMPLETE ) {
       fprintf( stdout, "[Carbonara-Debug] closed? result=%s\n",
           async_io_outcome.result == SDL_ASYNCIO_CANCELED ? "cancelled" : "failure" );
     }
@@ -1164,7 +1184,8 @@ done_with_sand:
       fprintf( stderr, "[Carbonara] The reason behind the failure:'%s'\n", SDL_GetError() );
     }
     assume( ptr2ui(async_io_outcome.userdata) == 33 );
-  } else {  // if ( async_io_outcome.result != SDL_ASYNCIO_COMPLETE )
+  }  // if ( async_io_outcome.result != SDL_ASYNCIO_COMPLETE )
+  else {
     fprintf( stdout, "[Carbonara-Debug] requested:%lu, transferred:%lu, offset:%lu\n",
         async_io_outcome.bytes_requested,
         async_io_outcome.bytes_transferred,
@@ -1174,7 +1195,8 @@ done_with_sand:
     }
     if ( !SDL_WaitAsyncIOResult(p_my_io_queue, &async_io_outcome, 1000*10) ) {
       fprintf( stderr, "[Carbonara] SDL_WaitAsyncIOResult after a close request failed!\n" );
-    } else if ( async_io_outcome.result != SDL_ASYNCIO_COMPLETE ) {
+    }
+    else if ( async_io_outcome.result != SDL_ASYNCIO_COMPLETE ) {
       fprintf( stdout, "[Carbonara-Debug] closed? result=%s\n",
           async_io_outcome.result == SDL_ASYNCIO_CANCELED ? "cancelled" : "failure" );
     }
@@ -1207,7 +1229,8 @@ done_with_sand:
       fprintf( stderr, "[Carbonara] The reason behind the failure:'%s'\n", SDL_GetError() );
     }
     assume( ptr2ui(async_io_outcome.userdata) == 33 );
-  } else {  // if ( async_io_outcome.result != SDL_ASYNCIO_COMPLETE )
+  }  // if ( async_io_outcome.result != SDL_ASYNCIO_COMPLETE )
+  else {
     fprintf( stdout, "[Carbonara-Debug] requested:%lu, transferred:%lu, offset:%lu\n",
         async_io_outcome.bytes_requested,
         async_io_outcome.bytes_transferred,
@@ -1217,7 +1240,8 @@ done_with_sand:
     }
     if ( !SDL_WaitAsyncIOResult(p_my_io_queue, &async_io_outcome, 1000*10) ) {
       fprintf( stderr, "[Carbonara] SDL_WaitAsyncIOResult after a close request failed!\n" );
-    } else if ( async_io_outcome.result != SDL_ASYNCIO_COMPLETE ) {
+    }
+    else if ( async_io_outcome.result != SDL_ASYNCIO_COMPLETE ) {
       fprintf( stdout, "[Carbonara-Debug] closed? result=%s\n",
           async_io_outcome.result == SDL_ASYNCIO_CANCELED ? "cancelled" : "failure" );
     }
@@ -1399,7 +1423,8 @@ void * launch_worker( void * arg )
   // The loop.
   if ( worker->deployment_flags & worker_deployment_flag_foreman ) {
     foreman_loop( &worker_state );
-  } else {
+  }
+  else {
     worker_loop( &worker_state );
   }
 
@@ -1466,7 +1491,8 @@ static void worker_loop( struct cara_worker_state * p_ws )
       atomic_fetch_sub_explicit( &cara_single.nr_job_batch_descriptors_taken,
           1, memory_order_release );
 
-    } else {  // if ( worker_state->current_batch )
+    }  // if ( worker_state->current_batch )
+    else {
       // We're jobless.
       SPALL_BEGIN( "hold_up_thread" );
       if ( worker->deployment_flags & worker_deployment_flag_yielder ) {
@@ -1476,7 +1502,8 @@ static void worker_loop( struct cara_worker_state * p_ws )
         // TODO Use MONITORX/UMONITOR instead when the instruction is supported
         // C0.2 improves performance of the other SMT thread(s) on the same core.
         //  MWAITX's C1 state might offer a similar benefit too.
-      } else {
+      }
+      else {
         // Take a break for about 640 usec.
         //hold_up_thread( 1000*640 );
         delay_precise( starting_pc + cara_single.nr_pc_in_5us * 128 );
@@ -1520,6 +1547,7 @@ static void foreman_loop( struct cara_worker_state * p_ws )
 
 
   uint64_t cur_time_in_5us_general = 0;
+  uint64_t prev_time_in_5us_render = 0;
   while(-7) {
     const uint64_t starting_pc = get_performance_counter();
 
@@ -1644,11 +1672,17 @@ static void foreman_loop( struct cara_worker_state * p_ws )
 
 
     if ( atomic_load_explicit( &cara_single.render_now, memory_order_acquire ) == 1 ) {
-      take_a_break = false;
-      //atomic_store_explicit( &cara_single.cur_time_in_5us_for_render,
-      //    cur_time_in_5us_general, memory_order_release );
-      jf_render_frame( cur_time_in_5us_general );
-      atomic_store_explicit( &cara_single.render_now, 0, memory_order_release );
+      auto delta_in_5us = cur_time_in_5us_general - prev_time_in_5us_render;
+      typeof(delta_in_5us) refresh_rate = 60;  // My system happens to be refreshing @ 59.9 Hz
+      // FIXME It's just a quick hack, try to find an optimal solution for render pacing
+      if ( delta_in_5us > 1000 * 1000 / 5 / refresh_rate - 64 ) {
+        atomic_store_explicit( &cara_single.render_now, 0, memory_order_release );
+        take_a_break = false;
+        prev_time_in_5us_render = cur_time_in_5us_general;
+        //atomic_store_explicit( &cara_single.cur_time_in_5us_for_render,
+        //    cur_time_in_5us_general, memory_order_release );
+        jf_render_frame( cur_time_in_5us_general );
+      }
     }
 
 
@@ -1663,7 +1697,8 @@ static void foreman_loop( struct cara_worker_state * p_ws )
         // TODO Use MONITORX/UMONITOR instead when the instruction is supported
         // C0.2 improves performance of the other SMT thread(s) on the same core.
         //  MWAITX's C1 state might offer a similar benefit too.
-      } else {
+      }
+      else {
         // Take a break for about 640 usec.
         //hold_up_thread( 1000*640 );
         delay_precise( starting_pc + cara_single.nr_pc_in_5us * 128 );
@@ -1767,7 +1802,8 @@ void jf_start_kill_chain( struct cara_worker_state * p_ws )
 //    fprintf( stderr, "[Carbonara-Debug] tctex_load_mem failed on the asset! (%s)\n",
 //        tc_texture.errmsg );
 //    return emsg_corrupted_data_detected;
-//  } else {
+//  }
+//  else {
 //    const TCTex_DDS_HEADER* header = (void*)data+4;
 //    fprintf( stdout, "[Carbonara-Debug] ""dimension=%u size=%u*%u nmiplevels=%u "
 //        "offset0=%u header.dwPitchOrLinearSize=%u\n",
@@ -1796,11 +1832,6 @@ void jf_start_kill_chain( struct cara_worker_state * p_ws )
 //-------------------------------------------------------------------------------------------------
 void jf_kickstart( [[maybe_unused]] struct cara_worker_state * p_ws )
 {
-  uint32_t * p_va;
-  for ( unsigned int i = 5; i <= 8; i++ ) {
-    p_va = (void*)( attr_buf + (3*i) );
-    p_va[2] = 1;
-  }
   enum err_msg err = init_renderer( p_ws );
   if ( err ) {
     goto stop_everything_after_failure;
@@ -2063,11 +2094,11 @@ static enum err_msg init_renderer( struct cara_worker_state * p_ws )
 
   // Copy the vertex buffer and the index buffer to the staging buffer
   unsigned int vbuf_len =
-    _align_to_power_of_two( sizeof(vert_buf), cara_vk.vmm.buf_granularity );
+    _align_to_power_of_two( sizeof(arr_vert_pos), cara_vk.vmm.buf_granularity );
   typeof(vbuf_len) abuf_len =
-    _align_to_power_of_two( sizeof(attr_buf), cara_vk.vmm.buf_granularity );
+    _align_to_power_of_two( sizeof(arr_uv_coords), cara_vk.vmm.buf_granularity );
   typeof(vbuf_len) ibuf_len =
-    _align_to_power_of_two( sizeof(index_buf), cara_vk.vmm.buf_granularity );
+    _align_to_power_of_two( sizeof(arr_v_indices), cara_vk.vmm.buf_granularity );
   const struct range_u32 rent_for_vb = infos_pm_rent(
       &cara_vk.vmm.uploads, &p_ws->malloc_helper, cara_malloc,
       _align_to_power_of_two(vbuf_len, cara_vk.vmm.len_non_coherent_atom), true );
@@ -2081,9 +2112,9 @@ static enum err_msg init_renderer( struct cara_worker_state * p_ws )
     fprintf( stderr, "[Carbonara-Debug] infos_pm_rent failed.. (errno=%d)\n", errno );
     goto stop_everything_after_failure;
   }
-  memcpy( cara_vk.vmm.p_staging_buf + rent_for_vb.start, vert_buf, sizeof(vert_buf) );
-  memcpy( cara_vk.vmm.p_staging_buf + rent_for_ab.start, attr_buf, sizeof(attr_buf) );
-  memcpy( cara_vk.vmm.p_staging_buf + rent_for_ib.start, index_buf, sizeof(index_buf) );
+  memcpy( cara_vk.vmm.p_staging_buf + rent_for_vb.start, arr_vert_pos, sizeof(arr_vert_pos) );
+  memcpy( cara_vk.vmm.p_staging_buf + rent_for_ab.start, arr_uv_coords, sizeof(arr_uv_coords) );
+  memcpy( cara_vk.vmm.p_staging_buf + rent_for_ib.start, arr_v_indices, sizeof(arr_v_indices) );
 
   VkBufferCreateInfo buf_create_info = {
     .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
@@ -3799,7 +3830,8 @@ stop_everything_after_failure:
           default:
             break;
         }
-      } else {
+      }  // if ( err )
+      else {
         cara_vk.mbi_albmaps[img_id].range = invalid_range;
         cara_vk.mbi_albmaps[img_id].malloc = VK_NULL_HANDLE;
         vkDestroyImage( cara_vk.log_dev, cara_vk.albmaps[img_id], &vk_alloc_callbacks );
@@ -3833,7 +3865,8 @@ stop_everything_after_failure:
         default:
           break;
       }
-    } else {
+    }  // if ( err )
+    else {
       cara_vk.mbi_vbuf.range = invalid_range;
       cara_vk.mbi_vbuf.malloc = VK_NULL_HANDLE;
       vkDestroyBuffer( cara_vk.log_dev, cara_vk.vert_buf, &vk_alloc_callbacks );
@@ -3866,7 +3899,8 @@ stop_everything_after_failure:
         default:
           break;
       }
-    } else {
+    }  // if ( err )
+    else {
       cara_vk.mbi_abuf.range = invalid_range;
       cara_vk.mbi_abuf.malloc = VK_NULL_HANDLE;
       vkDestroyBuffer( cara_vk.log_dev, cara_vk.attr_buf, &vk_alloc_callbacks );
@@ -3899,7 +3933,8 @@ stop_everything_after_failure:
         default:
           break;
       }
-    } else {
+    }  // if ( err )
+    else {
       cara_vk.mbi_ibuf.range = invalid_range;
       cara_vk.mbi_ibuf.malloc = VK_NULL_HANDLE;
       vkDestroyBuffer( cara_vk.log_dev, cara_vk.ind_buf, &vk_alloc_callbacks );
@@ -3995,7 +4030,8 @@ enum err_msg cara_deal_with_asyncio(
                 break;
               }
               //p_job->img.cur = io_outcome.bytes_requested + 1;
-            } else {  // Try to read again
+            }  // if ( io_outcome.type == SDL_ASYNCIO_TASK_CLOSE )
+            else {  // Try to read again
               if ( !SDL_ReadAsyncIO( io_outcome.asyncio,
                     cara_vk.vmm.p_staging_buf + p_job->img.p_malloc_range->start,
                     io_outcome.offset, io_outcome.bytes_requested, p_aioq, p_job ) ) {
@@ -4018,7 +4054,8 @@ enum err_msg cara_deal_with_asyncio(
                 break;
               }
               //p_job->img.cur = io_outcome.bytes_requested + 1;
-            } else {  // Try to read again
+            }  // if ( io_outcome.type == SDL_ASYNCIO_TASK_CLOSE )
+            else {  // Try to read again
               if ( !SDL_ReadAsyncIO( io_outcome.asyncio,
                     cara_vk.vmm.p_staging_buf + p_job->img.p_malloc_range->start,
                     io_outcome.offset, io_outcome.bytes_requested, p_aioq, p_job ) ) {
@@ -4047,7 +4084,8 @@ enum err_msg cara_deal_with_asyncio(
               //p_job->img.cur = io_outcome.bytes_requested;
               arr_p_jobs_failed_to_close[nr_handles_failed_to_close] = p_job;
               nr_handles_failed_to_close++;
-            } else {
+            }
+            else {
               //p_job->img.cur = io_outcome.bytes_requested + 1;
             }
 
@@ -4578,9 +4616,9 @@ acquire_swapchain_image:
   constexpr uint64_t nr_5us_in_1s = 1000*1000 / 5;
   constexpr double pi_per_sec = M_PI / nr_5us_in_1s;
   const struct mat4x4 rotate = rot_aya_4x4( (float) ((double)cur_time_in_5us * pi_per_sec * .5) );
-  const struct mat4x4 translate = translate_4x4( 0, cara_1m * 1.75f, cara_1m * 4 );
+  const struct mat4x4 translate = translate_4x4( 0, cara_1m * -1.75f, cara_1m * 4 );
   const struct mat4x4 pp = get_perspective_proj_mat_vk(
-      (float)(M_PI / 3.0), (float)fb_width/(float)fb_height, cara_1m * .25f, 10000.0f, true );
+      (float)(M_PI / 3.0), (float)fb_width/(float)fb_height, cara_1m * .25f, powf(2,127), true );
   const struct mat4x4 consts = mul_4x4_4x4( mul_4x4_4x4( rotate, translate ), pp );
   vkCmdPushConstants( main_cmd_buf, cara_vk.pll_z_only, VK_SHADER_STAGE_VERTEX_BIT,
       0, 4*4*4, &consts );
@@ -4696,7 +4734,8 @@ acquire_swapchain_image:
   // One way we can use VK_EXT_descriptor_indexing is to treat the update-after-bind descriptor
   //   set as a ring buffer where we write descriptors,
   vkUpdateDescriptorSets( cara_vk.log_dev, 1, &write_ds, 0, nullptr);
-  vkCmdDrawIndexed( main_cmd_buf, 3*6, 1, 0, 0, desc_ofs );
+  //vkCmdDrawIndexed( main_cmd_buf, 3*6, 1, 0, 0, desc_ofs );
+  vkCmdDrawIndexed( main_cmd_buf, 3*6, 1, 0, 0, 0 );  // streamed + persistent
 
   desc_ofs = ( desc_ofs + 1 ) % max_nr_img_descriptors_in_set;
   local_desc_idx++;
@@ -4706,7 +4745,8 @@ acquire_swapchain_image:
   write_ds.dstArrayElement = desc_ofs;
   desc_img_info.imageView = cara_vk.albmap_ivs[local_desc_idx];
   vkUpdateDescriptorSets( cara_vk.log_dev, 1, &write_ds, 0, nullptr);
-  vkCmdDrawIndexed( main_cmd_buf, 3*2, 1, 3*6, 0, desc_ofs );
+  //vkCmdDrawIndexed( main_cmd_buf, 3*2, 1, 3*6, 0, desc_ofs );
+  vkCmdDrawIndexed( main_cmd_buf, 3*2, 1, 3*6, 0, 1 );  // streamed + persistent
 
   desc_ofs = ( desc_ofs + 1 ) % max_nr_img_descriptors_in_set;
   local_desc_idx++;
@@ -5067,7 +5107,8 @@ acquire_swapchain_image:
             default:
               break;
           }
-        } else {
+        }  // if ( err )
+        else {
           vkDestroyImage( cara_vk.log_dev,
               p_dead->arr_zbuf_n_cbuf[fif_idx][fb_idx], &vk_alloc_callbacks );
           p_dead->arr_zbuf_n_cbuf[fif_idx][fb_idx] = VK_NULL_HANDLE;

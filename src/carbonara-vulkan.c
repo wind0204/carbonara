@@ -625,7 +625,7 @@ uint8_t init_vulkan(
     // The sparseBinding feature is the base, and provides the following capabilities:
     // - Resources can be bound at some defined (sparse block) granularity.
     // - The entire resource must be bound to memory before use regardless of regions actually
-    //   accessed.
+    //   accessed. (This property should be modified via sparseResidency.+)
     // - No specific mapping of image region to memory offset is defined, i.e. the location that
     //   each texel corresponds to in memory is implementation-dependent.
     // - Sparse buffers have a well-defined mapping of buffer range to memory range, where an offset
@@ -689,22 +689,6 @@ uint8_t init_vulkan(
       continue;
     }
 
-    // The sparseResidencyAliased feature provides the following capability that can be enabled per
-    //   resource:
-    // - Allows physical memory ranges to be shared between multiple locations in the same sparse
-    //   resource or between multiple sparse resources, with each binding of a memory location
-    //   observing a consistent interpretation of the memory contents.
-    if ( !device_features.features.sparseResidencyAliased ) {
-#ifdef DEBUG_MODE
-      fprintf( stdout, "[Vulkan] %s doesn't support %s.\n",
-          arr_device_props[idx_phys_dev].properties.deviceName,
-          "sparseResidencyAliased"
-          );
-#endif
-      arr_phys_devices[idx_phys_dev] = 0;
-      continue;
-    }
-
     // shaderResourceResidency is required for the fragment shader to be able to detect which parts
     //   of the image are bind to a memory allocation
     // The HLSL equivalent of the OpenGL extension GL_ARB_sparse_texture2 is the Tiled Resources
@@ -720,7 +704,24 @@ uint8_t init_vulkan(
       continue;
     }
 
+    // The sparseResidencyAliased feature provides the following capability that can be enabled per
+    //   resource:
+    // - Allows physical memory ranges to be shared between multiple locations in the same sparse
+    //   resource or between multiple sparse resources, with each binding of a memory location
+    //   observing a consistent interpretation of the memory contents.
+//    if ( !device_features.features.sparseResidencyAliased ) {
+//#ifdef DEBUG_MODE
+//      fprintf( stdout, "[Vulkan] %s doesn't support %s.\n",
+//          arr_device_props[idx_phys_dev].properties.deviceName,
+//          "sparseResidencyAliased"
+//          );
+//#endif
+//      arr_phys_devices[idx_phys_dev] = 0;
+//      continue;
+//    }
 
+
+    // Timeline Semaphores
     if ( !vk12_features.timelineSemaphore ) {
 #ifdef DEBUG_MODE
       fprintf( stdout, "[Vulkan] %s doesn't support %s.\n",
@@ -732,6 +733,7 @@ uint8_t init_vulkan(
       continue;
     }
 
+    // FIXME Why did I write this? I do not remember why
     if ( !vk12_features.drawIndirectCount ) {
 #ifdef DEBUG_MODE
       fprintf( stdout, "[Vulkan] %s doesn't support %s.\n",
@@ -742,6 +744,8 @@ uint8_t init_vulkan(
       arr_phys_devices[idx_phys_dev] = 0;
       continue;
     }
+
+    // Dynamically bind a framebuffer on vkCmdBeginRenderPass
     if ( !vk12_features.imagelessFramebuffer ) {
 #ifdef DEBUG_MODE
       fprintf( stdout, "[Vulkan] %s doesn't support %s.\n",
@@ -752,6 +756,12 @@ uint8_t init_vulkan(
       arr_phys_devices[idx_phys_dev] = 0;
       continue;
     }
+
+    // The vulkan implementation supports a VkImageMemoryBarrier for a depth/stencil image with only
+    //  one of VK_IMAGE_ASPECT_DEPTH_BIT or VK_IMAGE_ASPECT_STENCIL_BIT set, and whether
+    //  VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_OPTIMAL,
+    //  VK_IMAGE_LAYOUT_STENCIL_ATTACHMENT_OPTIMAL, or VK_IMAGE_LAYOUT_STENCIL_READ_ONLY_OPTIMAL can
+    //  be used.
     if ( !vk12_features.separateDepthStencilLayouts ) {
 #ifdef DEBUG_MODE
       fprintf( stdout, "[Vulkan] %s doesn't support %s.\n",
@@ -763,6 +773,7 @@ uint8_t init_vulkan(
       continue;
     }
 
+    // Scalar Layout
     if ( !vk12_features.scalarBlockLayout ) {
 #ifdef DEBUG_MODE
       fprintf( stdout, "[Vulkan] %s doesn't support %s.\n",
@@ -774,6 +785,7 @@ uint8_t init_vulkan(
       continue;
     }
 
+    // Better synchronization methods
     if ( !vk13_features.synchronization2 ) {
 #ifdef DEBUG_MODE
       fprintf( stdout, "[Vulkan] %s doesn't support %s.\n",
@@ -856,8 +868,8 @@ uint8_t init_vulkan(
 //      continue;
 //    }
 
-    // TODO Player might want to choose a specific device name.
 
+    // TODO Player might want to choose a specific device.
     if ( VK_VERSION_MINOR(arr_device_props[idx_phys_dev].properties.apiVersion) < 2 &&
         VK_VERSION_MAJOR(arr_device_props[idx_phys_dev].properties.apiVersion) <= 1 ) {
 #ifdef DEBUG_MODE
@@ -871,7 +883,8 @@ uint8_t init_vulkan(
           "\n", vulkan_version_major, vulkan_version_minor );
 #endif
       arr_phys_devices[idx_phys_dev] = 0;
-    } else if ( arr_device_props[idx_phys_dev].properties.limits.maxDrawIndirectCount <
+    }
+    else if ( arr_device_props[idx_phys_dev].properties.limits.maxDrawIndirectCount <
         (1<<16) - 1 ) {
 #ifdef DEBUG_MODE
       fprintf( stdout, "[Vulkan] %s's maxDrawIndirectCount is small. (%u)\n",
@@ -879,7 +892,8 @@ uint8_t init_vulkan(
           arr_device_props[idx_phys_dev].properties.limits.maxDrawIndirectCount );
 #endif
       arr_phys_devices[idx_phys_dev] = 0;
-    } else if ( arr_device_props[idx_phys_dev].properties.limits.maxDrawIndexedIndexValue <
+    }
+    else if ( arr_device_props[idx_phys_dev].properties.limits.maxDrawIndexedIndexValue <
         (1<<24) - 1 ) {
 #ifdef DEBUG_MODE
       fprintf( stdout, "[Vulkan] %s's maxDrawIndexedIndexValue is smaller than 2^24-1. (%u)\n",
@@ -1214,7 +1228,8 @@ look_for_very_dedicated_transfer_q_fam:
           }
           arr_q_fam_idx[transfer] = q_fams_with_transfer[idx];
           goto look_for_dedicated_compute_q_fam;
-        } else {
+        }
+        else {
           arr_q_fam_idx[transfer] = q_fams_with_transfer[idx];
           goto look_for_dedicated_compute_q_fam;
         }
@@ -1223,7 +1238,8 @@ look_for_very_dedicated_transfer_q_fam:
         trans_ded_lv = ded_lv_moderate;
         goto look_for_moderately_dedicated_transfer_q_fam;
       }
-    } else if ( dedicated_qfam_availability[idx_phys_dev] & dedicated_transfer ) {
+    }
+    else if ( dedicated_qfam_availability[idx_phys_dev] & dedicated_transfer ) {
       loader_ded_lv = trans_ded_lv = ded_lv_moderate;
 look_for_moderately_dedicated_transfer_q_fam:
       for ( unsigned int idx = 0; idx < nr_trans_q_fams_found; idx++ ) {
@@ -1240,7 +1256,8 @@ look_for_moderately_dedicated_transfer_q_fam:
           }
           arr_q_fam_idx[transfer] = q_fams_with_transfer[idx];
           goto look_for_dedicated_compute_q_fam;
-        } else {
+        }
+        else {
           if ( arr_q_fam_idx[loader] == q_fams_with_transfer[idx] &&
             arr_qfam_props[q_fams_with_transfer[idx]].queueFamilyProperties.queueCount < 2 &&
             try_to_make_a_separate_loader_q ) {
@@ -1254,7 +1271,8 @@ look_for_moderately_dedicated_transfer_q_fam:
         trans_ded_lv = ded_lv_low;
         goto look_for_generalist_transfer_q_fam;
       }
-    } else {
+    }
+    else {
       loader_ded_lv = trans_ded_lv = ded_lv_low;
 look_for_generalist_transfer_q_fam:
       for ( unsigned int idx = 0; idx < nr_trans_q_fams_found; idx++ ) {
@@ -1266,7 +1284,8 @@ look_for_generalist_transfer_q_fam:
           }
           arr_q_fam_idx[transfer] = q_fams_with_transfer[idx];
           goto look_for_dedicated_compute_q_fam;
-        } else {
+        }
+        else {
           if ( arr_q_fam_idx[loader] == q_fams_with_transfer[idx] &&
             arr_qfam_props[q_fams_with_transfer[idx]].queueFamilyProperties.queueCount < 2 &&
             try_to_make_a_separate_loader_q ) {
@@ -1291,10 +1310,12 @@ look_for_generalist_transfer_q_fam:
         if ( loader_ded_lv == ded_lv_highest ) {
           loader_ded_lv = trans_ded_lv = ded_lv_moderate;
           goto look_for_moderately_dedicated_transfer_q_fam;
-        } else if ( loader_ded_lv == ded_lv_moderate ) {
+        }
+        else if ( loader_ded_lv == ded_lv_moderate ) {
           loader_ded_lv = trans_ded_lv = ded_lv_low;
           goto look_for_generalist_transfer_q_fam;
-        } else if ( loader_ded_lv == ded_lv_low ) {
+        }
+        else if ( loader_ded_lv == ded_lv_low ) {
           loader_ded_lv = trans_ded_lv = ded_lv_highest;
           try_to_make_a_separate_loader_q = false;
           goto look_for_generalist_transfer_q_fam;
@@ -1328,7 +1349,8 @@ look_for_dedicated_compute_q_fam:
       if ( arr_q_fam_idx[compute] == UINT_MAX_(arr_q_fam_idx[compute]) ) {
         goto look_for_generalist_compute_q_fam;
       }
-    } else {
+    }
+    else {
 look_for_generalist_compute_q_fam:
       for ( unsigned int idx = 0; idx < nr_comp_q_fams_found; idx++ ) {
         if ( arr_q_fam_idx[compute] == UINT_MAX_(arr_q_fam_idx[compute]) ) {
@@ -1359,14 +1381,17 @@ look_for_generalist_compute_q_fam:
         if ( loader_ded_lv == ded_lv_highest ) {
           loader_ded_lv = trans_ded_lv = ded_lv_moderate;
           goto look_for_moderately_dedicated_transfer_q_fam;
-        } else if ( loader_ded_lv == ded_lv_moderate ) {
+        }
+        else if ( loader_ded_lv == ded_lv_moderate ) {
           loader_ded_lv = trans_ded_lv = ded_lv_low;
           goto look_for_generalist_transfer_q_fam;
-        } else if ( loader_ded_lv == ded_lv_low ) {
+        }
+        else if ( loader_ded_lv == ded_lv_low ) {
           loader_ded_lv = trans_ded_lv = ded_lv_highest;
           try_to_make_a_separate_loader_q = false;
           goto look_for_very_dedicated_transfer_q_fam;
-        } else {
+        }
+        else {
           fprintf( stdout, "[Vulkan] Could not choose a queue family with "
               " VK_QUEUE_COMPUTE_BIT capability from '%s'\n",
               arr_device_props[idx_phys_dev].properties.deviceName );
@@ -1411,14 +1436,17 @@ look_for_graphics_q_fam:
       if ( loader_ded_lv == ded_lv_highest ) {
         loader_ded_lv = trans_ded_lv = ded_lv_moderate;
         goto look_for_moderately_dedicated_transfer_q_fam;
-      } else if ( loader_ded_lv == ded_lv_moderate ) {
+      }
+      else if ( loader_ded_lv == ded_lv_moderate ) {
         loader_ded_lv = trans_ded_lv = ded_lv_low;
         goto look_for_generalist_transfer_q_fam;
-      } else if ( loader_ded_lv == ded_lv_low ) {
+      }
+      else if ( loader_ded_lv == ded_lv_low ) {
         loader_ded_lv = trans_ded_lv = ded_lv_highest;
         try_to_make_a_separate_loader_q = false;
         goto look_for_very_dedicated_transfer_q_fam;
-      } else {
+      }
+      else {
         fprintf( stdout, "[Vulkan] Could not choose a queue family with "
             " VK_QUEUE_GRAPHICS_BIT capability from '%s'\n",
             arr_device_props[idx_phys_dev].properties.deviceName );
@@ -1671,7 +1699,8 @@ we_have_already_recorded_that_q_fam:
     fprintf( stderr, "[Vulkan] vkGetPhysicalDeviceSurfacePresentModesKHR failed. " );
     if ( nr_supported_present_modes == 0 ) {
       fprintf( stderr, "(nr_supported_present_modes=%u)\n", nr_supported_present_modes );
-    } else {
+    }
+    else {
       fprintf( stderr, "(result=%s)\n", string_VkResult(result) );
     }
     goto error_after_logical_device;
@@ -1742,7 +1771,8 @@ we_have_already_recorded_that_q_fam:
   if ( surface_capabilities.maxImageCount > 0 &&
       nr_swapchain_imgs > surface_capabilities.maxImageCount ) {
     nr_swapchain_imgs = surface_capabilities.maxImageCount;
-  } else if ( nr_swapchain_imgs < surface_capabilities.minImageCount ) {
+  }
+  else if ( nr_swapchain_imgs < surface_capabilities.minImageCount ) {
     nr_swapchain_imgs = surface_capabilities.minImageCount;
   }
 
@@ -1753,14 +1783,16 @@ we_have_already_recorded_that_q_fam:
   if ( surface_capabilities.currentExtent.width == 0xffffffff ) {
     if ( image_size.width < surface_capabilities.minImageExtent.width ) {
       image_size.width = surface_capabilities.minImageExtent.width;
-    } else if ( image_size.width > surface_capabilities.maxImageExtent.width ) {
+    }
+    else if ( image_size.width > surface_capabilities.maxImageExtent.width ) {
       image_size.width = surface_capabilities.maxImageExtent.width;
     }
   }
   if ( surface_capabilities.currentExtent.height == 0xffffffff ) {
     if ( image_size.height < surface_capabilities.minImageExtent.height ) {
       image_size.height = surface_capabilities.minImageExtent.height;
-    } else if ( image_size.height > surface_capabilities.maxImageExtent.height ) {
+    }
+    else if ( image_size.height > surface_capabilities.maxImageExtent.height ) {
       image_size.height = surface_capabilities.maxImageExtent.height;
     }
   }
@@ -1785,7 +1817,8 @@ we_have_already_recorded_that_q_fam:
     fprintf( stderr, "[Vulkan] Failed to get the number of supported surface formats. " );
     if ( nr_supported_surface_formats == 0 && result != VK_SUCCESS ) {
       fprintf( stderr, "(nr_supported_surface_formats=%u)\n", nr_supported_surface_formats );
-    } else {
+    }
+    else {
       fprintf( stderr, "(result=%s)\n", string_VkResult(result) );
     }
     goto error_after_logical_device;
@@ -1815,8 +1848,8 @@ we_have_already_recorded_that_q_fam:
 #endif
 
 
-  // The combination of the 4 component color format VK_FORMAT_B8G8R8A8_SRGB with a non-linear sRGB
-  //   color space VK_COLORSPACE_SRGB_NONLINEAR_KHR is guaranteed to be available everywhere.
+  // The combination of the 4 component color format VK_FORMAT_B8G8R8A8_SRGB with a non-linear(sRGB)
+  //   colorspace VK_COLORSPACE_SRGB_NONLINEAR_KHR is guaranteed to be available everywhere.
   constexpr VkFormat desired_img_formats_for_present[] = {
     VK_FORMAT_B8G8R8A8_SRGB,
     VK_FORMAT_R8G8B8A8_SRGB,
@@ -2377,18 +2410,20 @@ end_of_nested_loop:
       all_formats_are_supported = false;
     }
 #ifdef TEXTURE_BILINEAR_FILTERING
-    if ( !(format_props.formatProperties.optimalTilingFeatures &
+    else if ( !(format_props.formatProperties.optimalTilingFeatures &
           VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT)
         ) {
       all_formats_are_supported = false;
     }
 #endif
+    // TODO Check what we do in the s3tc format path below and copy them
   }
   all_formats_are_supported = false;
 
   if ( all_formats_are_supported ) {
     cara_vk.tex_fmt_chosen = tf_astc;
-  } else {
+  }
+  else {
 #ifdef DEBUG_MODE
     fprintf( stdout,
         "[Vulkan] Checking supported texture decoders for S3TC(BCn) format on the device...\n" );
@@ -2406,7 +2441,7 @@ end_of_nested_loop:
       //VK_FORMAT_BC7_SRGB_BLOCK,
       VK_FORMAT_BC7_UNORM_BLOCK,
     };
-    all_formats_are_supported = 1;
+    all_formats_are_supported = true;
     for ( uint_fast8_t idx_fmt = 0; idx_fmt < _arr_elem_cnt(s3tc_formats_used); idx_fmt++ ) {
       VkFormatProperties2 format_props;
       format_props.sType = VK_STRUCTURE_TYPE_FORMAT_PROPERTIES_2;
@@ -2418,19 +2453,50 @@ end_of_nested_loop:
           );
       if ( !(format_props.formatProperties.optimalTilingFeatures &
             VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT) ) {
-        all_formats_are_supported = 0;
+        all_formats_are_supported = false;
       }
 #ifdef TEXTURE_BILINEAR_FILTERING
-      if ( !(format_props.formatProperties.optimalTilingFeatures &
+      else if ( !(format_props.formatProperties.optimalTilingFeatures &
             VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT) ) {
-        all_formats_are_supported = 0;
+        all_formats_are_supported = false;
       }
 #endif
-    }
+      else {  // TODO This code should be in ASTC path too? or we never care about mobile devices
+        uint32_t nr_elems;
+        vkGetPhysicalDeviceSparseImageFormatProperties( arr_phys_devices[idx_phys_deviced_picked],
+            s3tc_formats_used[idx_fmt], VK_IMAGE_TYPE_2D, VK_SAMPLE_COUNT_1_BIT,
+            VK_IMAGE_USAGE_SAMPLED_BIT, VK_IMAGE_TILING_OPTIMAL, &nr_elems, nullptr );
+        VkSparseImageFormatProperties arr_sif_props[nr_elems];
+        vkGetPhysicalDeviceSparseImageFormatProperties( arr_phys_devices[idx_phys_deviced_picked],
+            s3tc_formats_used[idx_fmt], VK_IMAGE_TYPE_2D, VK_SAMPLE_COUNT_1_BIT,
+            VK_IMAGE_USAGE_SAMPLED_BIT, VK_IMAGE_TILING_OPTIMAL, &nr_elems, arr_sif_props );
+        bool found_props_for_color_aspect = false;
+        for ( typeof(nr_elems) i = 0; i < nr_elems; i++ ) {
+          auto aspect_mask = arr_sif_props[i].aspectMask;  // TODO should contain VK_IMAGE_ASPECT_COLOR_BIT 
+          [[maybe_unused]] auto flags = arr_sif_props[i].flags;
+          [[maybe_unused]] auto sparse_img_block_dims = arr_sif_props[i].imageGranularity;
+#if defined(DEBUG_MODE)
+          fprintf( stdout, "[Vulkan-Debug] arr_sif_props[%u] aspect_mask = %u, flags = %#010x,"
+              "sparse_img_block_dims = { w:%u h:%u d:%u }\n", i, aspect_mask, flags,
+              sparse_img_block_dims.width, sparse_img_block_dims.height, sparse_img_block_dims.depth
+              );
+#endif
+          if ( (aspect_mask & VK_IMAGE_ASPECT_COLOR_BIT) == 0 ) {
+            continue;
+          }
+          found_props_for_color_aspect = true;
+        }
+        if ( !found_props_for_color_aspect ) {
+          all_formats_are_supported = false;
+        }
+      }  // if ( all_formats_are_supported )
+
+    }  // for ( uint_fast8_t idx_fmt = 0; idx_fmt < _arr_elem_cnt(s3tc_formats_used); idx_fmt++ )
 
     if ( all_formats_are_supported ) {
       cara_vk.tex_fmt_chosen = tf_s3tc;
-    } else {
+    }
+    else {
       fprintf( stderr,
           "[Vulkan] %s doesn't support optimal operations on compressed texture data.\n",
           arr_device_props[idx_phys_deviced_picked].properties.deviceName );
@@ -2752,7 +2818,8 @@ void destroy_vk_objs( _typeof_member(struct ms_worker_info, idx_self) worker_idx
             default:
               break;
           }
-        } else {
+        }  // if ( err )
+        else {
           vkDestroyImage( cara_vk.log_dev,
               p_dead->arr_zbuf_n_cbuf[fif_idx][fb_idx], &vk_alloc_callbacks );
           p_dead->arr_zbuf_n_cbuf[fif_idx][fb_idx] = VK_NULL_HANDLE;
@@ -2850,7 +2917,8 @@ void destroy_vk_objs( _typeof_member(struct ms_worker_info, idx_self) worker_idx
           default:
             break;
         }
-      } else {
+      }  // if ( err )
+      else {
         vkDestroyImage( cara_vk.log_dev, cara_vk.zbuf_n_cbuf[fif_idx][fb_idx], &vk_alloc_callbacks );
         cara_vk.zbuf_n_cbuf[fif_idx][fb_idx] = VK_NULL_HANDLE;
         cara_vk.mbi_zbuf_n_cbuf[fif_idx][fb_idx].range = invalid_range;
@@ -2992,7 +3060,8 @@ void destroy_vk_objs( _typeof_member(struct ms_worker_info, idx_self) worker_idx
           default:
             break;
         }
-      } else {  // No error occurred
+      }  // if ( err )
+      else {  // No error occurred
         cara_vk.mbi_albmaps[img_id].range = invalid_range;
         cara_vk.mbi_albmaps[img_id].malloc = VK_NULL_HANDLE;
         vkDestroyImage( cara_vk.log_dev, cara_vk.albmaps[img_id], &vk_alloc_callbacks );
@@ -3028,7 +3097,8 @@ void destroy_vk_objs( _typeof_member(struct ms_worker_info, idx_self) worker_idx
         default:
           break;
       }
-    } else {  // No error occurred
+    }  // if ( err )
+    else {  // No error occurred
       cara_vk.mbi_vbuf.range = invalid_range;
       cara_vk.mbi_vbuf.malloc = VK_NULL_HANDLE;
       vkDestroyBuffer( cara_vk.log_dev, cara_vk.vert_buf, &vk_alloc_callbacks );
@@ -3063,7 +3133,8 @@ void destroy_vk_objs( _typeof_member(struct ms_worker_info, idx_self) worker_idx
         default:
           break;
       }
-    } else {
+    }  // if ( err )
+    else {
       cara_vk.mbi_abuf.range = invalid_range;
       cara_vk.mbi_abuf.malloc = VK_NULL_HANDLE;
       vkDestroyBuffer( cara_vk.log_dev, cara_vk.attr_buf, &vk_alloc_callbacks );
@@ -3098,7 +3169,8 @@ void destroy_vk_objs( _typeof_member(struct ms_worker_info, idx_self) worker_idx
         default:
           break;
       }
-    } else {  // No error occurred
+    }  // if ( err )
+    else {  // No error occurred
       cara_vk.mbi_ibuf.range = invalid_range;
       cara_vk.mbi_ibuf.malloc = VK_NULL_HANDLE;
       vkDestroyBuffer( cara_vk.log_dev, cara_vk.ind_buf, &vk_alloc_callbacks );
@@ -3900,7 +3972,8 @@ stop_everything_after_failure:
           default:
             break;
         }
-      } else {
+      }  // if ( err )
+      else {
         vkDestroyImage( renderer->log_dev,
             renderer->zbuf_n_cbuf[fif_idx][fb_idx], &vk_alloc_callbacks );
         renderer->zbuf_n_cbuf[fif_idx][fb_idx] = VK_NULL_HANDLE;
@@ -4387,7 +4460,8 @@ stop_everything_after_failure:
           default:
             break;
         }
-      } else {
+      }  // if ( err )
+      else {
         vkDestroyImage( renderer->log_dev,
             arr_new_zbuf_n_cbuf_img[fif_idx][fb_idx], &vk_alloc_callbacks );
         arr_new_zbuf_n_cbuf_img[fif_idx][fb_idx] = VK_NULL_HANDLE;

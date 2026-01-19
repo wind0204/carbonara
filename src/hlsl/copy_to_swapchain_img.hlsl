@@ -38,11 +38,11 @@ VertexShaderOutput vert_main( uint vert_idx : SV_VertexID )
 
 //-------------------------------------------------------------------------------------------------
 
-Texture2D render_tgt : register(t0);
+Texture2D cbuf : register(t0);
 SamplerState tex_sampler : register(s0);
 [shader("pixel")]
 float4 frag_main( VertexShaderOutput input ) : SV_TARGET
 {
-  float4 output = render_tgt.Sample(tex_sampler, input.tex_uv);
+  float4 output = cbuf.Sample(tex_sampler, input.tex_uv);
   return output;
 }
