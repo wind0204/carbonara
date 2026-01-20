@@ -1,10 +1,20 @@
-#include "util-c_lang-basic.h"
 #if !defined SALAMI_VERTEX_H_
 #define SALAMI_VERTEX_H_
 
 
+// Mesh space ( original mesh + local transformation including rotation around an entity's center )
+//   + Entity space ( a group of meshes with a center point )
+//   + Group space ( a group of entities with a center point )
+// World space ( mesh space + translation relative to camera )
+//   + Canonical World-view space ( mesh space + translation relative to a canonical origin )
+// Camera-view space ( world space + camera orientation )
+// NDC space ( We finally get the normalized device coordinates )
+
+
 #include <stdint.h>
 #include <math.h>
+
+#include "util-c_lang-basic.h"
 
 
 typedef float float4 __attribute__((ext_vector_type(4)));
@@ -16,6 +26,73 @@ typedef float2 vec2;
 
 
 //-------------------------------------------------------------------------------------------------
+// Dot Product
+// a.b = ‖a‖ ‖b‖ cosθ,  Derived formula: θ = acos( a.b/(‖a‖‖b‖) )
+// k(a.b) = ka.b = a.kb  (k is a scalar)
+// a.b = b.a
+// a.(b+c) = a.b + a.c
+//
+// sift(a, p) = a.p/‖p‖/‖p‖;  // Get the p-coordinate of a, note that when ‖p‖ is 1 (We've got an
+//                            //   orthonormal basis) It becomes just one dot product with no div.
+//                            // WARNING `sift` won't work if the basis vectors are not orthogonal.
+// ‖v‖² = v.v,  ‖v‖ = sqrt(v.v)
+// The result is 0 when one is perpendicular to the other vector or is 0
+
+__attribute__((always_inline))
+inline float dot_3( vec3 v1, vec3 v2 )
+{
+  float ret = 0;
+  for ( unsigned int idx = 0; idx < 3; idx++ ) {
+    ret += v1[idx] * v2[idx];
+  }
+  return ret;
+}
+__attribute__((always_inline))
+inline float dot_2( vec2 v1, vec2 v2 )
+{
+  float ret = 0;
+  for ( unsigned int idx = 0; idx < 2; idx++ ) {
+    ret += v1[idx] * v2[idx];
+  }
+  return ret;
+}
+
+//-------------------------------------------------------------------------------------------------
+// Cross Product
+// ‖axb‖ = ‖a‖ ‖b‖ sinθ
+// k(axb) = kaxb = axkb  (k is a scalar)
+// ax(b+c) = axb + axc
+//
+// if ( "a ↷(Cw)θ = b" from your PoV when you have placed the tail of b at the head of a )
+//   axb is directed towards you (in a left-handed coordinate system)
+// if ( "a ↶(CCw)θ = b" from your PoV when you have placed the tail of b at the head of a )
+//   axb is headed away from you (in a left-handed coordinate system)
+// Examples: x̂ x ŷ = ẑ,  ŷ x x̂ = -ẑ,  ŷ x ẑ = x̂,  ẑ x ŷ = -x̂,  ẑ x x̂ = ŷ,  x̂ x ẑ = -ŷ
+// axb = -(bxa)
+// axb = -ax-b
+//
+// (axb)xc != ax(bxc)
+// The result is 0 when one is parallel to the other vector or is 0
+
+__attribute__((always_inline))
+inline vec3 cross_3( vec3 v1, vec3 v2 )
+{
+  vec3 ret = {
+    v1.y * v2.z - v1.z * v2.y,  // x
+    v1.z * v2.x - v1.x * v2.z,  // y
+    v1.x * v2.y - v1.y * v2.x,  // z
+  };
+  return ret;
+}
+
+//-------------------------------------------------------------------------------------------------
+//The operation a.bxc is known as the triple product
+//
+
+//-------------------------------------------------------------------------------------------------
+struct mat3x3 {
+  vec3 rows[3];
+};
 struct mat4x4 {
   alignas(ALIGN_FOR_AVX)
   vec4 rows[4];
@@ -23,7 +100,7 @@ struct mat4x4 {
 union u_mat4x4 {
   alignas(ALIGN_FOR_AVX)
   float simple_arr[4*4];
-  struct mat4x4 mat4x4;
+  struct mat4x4 mat;
 };
 
 
