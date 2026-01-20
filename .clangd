@@ -1,0 +1,13 @@
+Diagnostics:
+  ClangTidy:
+    Add: [performance*]
+    Remove: [bugprone-sizeof-expression]
+    CheckOptions:
+      readability-identifier-naming.VariableCase: CamelCase
+---
+If:
+  PathMatch: src/hlsl/.*hlsl
+CompileFlags:
+  Add: [-x, hlsl]
+#IncludePath:
+#  Add: [./shaders/includes, /path/to/your/dxsdk/include]

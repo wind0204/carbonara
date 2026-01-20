@@ -87,7 +87,7 @@ set( Carbonara_VERSION_MAJOR 0 )
 set( Carbonara_VERSION_MINOR 1 )
 
 
-set( CMAKE_EXPORT_COMPILE_COMMANDS ON )  # for YouCompleteMe
+set( CMAKE_EXPORT_COMPILE_COMMANDS ON )  # for YouCompleteMe(clangd)
 
 
 if( CMAKE_BUILD_TYPE MATCHES Debug )

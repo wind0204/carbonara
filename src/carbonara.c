@@ -1276,7 +1276,7 @@ done_with_sand:
     err = create_thread(
         .thread = &threads[proc_idx],
         .func = launch_worker,
-        .arg = (void*)proc_idx,
+        .arg = (void*)proc_idx,  // NOLINT(performance-no-int-to-ptr)
         .priority = 2,
         );
 #pragma GCC diagnostic pop

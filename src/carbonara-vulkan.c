@@ -2362,8 +2362,7 @@ end_of_nested_loop:
   if ( !infos_al_create_prealloc(&cara_vk.old_swapchains,
         &vk_alloc_callbacks, vk_malloc_wrapper,
         4096,
-        _align_to_the_close_power_of_two(sizeof(struct dead_swapchain)),  // NOLINT(
-                                                                      // bugprone-sizeof-expression)
+        _align_to_the_close_power_of_two(sizeof(struct dead_swapchain)),
         true) ) {
     fprintf( stderr, "[Vulkan] A failure occurred in infos_al_create_prealloc.\n" );
     goto error_after_swapchain_images;
