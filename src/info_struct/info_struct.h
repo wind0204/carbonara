@@ -872,7 +872,7 @@ enum err_msg infos_smm_return_chunks( struct infos_simple_mem_mgr * restrict p_s
 //-------------------------------------------------------------------------------------------------
 /**
  * \brief Allocate aligned memory
- * \param offset = ptr2ui(ptr) - ptr2ui(p_smm->data)
+ * \param offset = (uintptr_t)ptr - (uintptr_t)p_smm->data
  */
 enum err_msg infos_smm_return_chunks_ofs( struct infos_simple_mem_mgr * restrict p_smm,
     void * restrict userdata,

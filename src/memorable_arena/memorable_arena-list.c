@@ -99,7 +99,7 @@ unsigned int ma_end_arena( memorable_arena_t * arena )
     */
     prev = cur->prev;
 #ifdef DEBUG_MODE
-    fprintf(stdout, "[MA] Removing a sub_arena.. (%lx)\n", ptr2ui(cur));
+    fprintf( stdout, "[MA] Removing a sub_arena.. (%lx)\n", (uintptr_t)cur );
 #endif
     ma_free_simple_ptr(arena, 0, cur->arr_lrm);
     free(cur->smm.data);
@@ -158,7 +158,7 @@ static struct ma_sub_arena * create_new_node(
   struct ma_sub_arena * sub_arena = p_alloc + cur_len_sub_arena - sizeof(struct ma_sub_arena);
 
 #ifdef DEBUG_MODE
-  fprintf(stdout, "[MA] new 0x%02x node: [%#016lx]\n", idx_sub_arena, ptr2ui(sub_arena));
+  fprintf( stdout, "[MA] new 0x%02x node: [%#016lx]\n", idx_sub_arena, (uintptr_t)sub_arena );
 #endif
 
   // The length of the memory pool, not including the struct.
@@ -169,7 +169,7 @@ static struct ma_sub_arena * create_new_node(
 
   infos_smm_init_chunks_prealloc( p_smm, cur_len_sub_arena, 0 );
 #ifdef DEBUG_MODE
-  fprintf( stdout, "[MA] ma create_new_node %lx\n", ptr2ui(sub_arena->smm.data) );
+  fprintf( stdout, "[MA] ma create_new_node %lx\n", (uintptr_t)sub_arena->smm.data );
 #endif
 
   // Theoretical maximum capacity and the number of free chunks
@@ -207,7 +207,7 @@ static struct ma_sub_arena * create_new_node(
   atomic_init( &sub_arena->lock, UINT_MAX_(sub_arena->lock) );
 
 #ifdef DEBUG_MODE
-  fprintf(stdout, "[MA] sub_arena->smm.data: [%#016lx]\n", ptr2ui(sub_arena->smm.data));
+  fprintf( stdout, "[MA] sub_arena->smm.data: [%#016lx]\n", (uintptr_t)sub_arena->smm.data );
   fprintf(stdout, "[MA] The theoretical maximum capacity is: %u chunks. (%lu KiB)\n",
       sub_arena->capacity, sub_arena->capacity * (uint64_t)CACHELINE_LEN / 1024);
 #endif

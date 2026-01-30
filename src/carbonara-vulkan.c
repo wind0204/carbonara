@@ -2106,8 +2106,8 @@ end_of_nested_loop:
       fprintf( stderr, "[Vulkan-Debug] G fb_idx=%u worker_idx=%u new_cmd_buf=%#018lx\n",
           fif_idx,
           worker_idx,
-          ptr2ui( cara_get_arr_cmd_bufs_for_graphics(cara_single.proc_map->nr_processors, fif_idx)[
-            worker_idx * cara_nr_subpasses] )
+          (uintptr_t)( cara_get_arr_cmd_bufs_for_graphics(
+              cara_single.proc_map->nr_processors, fif_idx )[worker_idx * cara_nr_subpasses] )
           );
 #endif
     }
@@ -2144,7 +2144,7 @@ end_of_nested_loop:
 #ifdef DEBUG_MODE
     fprintf( stderr, "[Vulkan-Debug] GP fb_idx=%u new_cmd_buf=%#018lx\n",
         fif_idx,
-        ptr2ui(cara_vk.arr_graphics_cmdbuf_sets[fif_idx].primary_cmd_buf) );
+        (uintptr_t)cara_vk.arr_graphics_cmdbuf_sets[fif_idx].primary_cmd_buf );
 #endif
 
   }  // for ( uint_fast8_t fif_idx = 0; fif_idx < cara_max_nr_fif; fif_idx++ )
@@ -3269,7 +3269,7 @@ void destroy_vk_objs( _typeof_member(struct ms_worker_info, idx_self) worker_idx
           //fprintf( stdout, "framebufs[%u].arr_cmd_pools[%u] = %#018lx\n",
           //    idx_framebuffer,
           //    idx_command_pool,
-          //    ptr2ui(cara_vk.arr_framebufs[idx_framebuffer].arr_cmd_pools[idx_command_pool]) );
+          //    (uintptr_t)cara_vk.arr_framebufs[idx_framebuffer].arr_cmd_pools[idx_command_pool] );
           vkDestroyCommandPool( cara_vk.log_dev,
               cara_vk.arr_graphics_cmdbuf_sets[fif_idx].arr_cmd_pools[idx_command_pool],
               &vk_alloc_callbacks

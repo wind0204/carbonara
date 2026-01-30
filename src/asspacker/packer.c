@@ -812,7 +812,7 @@ stream_more:;
 
     uint_fast32_t chunk_len = fread(buffer, 1, end_cap - cursor, csv_file);
     uint_fast8_t is_at_eof = feof(csv_file);
-    if ( chunk_len != ptr2ui(end_cap) - ptr2ui(cursor) ) {
+    if ( chunk_len != (uintptr_t)end_cap - (uintptr_t)cursor ) {
       if ( !is_at_eof ) {
         fprintf(stderr, "Failed to read the csv file\n");
         if ( fseek(csv_file, orig_file_position, SEEK_SET) != 0 ) {

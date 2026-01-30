@@ -65,7 +65,7 @@ struct infos_simple_mem_mgr * infos_smm_init(
     )
 {
   assume( buffer );
-  assume( _is_aligned_to_power_of_two(ptr2ui(buffer), ALIGN_FOR_AVX512) );
+  assume( _is_aligned_to_power_of_two((uintptr_t)buffer, ALIGN_FOR_AVX512) );
   // The size of the memory pool to be managed should be a multiple of
   //  alignof(infos_simple_mem_manager)
   assume( _is_aligned_to_power_of_two(
@@ -129,7 +129,7 @@ struct infos_simple_mem_mgr * infos_smm_init_chunks( void * restrict buffer,
     )
 {
   assume( buffer );
-  assume( _is_aligned_to_power_of_two(ptr2ui(buffer), ALIGN_FOR_AVX512) );
+  assume( _is_aligned_to_power_of_two((uintptr_t)buffer, ALIGN_FOR_AVX512) );
   // The size of the memory pool to be managed should be a multiple of
   //  alignof(infos_simple_mem_mgr)
   assume( _is_aligned_to_power_of_two(
@@ -198,7 +198,7 @@ void infos_smm_init_chunks_prealloc(
     )
 {
   assume( p_smm->data );
-  assume( _is_aligned_to_power_of_two(ptr2ui(p_smm->data), ALIGN_FOR_AVX512) );
+  assume( _is_aligned_to_power_of_two((uintptr_t)p_smm->data, ALIGN_FOR_AVX512) );
 
   if ( log2_chunk_len == 0 ) {
     constexpr size_t cacheline_len = CACHELINE_LEN;
@@ -415,13 +415,13 @@ static uint32_t infos_smm_rent_aligned_impl( struct infos_simple_mem_mgr * restr
     return 0;
   }
 
-  assume( _is_aligned_to_power_of_two(ptr2ui(p_smm->data), ALIGN_FOR_AVX512) );  // Hey, compiler!
+  assume( _is_aligned_to_power_of_two((uintptr_t)p_smm->data, ALIGN_FOR_AVX512) );  // Hey, compiler
                                                         // Please do consider that we might never
                                                         //  have `alignment` > ALIGN_FOR_AVX512
                                                         //  and that the user will always have it
                                                         //  aligned to at least AVX512 vector size
                                                         //  when you do link-time optimization
-  const uint32_t lsbs_head_addr = ptr2ui(p_smm->data) & (alignment - 1);
+  const uint32_t lsbs_head_addr = (uintptr_t)p_smm->data & (alignment - 1);
   const uint32_t nr_misaligned_bytes_at_head = (alignment - lsbs_head_addr) & (alignment - 1);
   const uint32_t lsbs_tail_addr_when_aligned =
     (nr_misaligned_bytes_at_head + length - 1) & (alignment - 1);
@@ -586,13 +586,13 @@ static uint32_t infos_smm_rent_aligned_chunks_impl(
     return 0;
   }
 
-  assume( _is_aligned_to_power_of_two(ptr2ui(p_smm->data), ALIGN_FOR_AVX512) );  // Hey, compiler!
+  assume( _is_aligned_to_power_of_two((uintptr_t)p_smm->data, ALIGN_FOR_AVX512) );  // Hey, compiler
                                                         // Please do consider that we might never
                                                         //  have `alignment` > ALIGN_FOR_AVX512
                                                         //  and that the user will always have it
                                                         //  aligned to at least AVX512 vector size
                                                         //  when you do link-time optimization
-  const uint64_t lsbs_head_addr = ptr2ui(p_smm->data) & (alignment - 1);
+  const uint64_t lsbs_head_addr = (uintptr_t)p_smm->data & (alignment - 1);
   const uint64_t alignment_in_chunks = alignment >> log2_chunk_len;
   const uint64_t lsbs_headchunk_addr = lsbs_head_addr >> log2_chunk_len & (alignment_in_chunks - 1);
   const uint32_t nr_misaligned_chunks_at_head =
@@ -779,11 +779,6 @@ void * infos_smm_rent_aligned_chunks( struct infos_simple_mem_mgr * restrict p_s
   if ( errno ) {
     return nullptr;
   }
-//if ( ret == 158 ) {
-//fprintf( stdout, "Debug! ptr=%#018lx(target=%u)\n", ptr2ui(p_smm->data + (ret<<log2_chunk_len)), ret );
-//} else {
-//fprintf( stdout, "D_%u", ret );
-//}
 
   return p_smm->data + (ret << log2_chunk_len);
 }
@@ -1500,7 +1495,7 @@ void * infos_smm_realloc_aligned_chunks( struct infos_simple_mem_mgr * restrict 
 
   assume( _is_power_of_two(alignment) );
   alignment = _align_to_power_of_two( alignment, 1 << log2_chunk_len );
-  uint64_t lsbs_head_addr = ptr2ui(p_smm->data) & (alignment - 1);
+  uint64_t lsbs_head_addr = (uintptr_t)p_smm->data & (alignment - 1);
   uint64_t alignment_in_chunks = alignment >> log2_chunk_len;
   assume( alignment_in_chunks >= 1 );
   uint64_t lsbs_headchunk_addr = lsbs_head_addr >> log2_chunk_len & (alignment_in_chunks - 1);

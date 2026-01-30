@@ -70,13 +70,13 @@ static_assert( _is_aligned_to_power_of_two(
 struct ma_linked_released_mem {
   uint32_t ofs_next;
   uint32_t released_memories[ (CACHELINE_LEN - sizeof(uint32_t)) / sizeof(uint32_t) ];  ///< Each
-                                                            ///< field contains the offset  i.e.
-                                                            ///< ptr2ui(ptr) - ma_sub_arena.smm.data
+                                                      ///< field contains the offset  i.e.
+                                                      ///< (uintptr_t)(ptr) - ma_sub_arena.smm.data
 };
 
 struct ma_mem_release_recorder {
   uint32_t ofs_head;  ///< The first ma_linked_released_memory
-                      ///< ( ptr2ui(ptr2ma_linked_released_memory) - ma_sub_arena.smm.data )
+                      ///< ( (uintptr_t)ptr2ma_linked_released_memory - ma_sub_arena.smm.data )
   uint32_t nr_released_memories;
   uint16_t idx_sub_arena;
   atomic_uint_least8_t lock;  ///< A simple lock for the data corresponds to ofs_head.

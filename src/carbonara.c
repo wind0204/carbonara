@@ -650,7 +650,7 @@ enum err_msg init_carbonara( uint32_t len_each_arena, uint64_t proc_info )
   //fprintf( stdout, "[MA] len_bitmap_aligned_part = %ld\n", mm->len_bitmap_aligned_part );
   //fprintf( stdout, "[MA] len_unaligned_part_front = %u\n", mm->len_unaligned_part_front );
   //fprintf( stdout, "[MA] len_unaligned_part_back = %u\n", mm->len_unaligned_part_back );
-  fprintf( stdout, "[MA] addr. of the memo_map = [%#018lx]\n", ptr2ui(ma_head) );
+  fprintf( stdout, "[MA] addr. of the memo_map = [%#018lx]\n", (uintptr_t)ma_head );
 #endif
 
 
@@ -841,7 +841,7 @@ do_it_synchronoously_for_now:
     hold_up_thread( 1000 * 1000 );
   }
 
-  switch ( ptr2ui(async_io_outcome.userdata) ) {
+  switch ( (uintptr_t)async_io_outcome.userdata ) {
     case 33:
       fprintf( stdout, "[Carbonara-Debug] requested:%lu, transferred:%lu, offset:%lu\n",
           async_io_outcome.bytes_requested,
@@ -909,7 +909,7 @@ do_it_synchronoously_for_now2:
     hold_up_thread( 1000 * 1000 );
   }
 
-  switch ( ptr2ui(async_io_outcome.userdata) ) {
+  switch ( (uintptr_t)async_io_outcome.userdata ) {
     case 33:
       fprintf( stdout, "[Carbonara-Debug] requested:%lu, transferred:%lu, offset:%lu\n",
           async_io_outcome.bytes_requested,
@@ -1004,7 +1004,7 @@ done_with_sand:
     if ( async_io_outcome.result == SDL_ASYNCIO_FAILURE ) {
       fprintf( stderr, "[Carbonara] The reason behind the failure:'%s'\n", SDL_GetError() );
     }
-    assume( ptr2ui(async_io_outcome.userdata) == 33 );
+    assume( (uintptr_t)async_io_outcome.userdata == 33 );
   }  // if ( async_io_outcome.result != SDL_ASYNCIO_COMPLETE )
   else {
     fprintf( stdout, "[Carbonara-Debug] requested:%lu, transferred:%lu, offset:%lu\n",
@@ -1021,7 +1021,7 @@ done_with_sand:
       fprintf( stdout, "[Carbonara-Debug] closed? result=%s\n",
           async_io_outcome.result == SDL_ASYNCIO_CANCELED ? "cancelled" : "failure" );
     }
-    assume( ptr2ui(async_io_outcome.userdata) == 555 );
+    assume( (uintptr_t)async_io_outcome.userdata == 555 );
     cara_vk.spv_simple_vert = asset_buf3;
     cara_vk.len_simple_vert = file_size;
   }
@@ -1049,7 +1049,7 @@ done_with_sand:
     if ( async_io_outcome.result == SDL_ASYNCIO_FAILURE ) {
       fprintf( stderr, "[Carbonara] The reason behind the failure:'%s'\n", SDL_GetError() );
     }
-    assume( ptr2ui(async_io_outcome.userdata) == 33 );
+    assume( (uintptr_t)async_io_outcome.userdata == 33 );
   }  // if ( async_io_outcome.result != SDL_ASYNCIO_COMPLETE )
   else {
     fprintf( stdout, "[Carbonara-Debug] requested:%lu, transferred:%lu, offset:%lu\n",
@@ -1065,7 +1065,7 @@ done_with_sand:
       fprintf( stdout, "[Carbonara-Debug] closed? result=%s\n",
           async_io_outcome.result == SDL_ASYNCIO_CANCELED ? "cancelled" : "failure" );
     }
-    assume( ptr2ui(async_io_outcome.userdata) == 555 );
+    assume( (uintptr_t)async_io_outcome.userdata == 555 );
     cara_vk.spv_simple_frag = asset_buf4;
     cara_vk.len_simple_frag = file_size;
   }
@@ -1093,7 +1093,7 @@ done_with_sand:
     if ( async_io_outcome.result == SDL_ASYNCIO_FAILURE ) {
       fprintf( stderr, "[Carbonara] The reason behind the failure:'%s'\n", SDL_GetError() );
     }
-    assume( ptr2ui(async_io_outcome.userdata) == 33 );
+    assume( (uintptr_t)async_io_outcome.userdata == 33 );
   }  // if ( async_io_outcome.result != SDL_ASYNCIO_COMPLETE )
   else {
     fprintf( stdout, "[Carbonara-Debug] requested:%lu, transferred:%lu, offset:%lu\n",
@@ -1110,7 +1110,7 @@ done_with_sand:
       fprintf( stdout, "[Carbonara-Debug] closed? result=%s\n",
           async_io_outcome.result == SDL_ASYNCIO_CANCELED ? "cancelled" : "failure" );
     }
-    assume( ptr2ui(async_io_outcome.userdata) == 555 );
+    assume( (uintptr_t)async_io_outcome.userdata == 555 );
     cara_vk.spv_z_only = asset_buf5;
     cara_vk.len_z_only = file_size;
   }
@@ -1138,7 +1138,7 @@ done_with_sand:
     if ( async_io_outcome.result == SDL_ASYNCIO_FAILURE ) {
       fprintf( stderr, "[Carbonara] The reason behind the failure:'%s'\n", SDL_GetError() );
     }
-    assume( ptr2ui(async_io_outcome.userdata) == 33 );
+    assume( (uintptr_t)async_io_outcome.userdata == 33 );
   }  // if ( async_io_outcome.result != SDL_ASYNCIO_COMPLETE )
   else {
     fprintf( stdout, "[Carbonara-Debug] requested:%lu, transferred:%lu, offset:%lu\n",
@@ -1155,7 +1155,7 @@ done_with_sand:
       fprintf( stdout, "[Carbonara-Debug] closed? result=%s\n",
           async_io_outcome.result == SDL_ASYNCIO_CANCELED ? "cancelled" : "failure" );
     }
-    assume( ptr2ui(async_io_outcome.userdata) == 555 );
+    assume( (uintptr_t)async_io_outcome.userdata == 555 );
     cara_vk.spv_z_only_frag = asset_buf6;
     cara_vk.len_z_only_frag = file_size;
   }
@@ -1183,7 +1183,7 @@ done_with_sand:
     if ( async_io_outcome.result == SDL_ASYNCIO_FAILURE ) {
       fprintf( stderr, "[Carbonara] The reason behind the failure:'%s'\n", SDL_GetError() );
     }
-    assume( ptr2ui(async_io_outcome.userdata) == 33 );
+    assume( (uintptr_t)async_io_outcome.userdata == 33 );
   }  // if ( async_io_outcome.result != SDL_ASYNCIO_COMPLETE )
   else {
     fprintf( stdout, "[Carbonara-Debug] requested:%lu, transferred:%lu, offset:%lu\n",
@@ -1200,7 +1200,7 @@ done_with_sand:
       fprintf( stdout, "[Carbonara-Debug] closed? result=%s\n",
           async_io_outcome.result == SDL_ASYNCIO_CANCELED ? "cancelled" : "failure" );
     }
-    assume( ptr2ui(async_io_outcome.userdata) == 555 );
+    assume( (uintptr_t)async_io_outcome.userdata == 555 );
     cara_vk.spv_swapchain_vert = asset_buf7;
     cara_vk.len_swapchain_vert = file_size;
   }
@@ -1228,7 +1228,7 @@ done_with_sand:
     if ( async_io_outcome.result == SDL_ASYNCIO_FAILURE ) {
       fprintf( stderr, "[Carbonara] The reason behind the failure:'%s'\n", SDL_GetError() );
     }
-    assume( ptr2ui(async_io_outcome.userdata) == 33 );
+    assume( (uintptr_t)async_io_outcome.userdata == 33 );
   }  // if ( async_io_outcome.result != SDL_ASYNCIO_COMPLETE )
   else {
     fprintf( stdout, "[Carbonara-Debug] requested:%lu, transferred:%lu, offset:%lu\n",
@@ -1245,7 +1245,7 @@ done_with_sand:
       fprintf( stdout, "[Carbonara-Debug] closed? result=%s\n",
           async_io_outcome.result == SDL_ASYNCIO_CANCELED ? "cancelled" : "failure" );
     }
-    assume( ptr2ui(async_io_outcome.userdata) == 555 );
+    assume( (uintptr_t)async_io_outcome.userdata == 555 );
     cara_vk.spv_swapchain_frag = asset_buf8;
     cara_vk.len_swapchain_frag = file_size;
   }
@@ -1308,7 +1308,7 @@ done_with_sand:
 //-------------------------------------------------------------------------------------------------
 void * launch_worker( void * arg )
 {
-  const uint_fast8_t proc_idx = ptr2ui(arg);
+  const uint_fast8_t proc_idx = (uintptr_t)arg;
   struct ms_worker_info * worker = &cara_single.proc_map->processors[proc_idx];
 
   //struct cara_malloc_helper_dynamic_bound * malloc_helper_dynamic_bound;
@@ -2219,7 +2219,7 @@ static enum err_msg init_renderer( struct cara_worker_state * p_ws )
     cara_vk.arr_trans_cmdbuf_sets[nr_al_cmd_pool_sets + frame_id % cara_max_nr_fif].
       primary_cmd_buf;
 #ifdef DEBUG_MODE
-  fprintf( stderr, "[Vulkan-Debug] TP cmd_buf=%#018lx\n", ptr2ui(trans_cmdbuf) );
+  fprintf( stderr, "[Vulkan-Debug] TP cmd_buf=%#018lx\n", (uintptr_t)trans_cmdbuf );
 #endif
   SPALL_BEGIN("begin_trans_buf");
   // TODO synchronization needed

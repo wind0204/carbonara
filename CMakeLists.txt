@@ -273,7 +273,7 @@ add_definitions( -DLOG2_CACHELINE_LEN=6 )
 
 set( C_FLAGS_IN_HOUSE "" )
 
-# It seems Clang doesn't have anything like this flag
+# It seems Clang doesn't have anything like -fno-signaling-nans
 #set( C_FLAGS_IN_HOUSE "${C_FLAGS_IN_HOUSE};-fno-signaling-nans" )
 set( C_FLAGS_IN_HOUSE "${C_FLAGS_IN_HOUSE};-fno-trapping-math" )
 set( C_FLAGS_IN_HOUSE "${C_FLAGS_IN_HOUSE};-fno-math-errno" )
@@ -333,12 +333,6 @@ string(REGEX REPLACE "^ +" "" CMAKE_C_FLAGS ${CMAKE_C_FLAGS})
 #   CMAKE_C_FLAGS_RELEASE is -O3 -DNDEBUG
 #   CMAKE_C_FLAGS_RELWITHDEBINFO is -O2 -g -DNDEBUG
 #   CMAKE_C_FLAGS_MINSIZEREL is -Os -DNDEBUG
-
-if( CMAKE_BUILD_TYPE MATCHES Release)
-  #set( CMAKE_C_FLAGS_RELEASE "-O3 -DNDEBUG -funsafe-math-optimizations" )
-elseif( CMAKE_BUILD_TYPE MATCHES RelWithDebInfo )
-  #set( CMAKE_C_FLAGS_RELWITHDEBINFO "-O3 -g -funsafe-math-optimizations" )
-endif()
 
 
 
@@ -601,6 +595,8 @@ target_include_directories( carbonara PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src/in
 target_include_directories( packer PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src/include" )
 # For vk_page
 target_include_directories( Memorable_arena PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src/include" )
+# For carbonara-math.h
+target_include_directories( tester PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src/include" )
 
 target_include_directories( carbonara PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src/vulkan" )
 target_include_directories( App-dev_support PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src/vulkan" )

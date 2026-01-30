@@ -52,9 +52,9 @@ uint32_t util_strlen_u8( const uint8_t * string )
   */
   unsigned int idx = 0;
 #ifdef UTILIZE_AVX2
-  while( !_is_aligned_to_power_of_two(ptr2ui(string) + idx, ALIGN_FOR_AVX) ) {
+  while( !_is_aligned_to_power_of_two((uintptr_t)string + idx, ALIGN_FOR_AVX) ) {
 #else
-  while( !_is_aligned_to_power_of_two(ptr2ui(string) + idx, ALIGN_FOR_SSE) ) {
+  while( !_is_aligned_to_power_of_two((uintptr_t)string + idx, ALIGN_FOR_SSE) ) {
 #endif
     if ( string[idx] == 0 )
       return idx;
@@ -109,9 +109,9 @@ uint32_t util_strlen_u16( const uint16_t * string )
 
   unsigned int idx = 0;
 #ifdef UTILIZE_AVX2
-  while( !_is_aligned_to_power_of_two(ptr2ui(string) + idx, ALIGN_FOR_AVX) ) {
+  while( !_is_aligned_to_power_of_two((uintptr_t)string + idx, ALIGN_FOR_AVX) ) {
 #else
-  while( !_is_aligned_to_power_of_two(ptr2ui(string) + idx, ALIGN_FOR_SSE) ) {
+  while( !_is_aligned_to_power_of_two((uintptr_t)string + idx, ALIGN_FOR_SSE) ) {
 #endif
     if ( string[idx] == 0 )
       return idx;
@@ -195,9 +195,9 @@ uint32_t get_idx_of_char( const char * string, char c )
   uint32_t idx_null = UINT32_MAX;
   unsigned int idx = 0;
 #ifdef UTILIZE_AVX2
-  while( !_is_aligned_to_power_of_two(ptr2ui(string) + idx, ALIGN_FOR_AVX) ) {
+  while( !_is_aligned_to_power_of_two((uintptr_t)string + idx, ALIGN_FOR_AVX) ) {
 #else
-  while( !_is_aligned_to_power_of_two(ptr2ui(string) + idx, ALIGN_FOR_SSE) ) {
+  while( !_is_aligned_to_power_of_two((uintptr_t)string + idx, ALIGN_FOR_SSE) ) {
 #endif
     if ( string[idx] == 0 )
       return UINT32_MAX;

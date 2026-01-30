@@ -231,7 +231,7 @@ struct range_u32 infos_pm_rent_aligned( struct infos_page_mgr * restrict p_pm,
     return invalid_range;
   }
 
-  //uint32_t lsbs_head_addr = ptr2ui(p_pm->data) & (alignment - 1);
+  //uint32_t lsbs_head_addr = (uintptr_t)p_pm->data & (alignment - 1);
   constexpr uint32_t lsbs_head_addr = 0;
   //uint32_t nr_misaligned_bytes_at_head = (alignment - lsbs_head_addr) & (alignment - 1);
   constexpr uint32_t nr_misaligned_bytes_at_head = 0;

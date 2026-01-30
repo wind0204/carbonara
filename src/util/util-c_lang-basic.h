@@ -50,18 +50,17 @@ constexpr size_t page_sizes[] = {
 
 
 //-------------------------------------------------------------------------------------------------
-// Unions
-
 static_assert( sizeof(void*) == sizeof(uintptr_t),
-    "sizeof(void*) should be equal to sizeof(uintptr_t)" );
-
+    "sizeof(void*) must be equal to sizeof(uintptr_t)" );
 union union64 {
   uint64_t u;
   int64_t i;
   double f;
 #if UINTPTR_WIDTH/8 == 8
   void * ptr;
+  uintptr_t uiptr;
 #endif
+  float arr_f[2];
   uint32_t arr_u32[2];
   uint16_t arr_u16[4];
   uint8_t arr_u8[8];
@@ -75,17 +74,19 @@ union union32 {
   float f;
 #if UINTPTR_WIDTH/8 == 4
   void * ptr;
+  uintptr_t uiptr;
+#endif
   uint16_t arr_u16[2];
   uint8_t arr_u8[4];
   int16_t arr_i16[2];
   int8_t arr_i8[4];
-#endif
 };
 union union16 {
   uint16_t u;
   int16_t i;
 #if UINTPTR_WIDTH/8 == 2
   void * ptr;
+  uintptr_t uiptr;
 #endif
   uint8_t arr_u8[2];
   int8_t arr_i8[2];
@@ -184,19 +185,12 @@ uint64_t init_util_c_lang(void);
 /**
  * Cast a pointer to an unsigned integer
  */
-#define ptr2ui(pointer)                                                                     \
-  _Pragma ( "GCC diagnostic push" )                                                         \
-  _Pragma ( "GCC diagnostic ignored \"-Wgnu-statement-expression-from-macro-expansion\"" )  \
-  ( ({union_ptr uni; uni.ptr = (void*)(pointer); uni.u;}) )                                 \
-  _Pragma ( "GCC diagnostic pop" )
-//#define ptr2ui(ptr) \
-//  _Pragma ( "GCC diagnostic push" ) \
-//  _Pragma ( "GCC diagnostic ignored \"-Wvoid-pointer-to-int-cast\"" ) \
-//  _Pragma ( "GCC diagnostic ignored \"-Wpointer-to-int-cast\"" ) \
-//  ( sizeof(ptr) == 2 ? (uint16_t)(ptr) : (sizeof(ptr) == 4 ? (uint32_t)(ptr) : (uint64_t)(ptr) ) )\
+// What about just writing (uintptr_t)(pointer)
+//#define (uintptr_t)(pointer)                                                                \
+//  _Pragma ( "GCC diagnostic push" )                                                         \
+//  _Pragma ( "GCC diagnostic ignored \"-Wgnu-statement-expression-from-macro-expansion\"" )  \
+//  ( ({union_ptr uni; uni.ptr = (void*)(pointer); uni.u;}) )                                 \
 //  _Pragma ( "GCC diagnostic pop" )
-  //_Pragma ( "GCC diagnostic ignored \"-Wbugprone-sizeof-expression\"" ) \
-  //
 
 //-------------------------------------------------------------------------------------------------
 /**
@@ -334,6 +328,8 @@ uint64_t init_util_c_lang(void);
 //-------------------------------------------------------------------------------------------------
 /**
  * \brief Obtain the number of elements in the given C array
+ * \warning It won't work correctly on ext_vector_type since their effective size is bigger than
+ *   normal arrays
  */
 #define _arr_elem_cnt(array) \
   ( sizeof(array) / _sizeof_arr_elem(array) )
@@ -512,11 +508,11 @@ static inline void * get_offset_pointer( void * ptr, uint16_t alignment, uint8_t
   assume( _is_power_of_two(alignment) );
   void * new_ptr;
   if ( leave_a_tag ) {
-    new_ptr = (void*) _align_to_power_of_two(ptr2ui(ptr) + 1, alignment);
+    new_ptr = (void*) _align_to_power_of_two((uintptr_t)ptr + 1, alignment);
     offset_tag * ptr_offset_tag = new_ptr - sizeof(offset_tag);
     *ptr_offset_tag = (offset_tag) (new_ptr - ptr);
   } else {
-    new_ptr = (void*) _align_to_power_of_two(ptr2ui(ptr), alignment);
+    new_ptr = (void*) _align_to_power_of_two((uintptr_t)ptr, alignment);
   }
   return new_ptr;
 }

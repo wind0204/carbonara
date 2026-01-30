@@ -127,20 +127,20 @@ void * cara_malloc_vk( void * cara_malloc_helper, size_t size, size_t alignment,
     [[maybe_unused]] VkSystemAllocationScope alloc_scope )
 {
   void * ret = cara_malloc( cara_malloc_helper, alignment, size );
-  //fprintf( stdout, "Debug.. cara_malloc_vk returns %#018lx\n", ptr2ui(ret) );
+  //fprintf( stdout, "Debug.. cara_malloc_vk returns %#018lx\n", (uintptr_t)ret );
   return ret;
 }
 
 //-------------------------------------------------------------------------------------------------
 void cara_free( void * idx_proc, void * ptr )
 {
-  ma_free( cara_single.mem_arena, ptr2ui(idx_proc), ptr );
+  ma_free( cara_single.mem_arena, (uintptr_t)idx_proc, ptr );
 }
 
 //-------------------------------------------------------------------------------------------------
 void cara_free_vk( void * cara_malloc_helper, void * ptr )
 {
-  //fprintf( stdout, "Debug.. cara_free_vk( %#018lx )\n", ptr2ui(ptr) );
+  //fprintf( stdout, "Debug.. cara_free_vk( %#018lx )\n", (uintptr_t)ptr );
   struct cara_malloc_helper * helper = cara_malloc_helper;
   ma_free( cara_single.mem_arena, helper->worker_idx, ptr );
 }
@@ -232,10 +232,10 @@ void * cara_realloc_vk( void * cara_malloc_helper,
     void * orig_ptr, size_t size, size_t alignment,
     [[maybe_unused]] VkSystemAllocationScope alloc_scope )
 {
-  //fprintf( stdout, "Debug.. cara_realloc_vk( %#018lx )\n", ptr2ui(orig_ptr) );
+  //fprintf( stdout, "Debug.. cara_realloc_vk( %#018lx )\n", (uintptr_t)orig_ptr );
   size_t orig_size = cara_get_size( cara_malloc_helper, orig_ptr );
   void * ret = cara_realloc( cara_malloc_helper, orig_ptr, size, alignment, orig_size );
-  //fprintf( stdout, "Debug.. cara_realloc_vk returns %#018lx\n", ptr2ui(ret) );
+  //fprintf( stdout, "Debug.. cara_realloc_vk returns %#018lx\n", (uintptr_t)ret );
   return ret;
 }
 

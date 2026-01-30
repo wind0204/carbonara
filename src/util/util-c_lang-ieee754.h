@@ -82,14 +82,14 @@ union ieee754_binary32_be {
 
 //-------------------------------------------------------------------------------------------------
 __attribute__((always_inline))
-static inline bool is_close_f( float a, float b, float rel_tol, float abs_tol )
+static inline bool is_close_f( float a, float b, float abs_tol, float rel_tol )
 {
   return fabsf( a - b ) <= max( rel_tol * max(fabsf(a), fabsf(b)), abs_tol );
 }
 
 //-------------------------------------------------------------------------------------------------
 __attribute__((always_inline))
-static inline bool is_close_d( double a, double b, double rel_tol, double abs_tol )
+static inline bool is_close_d( double a, double b, double abs_tol, double rel_tol )
 {
   return fabs( a - b ) <= max( rel_tol * max(fabs(a), fabs(b)), abs_tol );
 }
@@ -100,7 +100,29 @@ static inline bool is_close_d( double a, double b, double rel_tol, double abs_to
         is_close_f,                         \
     double :                                \
         is_close_d                          \
-    )( (a), (b), DEF_REL_TOL, DEF_ABS_TOL )
+    )( (a), (b), DEF_ABS_TOL, DEF_REL_TOL )
+
+//-------------------------------------------------------------------------------------------------
+__attribute__((always_inline))
+static inline bool is_close_norel_f( float a, float b, float abs_tol )
+{
+  return fabsf( a - b ) <= abs_tol;
+}
+
+//-------------------------------------------------------------------------------------------------
+__attribute__((always_inline))
+static inline bool is_close_norel_d( double a, double b, double abs_tol )
+{
+  return fabs( a - b ) <= abs_tol;
+}
+
+//-------------------------------------------------------------------------------------------------
+#define is_close_norel( a, b ) _Generic((a),  \
+    float :                                   \
+        is_close_norel_f,                     \
+    double :                                  \
+        is_close_norel_d                      \
+    )( (a), (b), DEF_ABS_TOL )
 
 //-------------------------------------------------------------------------------------------------
 __attribute__((always_inline))

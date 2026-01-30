@@ -145,12 +145,14 @@ void ma_free_simple_ptr( memorable_arena_t * restrict arena, uint8_t idx_user, v
 
           switch ( err ) {
             case emsg_no_such_entry:
-              fprintf( stdout, "[MA-Debug] ptr = %#018lx\n", ptr2ui(ptr) );
+              fprintf( stdout, "[MA-Debug] ptr = %#018lx\n", (uintptr_t)ptr );
               fprintf( stdout, "[MA-Debug] sub_arena->smm.data = %#018lx\n",
-                  ptr2ui(sub_arena->smm.data) );
+                  (uintptr_t)sub_arena->smm.data );
               fprintf( stdout, "[MA-Debug] sub_arena->smm.data_len = %u\n",
                   sub_arena->smm.data_len*CACHELINE_LEN );
-              fprintf( stdout, "[MA-Debug] data+data_len-ptr = %lu\n", ptr2ui(sub_arena->smm.data) + sub_arena->smm.data_len*CACHELINE_LEN - ptr2ui(ptr) );
+              fprintf( stdout, "[MA-Debug] data+data_len-ptr = %lu\n",
+                  (uintptr_t)sub_arena->smm.data + sub_arena->smm.data_len*CACHELINE_LEN -
+                  (uintptr_t)ptr );
               default_free( nullptr, ptr );
               break;
             case emsg_no_error:
@@ -180,12 +182,14 @@ void ma_free_simple_ptr( memorable_arena_t * restrict arena, uint8_t idx_user, v
 
         switch ( err ) {
           case emsg_no_such_entry:
-            fprintf( stdout, "[MA-Debug] ptr = %#018lx\n", ptr2ui(ptr) );
+            fprintf( stdout, "[MA-Debug] ptr = %#018lx\n", (uintptr_t)ptr );
             fprintf( stdout, "[MA-Debug] sub_arena->smm.data = %#018lx\n",
-                ptr2ui(sub_arena->smm.data) );
+                (uintptr_t)sub_arena->smm.data );
             fprintf( stdout, "[MA-Debug] sub_arena->smm.data_len = %u\n",
                 sub_arena->smm.data_len*CACHELINE_LEN );
-            fprintf( stdout, "[MA-Debug] data+data_len-ptr = %lu\n", ptr2ui(sub_arena->smm.data) + sub_arena->smm.data_len*CACHELINE_LEN - ptr2ui(ptr) );
+            fprintf( stdout, "[MA-Debug] data+data_len-ptr = %lu\n",
+                (uintptr_t)sub_arena->smm.data + sub_arena->smm.data_len*CACHELINE_LEN -
+                (uintptr_t)ptr );
             default_free( nullptr, ptr );
             break;
           case emsg_no_error:
@@ -219,12 +223,13 @@ void ma_free_assuming_lock_has_been_obtained( struct ma_sub_arena * restrict sub
   //    sub_arena, ma_internal_malloc, ptr, &nr_chunks_released, LOG2_CACHELINE_LEN );
   switch ( err ) {
     case emsg_no_such_entry:
-      fprintf( stdout, "[MA-Debug] ptr = %#018lx\n", ptr2ui(ptr) );
+      fprintf( stdout, "[MA-Debug] ptr = %#018lx\n", (uintptr_t)ptr );
       fprintf( stdout, "[MA-Debug] sub_arena->smm.data = %#018lx\n",
-          ptr2ui(sub_arena->smm.data) );
+          (uintptr_t)sub_arena->smm.data );
       fprintf( stdout, "[MA-Debug] sub_arena->smm.data_len = %u\n",
           sub_arena->smm.data_len*CACHELINE_LEN );
-      fprintf( stdout, "[MA-Debug] data+data_len-ptr = %lu\n", ptr2ui(sub_arena->smm.data) + sub_arena->smm.data_len*CACHELINE_LEN - ptr2ui(ptr) );
+      fprintf( stdout, "[MA-Debug] data+data_len-ptr = %lu\n",
+          (uintptr_t)sub_arena->smm.data + sub_arena->smm.data_len*CACHELINE_LEN - (uintptr_t)ptr );
       default_free( nullptr, ptr );
       break;
     case emsg_no_error:
@@ -455,7 +460,7 @@ size_t ma_get_size( memorable_arena_t * restrict arena, void * restrict ptr )
   for ( sub_arena = arena->head; sub_arena; sub_arena = sub_arena->next ) {
     if ( sub_arena->smm.data <= ptr &&
         ptr <= (sub_arena->smm.data + sub_arena->smm.data_len * CACHELINE_LEN) ) {
-      auto offset = ptr2ui((ptr) - sub_arena->smm.data) / CACHELINE_LEN;
+      auto offset = (uintptr_t)((ptr) - sub_arena->smm.data) / CACHELINE_LEN;
       return infos_smm_get_size( &sub_arena->smm, offset );
     }
   }

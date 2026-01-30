@@ -21,6 +21,7 @@
 #include "info_struct.h"
 #include "util-c_lang-x86.h"
 #include "err_msg.h"
+#include "carbonara-math.h"
 
 
 //-------------------------------------------------------------------------------------------------
@@ -537,6 +538,38 @@ int main( int argc, char * argv[] )
 
 
   test_nr = 11;
+  // det_3, get_inv
+  {
+    fprintf( stdout, "\n\n\n ## det_3 \n\n" );
+    struct mat3x3 mat = {
+      (vec3){-4, -3, 3},
+      (vec3){0, 2, -2},
+      (vec3){1, 4, -1}
+    };
+    fprintf( stdout, "mat = {\n"
+        "  {%.01f, %.01f, %.01f},\n"
+        "  {%.01f, %.01f, %.01f},\n"
+        "  {%.01f, %.01f, %.01f}\n"
+        "}\n",
+        mat.rows[0][0], mat.rows[0][1], mat.rows[0][2],
+        mat.rows[1][0], mat.rows[1][1], mat.rows[1][2],
+        mat.rows[2][0], mat.rows[2][1], mat.rows[2][2] );
+    float det = det_3( mat );
+    fprintf( stdout, "det_3(mat) = %f\n", det );
+    struct mat3x3 inv = get_inv( mat );
+    fprintf( stdout, "inv = {\n"
+        "  {%.04f, %.04f, %.04f},\n"
+        "  {%.04f, %.04f, %.04f},\n"
+        "  {%.04f, %.04f, %.04f}\n"
+        "}\n",
+        inv.rows[0][0], inv.rows[0][1], inv.rows[0][2],
+        inv.rows[1][0], inv.rows[1][1], inv.rows[1][2],
+        inv.rows[2][0], inv.rows[2][1], inv.rows[2][2] );
+  }
+
+
+
+  test_nr = 12;
 
 
   return 0;
