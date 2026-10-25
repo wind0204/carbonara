@@ -474,8 +474,8 @@ large_page_size_determined:;
 #pragma GCC diagnostic ignored "-Wconditional-uninitialized"
         // This worker will be allowed to utilize more cache sets.
         pu->idx_missing_sibling = cpu_id + 1;
-#pragma GCC diagnostic pop
         pu->deployment_flags |= worker_deployment_flag_missing_a_sibling;
+#pragma GCC diagnostic pop
       }
 
     } else {  // if ( hwloc_obj->arity > 1 )

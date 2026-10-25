@@ -32,8 +32,8 @@
 union ieee754_binary64_le {
   struct {
     uint64_t fraction: 52;
-    uint16_t exponent: 11;
-    uint8_t sign: 1;
+    uint64_t exponent: 11;
+    uint64_t sign: 1;
   };
   double whole;
 };
@@ -44,8 +44,8 @@ union ieee754_binary64_le {
 union ieee754_binary32_le {
   struct {
     uint32_t fraction: 23;
-    uint16_t exponent: 8;
-    uint8_t sign: 1;
+    uint32_t exponent: 8;
+    uint32_t sign: 1;
   };
   float whole;
 };
@@ -55,8 +55,8 @@ union ieee754_binary32_le {
  */
 union ieee754_binary64_be {
   struct {
-    uint8_t sign: 1;
-    uint16_t exponent: 11;
+    uint64_t sign: 1;
+    uint64_t exponent: 11;
     uint64_t fraction: 52;
   };
   double whole;
@@ -67,8 +67,8 @@ union ieee754_binary64_be {
  */
 union ieee754_binary32_be {
   struct {
-    uint8_t sign: 1;
-    uint16_t exponent: 8;
+    uint32_t sign: 1;
+    uint32_t exponent: 8;
     uint32_t fraction: 23;
   };
   float whole;

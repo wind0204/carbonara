@@ -111,8 +111,12 @@ static int rdmsr(int msr, uint64_t *val) {
 }
 
 //-------------------------------------------------------------------------------------------------
+/**
+ * \brief Determine nr_tsc_in_1s|1ms|5us|pc for the usage of rdtsc, mwaitx, umwait, tpause
+ * \return enum err_msg or 0
+ **/
 static enum err_msg get_nr_tsc_in_1s_without_help_from_os(
-    uint64_t proc_info, uint8_t prev_duration)
+    uint64_t proc_info, uint8_t prev_test_dur)
 {
 /*
   tsc_res_ns = 0;
@@ -141,7 +145,9 @@ static enum err_msg get_nr_tsc_in_1s_without_help_from_os(
 */
 
 
-  // As luck would have it, hwloc can't always provide the base frequency of CPU
+  // As luck would have it, hwloc can't always provide the base frequency of the CPU
+
+  // TODO Check how PCSX2 handles it
 
   uint32_t eax, ebx, ecx, edx;
 
@@ -149,15 +155,20 @@ static enum err_msg get_nr_tsc_in_1s_without_help_from_os(
   x86_proc_info.whole = proc_info;
 
   uint64_t max_nonturbo_ratio = 0;
+  uint8_t bus_freq = 0;
   if ( x86_proc_info.maxleaf >= 0x15 ) {
     intel_dialect_cpuid(0x15, eax, ebx, ecx, edx);
     if ( ebx && ecx ) {
-      nr_cpu_cycles_per_1s = ecx * ( ebx / eax );
-      goto base_freq_determined;
+      nr_cpu_cycles_per_1s = ((uint64_t)ecx * ebx) / eax;
+      nr_tsc_in_1s = nr_cpu_cycles_per_1s;
+      nr_tsc_in_1ms = (typeof(nr_tsc_in_1ms)) ( (__float128)nr_tsc_in_1s * (1.0/1000.0) );
+      nr_tsc_in_5us = (typeof(nr_tsc_in_1ms)) ( (__float128)nr_tsc_in_1s * (5.0/1000000.0) );
+      nr_tsc_in_pc = (typeof(nr_tsc_in_pc)) ( (__float128)nr_tsc_in_1s *
+          ((__float128)1.0/SDL_GetPerformanceFrequency()) );
+      goto tsc_freq_determined;
     }
   }
 
-  uint8_t bus_freq = 0;
   switch ( x86_proc_info.model ) {
     // Westmere
     case 0x25:
@@ -183,7 +194,8 @@ static enum err_msg get_nr_tsc_in_1s_without_help_from_os(
         if ( x86_proc_info.maxleaf < 0x16 ) {
           // return err_msg_parse_error;
 #ifdef DEBUG_MODE
-        fprintf(stdout, "[Timer] Assume the lowest bus frequency. 100Hz?\n");
+        fprintf(stdout, "[Timer] Assume bus frequency 100Hz when running without AVX support "
+            "and CPUID.0x16 is not supported either.\n");
 #endif
           bus_freq = 100;
           break;
@@ -194,13 +206,29 @@ static enum err_msg get_nr_tsc_in_1s_without_help_from_os(
 #endif
         ecx = 0;
         intel_dialect_cpuid(0x16, eax, ebx, ecx, edx);
+        if ( ecx == 0 ) {
+#ifdef DEBUG_MODE
+          fprintf(stdout,
+              "[Timer] CPUID.0x16 did not return bus frequency. "
+              "Assume the lowest frequency (100Hz)\n");
+#endif
+          ecx = 100;
+        }
         bus_freq = ecx & 0xffff;
         break;
       }
+
+#ifdef DEBUG_MODE
+        fprintf(stdout, "[Timer] Time to guess. Assume the lowest bus frequency. (100Hz)\n");
+#endif
       bus_freq = 100;
   }
 
+  // Try to grab `max_nonturbo_ratio << 8` from /dev/cpu/0/msr just in case we were previleged
   if ( rdmsr( 0xCE, &max_nonturbo_ratio ) <= 0 ) {
+    // We couldn't read /dev/cpu/0/msr
+
+    // Use our small database of x86 processors, or CPUID.16H.EAX[15-00]
     switch ( x86_proc_info.model ) {
       // i7-4790S
       case 0x3C:
@@ -208,7 +236,7 @@ static enum err_msg get_nr_tsc_in_1s_without_help_from_os(
         break;
 
       default:
-        // I'll try to utilize CPUID.16H.EAX[15-00]
+        // Try to utilize CPUID.16H.EAX[15-00]
         eax = 0;
         intel_dialect_cpuid(0x16, eax, ebx, ecx, edx);
         if ( eax == 0 ) {
@@ -227,16 +255,16 @@ static enum err_msg get_nr_tsc_in_1s_without_help_from_os(
   max_nonturbo_ratio = (max_nonturbo_ratio >> 8) & 0xff;
 
   nr_cpu_cycles_per_1s = max_nonturbo_ratio * bus_freq * UINT64_C(1000000);
-base_freq_determined:
+//base_freq_determined:
 
   // TODO Stop being verbose.
-  fprintf(stdout, "[Timer] cpu_base_freq = %lu, max_nonturbo_ratio = %lu\n",
-      nr_cpu_cycles_per_1s, max_nonturbo_ratio);
+  fprintf(stdout, "[Timer] cpu_base_freq = %lu, max_nonturbo_ratio = %lu, bus_freq = %hhu\n",
+      nr_cpu_cycles_per_1s, max_nonturbo_ratio, bus_freq);
 
   struct timespec spec, orig_spec;
   uint64_t new_tsc, starting_tsc;
-  uint_fast8_t test_duration = prev_duration ?
-    min(prev_duration + 1, TSC_FREQ_TEST_DURATION) : TSC_FREQ_TEST_DURATION;
+  uint_fast8_t test_duration = prev_test_dur ?
+    min(prev_test_dur + 1, TSC_FREQ_TEST_DURATION) : TSC_FREQ_TEST_DURATION;
 
 //start_calibration:
   // TODO Stop being verbose.
@@ -300,9 +328,10 @@ base_freq_determined:
     smaller = test_result;
   }
 
-  if ( bigger - smaller > 512 ) {
+  typeof(bigger) max_cpu_freq_err = 270u;
+  if ( bigger - smaller > max_cpu_freq_err ) {
     fprintf( stderr, "[Timer] The measured frequency was too far from the estimated frequency"
-        " (%lu - %lu > %d)\n", bigger, smaller, 512 );
+        " (%lu - %lu > %lu)\n", bigger, smaller, max_cpu_freq_err );
     return emsg_corrupted_data_detected;
   }
 
@@ -326,6 +355,7 @@ base_freq_determined:
     (1.0 / (__float128)test_duration) * (1.0/1000000.0 * 5.0) );
   nr_tsc_in_pc = (typeof(nr_tsc_in_pc)) ( (__float128)(new_tsc - starting_tsc) *
     (1.0 / (__float128)test_duration) * ((__float128)1.0/SDL_GetPerformanceFrequency()) );
+tsc_freq_determined:
 #ifdef DEBUG_MODE
   fprintf( stdout, "[Timer] nr_tsc_in_1s = %lu; nr_tsc_in_pc = %f\n",
       nr_tsc_in_1s, nr_tsc_in_pc );

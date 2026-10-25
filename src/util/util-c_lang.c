@@ -930,8 +930,8 @@ static uint64_t init_x86(void)
     } ebx = { .reg = 0 };
     union {  // ECX
       struct {
-        uint8_t prefetchwt1: 1;
-        uint8_t avx512vbmi: 1;
+        uint32_t prefetchwt1: 1;
+        uint32_t avx512vbmi: 1;
         uint32_t reserved: 30;
       };
       uint32_t reg;
@@ -942,7 +942,7 @@ static uint64_t init_x86(void)
 #ifdef DEBUG_MODE
     fprintf(stdout, "bmi1:%u avx2:%u bmi2:%u avx512f:%u avx512dq:%u avx512ifma:%u\n"
         "avx512pf:%u avx512er:%u avx512cd:%u sha:%u avx512bw:%u "
-        "avx512vl:%u avx512vbmi:%u\n",
+        "avx512vl:%u avx512vbmi:%d\n",
         ebx.bmi1, ebx.avx2, ebx.bmi2, ebx.avx512f, ebx.avx512dq,
         ebx.avx512ifma, ebx.avx512pf, ebx.avx512er, ebx.avx512cd, ebx.sha,
         ebx.avx512bw, ebx.avx512vl, ecx.avx512vbmi);
@@ -957,26 +957,26 @@ static uint64_t init_x86(void)
   {
     union {  // EDX
       struct {
-        uint8_t ts: 1;
-        uint8_t fid: 1;
-        uint8_t vid: 1;
-        uint8_t ttp: 1;
-        uint8_t tm: 1;
-        uint8_t stc: 1;
-        uint8_t one_hundred_mhz_steps: 1;
-        uint8_t hw_p_state: 1;
-        uint8_t tsc_invariant: 1;
-        uint8_t cpb: 1;
-        uint8_t eff_frq_ro: 1;
-        uint8_t proc_feedback_interface: 1;
-        uint8_t proc_power_reporting: 1;
-        uint8_t connected_standby: 1;
-        uint8_t rapl: 1;
-        uint8_t fast_cppc: 1;
-        uint8_t succor: 1;
-        uint8_t hwa: 1;
-        uint8_t scalable_mca: 1;
-        uint16_t reserved: 16;
+        uint32_t ts: 1;
+        uint32_t fid: 1;
+        uint32_t vid: 1;
+        uint32_t ttp: 1;
+        uint32_t tm: 1;
+        uint32_t stc: 1;
+        uint32_t one_hundred_mhz_steps: 1;
+        uint32_t hw_p_state: 1;
+        uint32_t tsc_invariant: 1;
+        uint32_t cpb: 1;
+        uint32_t eff_frq_ro: 1;
+        uint32_t proc_feedback_interface: 1;
+        uint32_t proc_power_reporting: 1;
+        uint32_t connected_standby: 1;
+        uint32_t rapl: 1;
+        uint32_t fast_cppc: 1;
+        uint32_t succor: 1;
+        uint32_t hwa: 1;
+        uint32_t scalable_mca: 1;
+        uint32_t reserved: 16;
       };
       uint32_t reg;
     } edx = { .reg = 0 };
@@ -985,7 +985,7 @@ static uint64_t init_x86(void)
     uint32_t eax = 0x80000007u;
     __cpuid(0x80000007u, eax, ebx, ecx, edx.reg);
 #ifdef DEBUG_MODE
-    fprintf(stdout, "tsc_invariant:%u\n", edx.tsc_invariant);
+    fprintf(stdout, "tsc_invariant:%d\n", edx.tsc_invariant);
 #endif
 
     x86_proc_info.tsc_invariant = edx.tsc_invariant;

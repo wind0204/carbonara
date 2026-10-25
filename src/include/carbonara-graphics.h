@@ -99,7 +99,7 @@ constexpr unsigned int cara_max_nr_albmaps = 128;
  */
 struct graphics_cmd_bufs {
   VkCommandPool * arr_cmd_pools;  ///< The number of the entries in the array is equal to
-                                  ///<  1+[the number of workers] Command pools cannot be accessed at
+                                  ///< 1+[the number of workers] Command pools cannot be accessed at
                                   ///< the same time from multiple threads (command buffers from the
                                   ///< same pool cannot be recorded on multiple threads at the same
                                   ///< time).
@@ -117,10 +117,10 @@ struct graphics_cmd_bufs {
  */
 struct trans_cmd_bufs {
   VkCommandPool * arr_cmd_pools;  ///< The number of the entries in the array is equal to
-                                  ///< 1+(2*[the number of workers]) Command pools cannot be accessed
-                                  ///< at the same time from multiple threads (command buffers from
-                                  ///< the same pool cannot be recorded on multiple threads at the
-                                  ///< same time).
+                                  ///< 1+(2*[the number of workers])
+                                  ///< Command pools cannot be accessed at the same time from
+                                  ///< multiple threads (command buffers from the same pool cannot
+                                  ///< be recorded on multiple threads at the same time).
   //VkCommandBuffer * arr_cmd_bufs;  ///< The number of the entries in the array is equal to
                                      ///< cara_max_nr_subpasses*[the number of workers].
                                      ///< Use cara_get_arr_cmd_bufs_for_transfer to get a pointer to
@@ -242,10 +242,10 @@ struct cara_vk_renderer {
   VkSemaphore arr_semphos_tr[cara_max_nr_fif];  // a timeline semaphore for transfer
   VkSemaphore arr_semphos_gr[cara_max_nr_fif];   // a timeline semaphore for graphics
   VkSemaphore arr_sc_acquire_semphos[cara_max_nr_fif];  // binary semaphores
-  VkQueue graphics_q;  ///< WARNING This queue can be shared for other tasks
-  VkQueue transfer_q;  ///< WARNING This queue can be shared for other tasks
+  VkQueue graphics_q;  ///< WARNING This queue can be shared with other purposes
+  VkQueue transfer_q;  ///< WARNING This queue can be shared with other purposes
   VkQueue loader_q;  ///< WARNING A queue for asset loading; It can be same with another queue
-  VkQueue compute_q;   ///< WARNING This queue can be shared for other tasks
+  VkQueue compute_q;   ///< WARNING This queue can be shared with other purposes
   static_assert( alignof(VkQueue) >= alignof(struct graphics_cmd_bufs) );
   struct graphics_cmd_bufs arr_graphics_cmdbuf_sets[cara_max_nr_fif];
   static_assert( alignof(struct graphics_cmd_bufs) >= alignof(struct trans_cmd_bufs) );

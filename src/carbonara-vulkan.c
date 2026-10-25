@@ -63,8 +63,8 @@ static const char * const names_instance_extensions_required[] = {
 static const char * const names_device_extensions_required[] = {
   VK_KHR_SWAPCHAIN_EXTENSION_NAME,  // To draw image on screen
   VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME,  // VkPhysicalDeviceVulkan13Features::synchronization2
-  //VK_KHR_MAINTENANCE3_EXTENSION_NAME,   // It is required for descriptor indexing but it has been
-                                          //promoted to Vulkan 1.1
+  //VK_KHR_MAINTENANCE3_EXTENSION_NAME,   // Required for descriptor indexing; it has been promoted
+                                          //  to Vulkan 1.1
   VK_KHR_MAINTENANCE_8_EXTENSION_NAME,  // To make src/dst sync scopes to work when doing a queue
                                         //  family ownership transfer.
   VK_EXT_SCALAR_BLOCK_LAYOUT_EXTENSION_NAME,  //\
@@ -72,7 +72,7 @@ static const char * const names_device_extensions_required[] = {
   VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME,  // Descriptor indexing
 };
 
-// I just picked 1.2 for vkCmdDrawIndexedIndirectCount
+// I just picked 1.2 simply for vkCmdDrawIndexedIndirectCount as a beginner with no clue.
 static constexpr unsigned int vulkan_version_minor = 2;
 static constexpr unsigned int vulkan_version_major = 1;
 

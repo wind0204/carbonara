@@ -7,18 +7,20 @@ Prepare for FindWayland.cmake (NOT NEEDED ANYMORE)
 
 Prepare SDL3
  clone the git repo and place it in `extern/SDL`
- install the development headers of liburing
+ install the development headers of liburing (e.g. liburing-dev on Ubuntu)
 
 Prepare for xdg-shell.xml (NOT NEEDED ANYMORE)
  $ sudo apt install wayland-protocols
 
 Prepare hwloc
- clone the git repo ans place it in `extern/hwloc`
+ clone the git repo and place it in `extern/hwloc`
+ install the development headers of libpciaccess (e.g. libpciaccess-dev on Ubuntu)
+ install the development headers of libudev (e.g. libudev-dev on Ubuntu)
 
 Configure cmake build
- $ CC=clang-20 cmake -B build-Debug -DCMAKE_BUILD_TYPE=Debug -G Ninja
- $ CC=clang-20 cmake -B build-RelWithDebInfo -DCMAKE_BUILD_TYPE=RelWithDebInfo -G Ninja
- $ CC=clang-20 cmake -B build-ship_it -DCMAKE_BUILD_TYPE=Release -G Ninja
+ $ CC=clang-21 cmake -B build-Debug -DCMAKE_BUILD_TYPE=Debug -G Ninja
+ $ CC=clang-21 cmake -B build-RelWithDebInfo -DCMAKE_BUILD_TYPE=RelWithDebInfo -G Ninja
+ $ CC=clang-21 cmake -B build-ship_it -DCMAKE_BUILD_TYPE=Release -G Ninja
 
 Start building
  $ time cmake --build build-RelWithDebInfo
@@ -32,9 +34,9 @@ If the build fails because the object of libhwloc is missing:
  $ mkdir -p build-ship_it/extern && cd $_ && ln -s ../../extern/hwloc/hwloc/.libs/libhwloc.a ./ && cd -
 
 Remove the original cmake build directory and reconfigure
- $ BUILD_DIRECTORY=build-Debug && rm -rf $BUILD_DIRECTORY && CC=clang-20 cmake -B $BUILD_DIRECTORY -DCMAKE_BUILD_TYPE=Debug -G Ninja && mkdir -p $BUILD_DIRECTORY/extern && cd $_ && ln -s ../../extern/hwloc/hwloc/.libs/libhwloc.a ./ && cd -
- $ BUILD_DIRECTORY=build-RelWithDebInfo && rm -rf $BUILD_DIRECTORY && CC=clang-20 cmake -B $BUILD_DIRECTORY -DCMAKE_BUILD_TYPE=RelWithDebInfo -G Ninja && mkdir -p $BUILD_DIRECTORY/extern && cd $_ && ln -s ../../extern/hwloc/hwloc/.libs/libhwloc.a ./ && cd -
- $ BUILD_DIRECTORY=build-ship_it && rm -rf $BUILD_DIRECTORY && CC=clang-20 cmake -B $BUILD_DIRECTORY -DCMAKE_BUILD_TYPE=Release -G Ninja && mkdir -p $BUILD_DIRECTORY/extern && cd $_ && ln -s ../../extern/hwloc/hwloc/.libs/libhwloc.a ./ && cd -
+ $ BUILD_DIRECTORY=build-Debug && rm -rf $BUILD_DIRECTORY && CC=clang-21 cmake -B $BUILD_DIRECTORY -DCMAKE_BUILD_TYPE=Debug -G Ninja && mkdir -p $BUILD_DIRECTORY/extern && cd $_ && ln -s ../../extern/hwloc/hwloc/.libs/libhwloc.a ./ && cd -
+ $ BUILD_DIRECTORY=build-RelWithDebInfo && rm -rf $BUILD_DIRECTORY && CC=clang-21 cmake -B $BUILD_DIRECTORY -DCMAKE_BUILD_TYPE=RelWithDebInfo -G Ninja && mkdir -p $BUILD_DIRECTORY/extern && cd $_ && ln -s ../../extern/hwloc/hwloc/.libs/libhwloc.a ./ && cd -
+ $ BUILD_DIRECTORY=build-ship_it && rm -rf $BUILD_DIRECTORY && CC=clang-21 cmake -B $BUILD_DIRECTORY -DCMAKE_BUILD_TYPE=Release -G Ninja && mkdir -p $BUILD_DIRECTORY/extern && cd $_ && ln -s ../../extern/hwloc/hwloc/.libs/libhwloc.a ./ && cd -
 
 Debug
  $ valgrind --track-origins=yes --leak-check=yes build-RelWithDebInfo/RelWithDebInfo/carbonara 

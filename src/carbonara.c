@@ -25,7 +25,7 @@
   #include <util-spall.h>
   static SpallBuffer spall_buf_for_main;
 #else  // defined(ENABLE_PROFILING)
-  #define SPALL_BEGIN( name_tag )
+  #define SPALL_BEGIN(name_tag)
   #define SPALL_END()
 #endif  // defined(ENABLE_PROFILING)
 
@@ -155,7 +155,7 @@ static void * launch_worker( void * arg );
 /**
  * \brief Initialize the SDL part of the engine
  */
-static uint8_t init_sdl(void);
+static uint8_t init_sdl( void );
 
 
 //-------------------------------------------------------------------------------------------------
@@ -272,14 +272,14 @@ SDL_AppResult SDL_AppIterate( [[maybe_unused]] void *appstate )
   if ( a % cap == 0 ) {
     fprintf( stdout, "[TEST] a = %lu\n", a );
     if ( a > cap ) {
-      raise(SIGHUP);
+      raise( SIGHUP );
     }
   }
   a++;
 
   const uint_least32_t sign_to_end = atomic_load_explicit(
       &cara_single.sign_to_end, memory_order_acquire );
-  if ( unlikely(sign_to_end > 0) ) {
+  if (unlikely( sign_to_end > 0 )) {
     switch( sign_to_end ) {
       case 1:
         SPALL_END();
@@ -395,22 +395,22 @@ SDL_AppResult SDL_AppInit(
 
 
 //-------------------------------------------------------------------------------------------------
-static uint8_t init_sdl(void)
+static uint8_t init_sdl( void )
 {
 #ifdef DEBUG_MODE
   // By default the application and gpu categories are enabled at the INFO level, the
   // assert category is enabled at the WARN level, test is enabled at the VERBOSE level
   // and all other categories are enabled at the ERROR level.
-  SDL_SetLogPriority(SDL_LOG_CATEGORY_GPU, SDL_LOG_PRIORITY_DEBUG);
-  SDL_SetLogPriority(SDL_LOG_CATEGORY_AUDIO, SDL_LOG_PRIORITY_DEBUG);
-  SDL_SetLogPriority(SDL_LOG_CATEGORY_ERROR, SDL_LOG_PRIORITY_DEBUG);
-  SDL_SetLogPriority(SDL_LOG_CATEGORY_ASSERT, SDL_LOG_PRIORITY_DEBUG);
-  SDL_SetLogPriority(SDL_LOG_CATEGORY_RENDER, SDL_LOG_PRIORITY_DEBUG);
-  SDL_SetLogPriority(SDL_LOG_CATEGORY_APPLICATION, SDL_LOG_PRIORITY_DEBUG);
-  SDL_SetLogPriority(SDL_LOG_CATEGORY_INPUT, SDL_LOG_PRIORITY_DEBUG);
-  SDL_SetLogPriority(SDL_LOG_CATEGORY_VIDEO, SDL_LOG_PRIORITY_DEBUG);
-  SDL_SetLogPriority(SDL_LOG_CATEGORY_SYSTEM, SDL_LOG_PRIORITY_DEBUG);
-  SDL_SetLogPriority(SDL_LOG_CATEGORY_CUSTOM, SDL_LOG_PRIORITY_DEBUG);
+  SDL_SetLogPriority( SDL_LOG_CATEGORY_GPU, SDL_LOG_PRIORITY_DEBUG );
+  SDL_SetLogPriority( SDL_LOG_CATEGORY_AUDIO, SDL_LOG_PRIORITY_DEBUG );
+  SDL_SetLogPriority( SDL_LOG_CATEGORY_ERROR, SDL_LOG_PRIORITY_DEBUG );
+  SDL_SetLogPriority( SDL_LOG_CATEGORY_ASSERT, SDL_LOG_PRIORITY_DEBUG );
+  SDL_SetLogPriority( SDL_LOG_CATEGORY_RENDER, SDL_LOG_PRIORITY_DEBUG );
+  SDL_SetLogPriority( SDL_LOG_CATEGORY_APPLICATION, SDL_LOG_PRIORITY_DEBUG );
+  SDL_SetLogPriority( SDL_LOG_CATEGORY_INPUT, SDL_LOG_PRIORITY_DEBUG );
+  SDL_SetLogPriority( SDL_LOG_CATEGORY_VIDEO, SDL_LOG_PRIORITY_DEBUG );
+  SDL_SetLogPriority( SDL_LOG_CATEGORY_SYSTEM, SDL_LOG_PRIORITY_DEBUG );
+  SDL_SetLogPriority( SDL_LOG_CATEGORY_CUSTOM, SDL_LOG_PRIORITY_DEBUG );
 #endif
 
   if ( SDL_SetHint(SDL_HINT_QUIT_ON_LAST_WINDOW_CLOSE, "0") == 0 ) {
@@ -446,8 +446,8 @@ static uint8_t init_sdl(void)
 //-------------------------------------------------------------------------------------------------
 enum err_msg init_carbonara( uint32_t len_each_arena, uint64_t proc_info )
 {
-  //atomic_init(&cara_single.nr_job_arg_groups_taken, 0);
-  atomic_init(&cara_single.nr_job_batch_descriptors_taken, 0);
+  //atomic_init( &cara_single.nr_job_arg_groups_taken, 0 );
+  atomic_init( &cara_single.nr_job_batch_descriptors_taken, 0 );
 
 
 
@@ -459,7 +459,7 @@ enum err_msg init_carbonara( uint32_t len_each_arena, uint64_t proc_info )
   union ucl_x86_proc_info x86_proc_info;
   x86_proc_info.whole = proc_info;
   x86_proc_info.large_page_size_class = cara_single.proc_map->large_page_size_class;
-  assume(x86_proc_info.large_page_size_class != 0);
+  assume( x86_proc_info.large_page_size_class != 0 );
   proc_info = x86_proc_info.whole;
 
   cara_single.proc_info = proc_info;
@@ -470,7 +470,7 @@ enum err_msg init_carbonara( uint32_t len_each_arena, uint64_t proc_info )
   //
   enum err_msg err;
 #ifdef ENABLE_PROFILING
-  err = init_appdev_support_timer(x86_proc_info.whole, 0);
+  err = init_appdev_support_timer( x86_proc_info.whole, 0 );
   if ( err ) {
     fprintf( stderr, "[ADS-timer] err_msg from init_appdev_support_timer = \"%s\"\n",
         arr_emsg_txt[err] );
@@ -523,7 +523,7 @@ enum err_msg init_carbonara( uint32_t len_each_arena, uint64_t proc_info )
      while user code runs. This can make a noticable difference for data consistency, especially
      with bigger buffers.
      */
-  memset(spall_buf_for_main.data, 0, spall_buf_for_main.length);
+  memset( spall_buf_for_main.data, 0, spall_buf_for_main.length );
 
   if ( !spall_buffer_init(&spall_ctx, &spall_buf_for_main) ) {
     fprintf( stderr, "[Worker] failed to init the spall buffer.\n" );
@@ -536,10 +536,10 @@ enum err_msg init_carbonara( uint32_t len_each_arena, uint64_t proc_info )
   // Init memory arena
   //
 
-  SPALL_BEGIN( "init_carb-after_prepare_processor_map" );
+  SPALL_BEGIN("init_carb-after_prepare_processor_map");
 
   //size_t large_page_size = page_sizes[x86_proc_info.large_page_size_class];
-  cara_single.mem_arena = aligned_alloc(CACHELINE_LEN, sizeof(memorable_arena_t));
+  cara_single.mem_arena = aligned_alloc( CACHELINE_LEN, sizeof(memorable_arena_t) );
   if ( !cara_single.mem_arena ) {
     fprintf( stderr, "[Carbonara] Error in allocation: %s\n", arr_emsg_txt[emsg_out_of_memory] );
     return emsg_out_of_memory;
@@ -628,8 +628,7 @@ enum err_msg init_carbonara( uint32_t len_each_arena, uint64_t proc_info )
         sizeof(struct ms_worker_info) + sizeof(struct u_hwloc_bitmap_s))
       );
 
-  cara_single.proc_map->processors = (struct ms_worker_info *)
-    (cara_single.proc_map + 1);
+  cara_single.proc_map->processors = (struct ms_worker_info *) ( cara_single.proc_map + 1 );
   const uint_fast16_t offset_bitmap_loc = sizeof(struct processor_map) +
     p_orig_proc_map->nr_processors * sizeof(struct ms_worker_info);
   for ( unsigned int ui = 0; ui < p_orig_proc_map->nr_processors; ui++ ) {
@@ -638,7 +637,7 @@ enum err_msg init_carbonara( uint32_t len_each_arena, uint64_t proc_info )
       offset_bitmap_loc + ui * sizeof(struct u_hwloc_bitmap_s);
     //assume ( ! cara_single.proc_map->processors[ui].user_data );
   }
-  free(p_orig_proc_map);
+  free( p_orig_proc_map );
 
 
 #ifdef DEBUG_MODE
@@ -657,7 +656,7 @@ enum err_msg init_carbonara( uint32_t len_each_arena, uint64_t proc_info )
   //
   // Write the very first job batch (jf_kickstart)
   //
-  struct cara_job_batch_desc_64 * batch = infos_al_get_elem_unsafe(cara_single.job_list, 0);
+  struct cara_job_batch_desc_64 * batch = infos_al_get_elem_unsafe( cara_single.job_list, 0 );
   for ( uint_fast8_t job_idx = 1; job_idx < CARBONARA_MAX_NR_JOBS_IN_A_JOB_DESC_64;
       job_idx++ ) {
     batch->job_func_idx[job_idx] = 0;
@@ -687,7 +686,7 @@ enum err_msg init_carbonara( uint32_t len_each_arena, uint64_t proc_info )
   __float128 pc_freq = get_performance_frequency();
   const uint64_t nr_pc_in_5us = (typeof(nr_pc_in_5us)) (pc_freq / 1000000 * 5);
   cara_single.nr_pc_in_5us = (typeof(nr_pc_in_5us)) nr_pc_in_5us;
-  unsigned_division_magic_64(&cara_single.magic_divider, nr_pc_in_5us);
+  unsigned_division_magic_64( &cara_single.magic_divider, nr_pc_in_5us );
 
   const uint32_t leap_sec_freq = get_performance_frequency() / nr_pc_in_5us;
   // Do we want to deal with offsetting performance counter every leaf second?
@@ -716,7 +715,7 @@ enum err_msg init_carbonara( uint32_t len_each_arena, uint64_t proc_info )
   const uint64_t job_spawners_time_to_act[] = {
     1 + nr_5us_in_1ms * 500 * 1,
     1 + nr_5us_in_1ms * 500 * 2,
-#if !defined(ARE_WE_SHIPPING_IT)
+#if !defined( ARE_WE_SHIPPING_IT )
     1 + nr_5us_in_1ms * 500 * 3,
 #endif
   };
@@ -731,7 +730,7 @@ enum err_msg init_carbonara( uint32_t len_each_arena, uint64_t proc_info )
   pjob_idx++;
   cara_single.periodic_jobs[pjob_idx] = jf_idx_maint_memo_maps;
   cara_single.periodic_jobs_periods_5us[pjob_idx] = 1000 * nr_5us_in_1ms;
-#if !defined(ARE_WE_SHIPPING_IT)
+#if !defined( ARE_WE_SHIPPING_IT )
   pjob_idx++;
   cara_single.periodic_jobs[pjob_idx] = jf_idx_police_patrol;
   cara_single.periodic_jobs_periods_5us[pjob_idx] = 2000 * nr_5us_in_1ms;
@@ -749,11 +748,11 @@ enum err_msg init_carbonara( uint32_t len_each_arena, uint64_t proc_info )
   //
   // Prepare signal handlers
   //
-  signal(SIGHUP, handle_sigint);
-  signal(SIGINT, handle_sigint);
-  signal(SIGQUIT, handle_sigint);
-  signal(SIGTERM, handle_sigint);
-  signal(SIGSEGV, handle_sigsegv);
+  signal( SIGHUP, handle_sigint );
+  signal( SIGINT, handle_sigint );
+  signal( SIGQUIT, handle_sigint );
+  signal( SIGTERM, handle_sigint );
+  signal( SIGSEGV, handle_sigsegv );
 
 
   SPALL_END();  // after prepare_processor_map
@@ -787,7 +786,7 @@ enum err_msg init_carbonara( uint32_t len_each_arena, uint64_t proc_info )
   //
   // TODO do it asynchronously
   //
-  SPALL_BEGIN( "Load stone.dds" );
+  SPALL_BEGIN("Load stone.dds");
   cara_vk.alb_stone = nullptr;
   cara_vk.alb_sand = nullptr;
   cara_vk.spv_simple_vert = nullptr;
@@ -1270,7 +1269,7 @@ done_with_sand:
   for ( uint_fast8_t proc_idx = 0;
       proc_idx < cara_single.proc_map->nr_processors;
       proc_idx++ ) {
-    SPALL_BEGIN( "spawn_a_worker" );
+    SPALL_BEGIN("spawn_a_worker");
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wint-to-pointer-cast"
     err = create_thread(
@@ -1323,7 +1322,7 @@ void * launch_worker( void * arg )
   vk_alloc_callbacks.pfnInternalAllocation = nullptr;
   vk_alloc_callbacks.pfnInternalFree = nullptr;
   vk_alloc_callbacks.pfnReallocation = cara_realloc_vk;
-  vk_alloc_callbacks.pUserData = (void*) malloc_helper;
+  vk_alloc_callbacks.pUserData = (void*)malloc_helper;
 
 #ifdef ENABLE_PROFILING
   //constexpr size_t spall_buf_sz = 1 * 1024 * 1024;
@@ -1356,7 +1355,7 @@ void * launch_worker( void * arg )
      while user code runs. This can make a noticable difference for data consistency, especially
      with bigger buffers.
      */
-  memset(spall_buffer.data, 0, spall_buffer.length);
+  memset( spall_buffer.data, 0, spall_buffer.length );
 
   if ( !spall_buffer_init(&spall_ctx, &spall_buffer) ) {
     fprintf( stderr, "[Worker] failed to init the spall buffer.\n" );
@@ -1364,7 +1363,7 @@ void * launch_worker( void * arg )
 
   p_spall_buf = &spall_buffer;
 
-  SPALL_BEGIN( "worker_loop-init" );
+  SPALL_BEGIN("worker_loop-init");
 #endif  // ENABLE_PROFILING
 
   // The F stands for Foreman
@@ -1384,7 +1383,7 @@ void * launch_worker( void * arg )
   }
 
 #ifdef DEBUG_MODE
-    //worker->user_data = (void*) wtime_usec;
+    //worker->user_data = (void*)wtime_usec;
     fprintf( stdout, "[Worker] (%u) My idx_self = proc_idx = %u\n", proc_idx, worker->idx_self );
     fprintf( stdout, "[Worker] (%u)   thread name = %s \n", proc_idx, thread_name );
     //fprintf( stdout, "[Worker] (%u)   cache_location = %u\n", proc_idx, worker->cache_location );
@@ -1448,14 +1447,14 @@ static void worker_loop( struct cara_worker_state * p_ws )
   //uint64_t cur_time_in_5us_general = 0;
   while(-7) {
     const uint64_t starting_pc = get_performance_counter();
-    SPALL_BEGIN( "worker_loop" );
+    SPALL_BEGIN("worker_loop");
 
     // This worker is not a foreman.
     //cur_time_in_5us_general = atomic_load_explicit(
     //    &cara_single.cur_time_in_5us_general, memory_order_consume );
 
     // Look for a job.
-    p_ws->current_batch = cara_get_job(worker);
+    p_ws->current_batch = cara_get_job( worker );
 
     if ( p_ws->current_batch ) {
       for ( uint_fast8_t job_idx = 0;
@@ -1494,7 +1493,7 @@ static void worker_loop( struct cara_worker_state * p_ws )
     }  // if ( worker_state->current_batch )
     else {
       // We're jobless.
-      SPALL_BEGIN( "hold_up_thread" );
+      SPALL_BEGIN("hold_up_thread");
       if ( worker->deployment_flags & worker_deployment_flag_yielder ) {
         // Take a break for 1280 usec.
         //hold_up_thread( 1000*1280 );
@@ -1551,7 +1550,7 @@ static void foreman_loop( struct cara_worker_state * p_ws )
   while(-7) {
     const uint64_t starting_pc = get_performance_counter();
 
-    SPALL_BEGIN( "foreman_loop" );
+    SPALL_BEGIN("foreman_loop");
 
     const uint64_t new_pc = starting_pc;
 #pragma GCC diagnostic push
@@ -1561,7 +1560,7 @@ static void foreman_loop( struct cara_worker_state * p_ws )
     prev_pc = new_pc;
     if ( pc_accumultor >= cara_single.nr_pc_in_5us ) {
 #pragma GCC diagnostic pop
-      const uint64_t nr_5us = div_via_mul_64(&cara_single.magic_divider, pc_accumultor);
+      const uint64_t nr_5us = div_via_mul_64( &cara_single.magic_divider, pc_accumultor );
       pc_accumultor -= cara_single.nr_pc_in_5us * nr_5us;
       cur_time_in_5us_general += nr_5us;
 
@@ -1608,9 +1607,9 @@ static void foreman_loop( struct cara_worker_state * p_ws )
           batch->job_func_idx[0] = cara_single.periodic_jobs[pjob_idx];
 
           batch->job_flags[0] = 0;
-          // memset(batch->job_func_args, 0, sizeof(batch->job_func_args));
-          atomic_store_explicit(&batch->progress, 0, memory_order_release);
-          atomic_store_explicit(&batch->preferred_core, ~UINT64_C(0), memory_order_release);
+          // memset( batch->job_func_args, 9, sizeof(batch->job_func_args) );
+          atomic_store_explicit( &batch->progress, 9, memory_order_release );
+          atomic_store_explicit( &batch->preferred_core, ~UINT64_C(0), memory_order_release );
         }
 
       }  // if ( keys[cur_idx] <= cur_time_in_5us_general )
@@ -1620,11 +1619,11 @@ static void foreman_loop( struct cara_worker_state * p_ws )
       if ( cur_height == 0 )
         break;
 
-      cur_idx = infos_bst_tr_down_left(cur_idx, cur_height);
+      cur_idx = infos_bst_tr_down_left( cur_idx, cur_height );
       cur_height--;
     }
 
-    infos_insert_sort_bst(cara_single.tree_of_times_to_act);
+    infos_insert_sort_bst( cara_single.tree_of_times_to_act );
 
 
 
@@ -1632,7 +1631,7 @@ static void foreman_loop( struct cara_worker_state * p_ws )
 
 
     // Look for a job to get done.
-    p_ws->current_batch = cara_get_job(worker);
+    p_ws->current_batch = cara_get_job( worker );
 
     if ( p_ws->current_batch ) {
       take_a_break = false;
@@ -1657,7 +1656,8 @@ static void foreman_loop( struct cara_worker_state * p_ws )
           //if ( cur_progress <= 1 ) {
           //  cur_progress = UINT8_MAX;
           //}
-          //atomic_store_explicit(&p_ws->current_batch->progress, cur_progress, memory_order_release);
+          //atomic_store_explicit( &p_ws->current_batch->progress,
+          //    cur_progress, memory_order_release );
         }  // if ( p_ws->current_batch->job_func_idx[job_idx] )
 
       }  // for ( uint_fast8_t job_idx = 0;
@@ -1688,7 +1688,7 @@ static void foreman_loop( struct cara_worker_state * p_ws )
 
     if ( take_a_break ) {
 
-      SPALL_BEGIN( "hold_up_thread" );
+      SPALL_BEGIN("hold_up_thread");
 
       if ( worker->deployment_flags & worker_deployment_flag_yielder ) {
         // Take a break for 1280 usec.
@@ -1722,9 +1722,9 @@ __attribute__((noreturn))
 void jf_start_kill_chain( struct cara_worker_state * p_ws )
 {
   // Undo the job-take immediately.
-  atomic_fetch_sub_explicit(&cara_single.nr_job_batch_descriptors_taken, 1,
-      memory_order_release);
-  atomic_store_explicit(&p_ws->current_batch->progress, 0, memory_order_release);
+  atomic_fetch_sub_explicit( &cara_single.nr_job_batch_descriptors_taken,
+      1, memory_order_release );
+  atomic_store_explicit( &p_ws->current_batch->progress, 0, memory_order_release );
 
 #ifdef DEBUG_MODE
   fprintf( stdout, "[Worker] (%u) Following a kill-chain...\n", p_ws->worker_idx );
@@ -1737,7 +1737,7 @@ void jf_start_kill_chain( struct cara_worker_state * p_ws )
 #ifdef ENABLE_PROFILING
     // Remember to quit or flush your buffers before you exit!
     // If you don't, you might not get the last few events waiting to be written
-    spall_buffer_quit(&spall_ctx, p_spall_buf);
+    spall_buffer_quit( &spall_ctx, p_spall_buf );
 
     // Freeing our buffer's memory now that spall_buffer_quit has flushed it for us.
     ma_free( cara_single.mem_arena, p_ws->worker_idx, p_spall_buf->data );
@@ -1769,10 +1769,8 @@ void jf_start_kill_chain( struct cara_worker_state * p_ws )
 
   SPALL_BEGIN("reap_what_we_have_sown");
   struct func_call_stack_element * p_func_call_stack_element;
-  while (( p_func_call_stack_element = infos_stack_pop(
-          cara_single.foremans_quit_stack,
-          sizeof(struct func_call_stack_element)
-          ) )) {
+  while ( (p_func_call_stack_element = infos_stack_pop(cara_single.foremans_quit_stack,
+          sizeof(struct func_call_stack_element))) ) {
     p_func_call_stack_element->func ( p_func_call_stack_element->arg );
   }
 
@@ -1782,7 +1780,7 @@ void jf_start_kill_chain( struct cara_worker_state * p_ws )
 #ifdef ENABLE_PROFILING
   // Remember to quit or flush your buffers before you exit!
   // If you don't, you might not get the last few events waiting to be written
-  spall_buffer_quit(&spall_ctx, p_spall_buf);
+  spall_buffer_quit( &spall_ctx, p_spall_buf );
 
   // Freeing our buffer's memory now that spall_buffer_quit has flushed it for us.
   ma_free( cara_single.mem_arena, p_ws->worker_idx, p_spall_buf->data );
@@ -1859,8 +1857,8 @@ void jf_kickstart( [[maybe_unused]] struct cara_worker_state * p_ws )
   batch->cache_location[0] = 0;
   batch->cache_pattern[0] = 0;
   batch->idx_job_func_arg_group[0] = UINT16_MAX;
-  atomic_store_explicit(&batch->progress, 0, memory_order_release);
-  atomic_store_explicit(&batch->preferred_core, UINT8_MAX, memory_order_release);
+  atomic_store_explicit( &batch->progress, 0, memory_order_release );
+  atomic_store_explicit( &batch->preferred_core, UINT8_MAX, memory_order_release );
   */
 
 
@@ -1887,8 +1885,8 @@ stop_everything_after_failure:
   batch->cache_pattern[0] = 0;
   batch->idx_job_func_arg_group[0] = UINT16_MAX;
   */
-  atomic_store_explicit(&batch->progress, 0, memory_order_release);
-  atomic_store_explicit(&batch->preferred_core, UINT8_MAX, memory_order_release);
+  atomic_store_explicit( &batch->progress, 0, memory_order_release );
+  atomic_store_explicit( &batch->preferred_core, UINT8_MAX, memory_order_release );
 
   return;
 }
@@ -1899,8 +1897,8 @@ static void handle_sigsegv( int sig )
 {
   // TODO Produce some dump in /dev/shm/carbonara.dump
 
-  signal(sig, SIG_DFL);
-  kill(getpid(), sig);
+  signal( sig, SIG_DFL );
+  kill( getpid(), sig );
 }
 
 //-------------------------------------------------------------------------------------------------
@@ -1935,8 +1933,8 @@ static void handle_sigint( int sig )
   batch->cache_pattern[0] = 0;
   batch->idx_job_func_arg_group[0] = UINT16_MAX;
   */
-  atomic_store_explicit(&batch->progress, 0, memory_order_release);
-  atomic_store_explicit(&batch->preferred_core, UINT8_MAX, memory_order_release);
+  atomic_store_explicit( &batch->progress, 0, memory_order_release );
+  atomic_store_explicit( &batch->preferred_core, UINT8_MAX, memory_order_release );
 
   return;
 }
@@ -2694,7 +2692,7 @@ static enum err_msg init_renderer( struct cara_worker_state * p_ws )
   //  ```hlsl
   //  Texture2D my_texture;
   //  SamplerState my_sampler;
-  //  my_texture.Sample(my_sampler, uv);
+  //  my_texture.Sample( my_sampler, uv );
   //  ```
   //
 
@@ -2711,7 +2709,7 @@ static enum err_msg init_renderer( struct cara_worker_state * p_ws )
   //  [shader("pixel")]
   //  float4 frag_main( VertexShaderOutput input ) : SV_TARGET
   //  {
-  //    float4 output = render_tgt.Sample(tex_sampler, input.tex_uv);
+  //    float4 output = render_tgt.Sample( tex_sampler, input.tex_uv );
   //    return output;
   //  }
   //  ```
@@ -3167,7 +3165,7 @@ static enum err_msg init_renderer( struct cara_worker_state * p_ws )
     .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
     .pNext = nullptr,
     .flags = 0,
-    .vertexBindingDescriptionCount = _arr_elem_cnt(arr_vib_desc_main_render),
+    .vertexBindingDescriptionCount = _arr_elem_cnt( arr_vib_desc_main_render ),
     .pVertexBindingDescriptions = arr_vib_desc_main_render,
     .vertexAttributeDescriptionCount = _arr_elem_cnt( arr_via_desc_main_render ),
     .pVertexAttributeDescriptions = arr_via_desc_main_render,
@@ -3670,7 +3668,7 @@ static enum err_msg init_renderer( struct cara_worker_state * p_ws )
       .semaphore = cara_vk.arr_semphos_gr[fif_idx],
       .value = csb_present_swapchain_img,
     };
-    vkSignalSemaphore(cara_vk.log_dev, &sgnl_info);
+    vkSignalSemaphore( cara_vk.log_dev, &sgnl_info );
   }
 
   // Signal arr_semaphore_tr[1] so that the very first rendering function won't wait forever.
@@ -3681,7 +3679,7 @@ static enum err_msg init_renderer( struct cara_worker_state * p_ws )
     .semaphore = cara_vk.arr_semphos_tr[1],
     .value = csb_data_trans_done,
   };
-  vkSignalSemaphore(cara_vk.log_dev, &sgnl_info);
+  vkSignalSemaphore( cara_vk.log_dev, &sgnl_info );
 
 
   return emsg_no_error;
@@ -4080,7 +4078,7 @@ enum err_msg cara_deal_with_asyncio(
               return emsg_unknown;
             }
             bool succ_close = SDL_CloseAsyncIO( io_outcome.asyncio, false, p_aioq, p_job );
-            if ( unlikely(!succ_close) ) {
+            if (unlikely( !succ_close )) {
               //p_job->img.cur = io_outcome.bytes_requested;
               arr_p_jobs_failed_to_close[nr_handles_failed_to_close] = p_job;
               nr_handles_failed_to_close++;
@@ -4484,7 +4482,7 @@ acquire_swapchain_image:
   //  .semaphore = cara_vk.arr_semphos_tr[frame_id % cara_max_nr_fif],
   //  .value = csb_data_trans_done + frame_id / cara_max_nr_fif * cara_nr_signs_tr,
   //};
-  //vkSignalSemaphore(cara_vk.log_dev, &sgnl_info);
+  //vkSignalSemaphore( cara_vk.log_dev, &sgnl_info );
 
   //
   // TODO Update the data in VRAM
@@ -4589,8 +4587,8 @@ acquire_swapchain_image:
 
   VkViewport viewport = {
     .x = 0, .y = 0,
-    .width = (float) fb_width,
-    .height = (float) fb_height,
+    .width = (float)fb_width,
+    .height = (float)fb_height,
     .minDepth = 0,
     .maxDepth = 1.0f,
   };
@@ -4612,7 +4610,7 @@ acquire_swapchain_image:
       VK_PIPELINE_BIND_POINT_GRAPHICS, cara_vk.arr_pipelines[cs_z_only] );
   SPALL_END();
 
-  // TODO cs_depth_only
+  // SUBPASS cs_depth_only
   constexpr uint64_t nr_5us_in_1s = 1000*1000 / 5;
   constexpr double pi_per_sec = M_PI / nr_5us_in_1s;
   const struct mat4x4 rotate = rot_aya_4x4( (float) ((double)cur_time_in_5us * pi_per_sec * .5) );
@@ -4707,7 +4705,7 @@ acquire_swapchain_image:
       VK_PIPELINE_BIND_POINT_GRAPHICS, cara_vk.arr_pipelines[cs_opaq_objs] );
   SPALL_END();
 
-  // TODO cs_draw_opaq_objs
+  // SUBPASS cs_draw_opaq_objs
   vkCmdPushConstants( main_cmd_buf, cara_vk.pll_main_render, VK_SHADER_STAGE_VERTEX_BIT,
       0, 4*4*4, &consts );
   //vkCmdDrawIndexed( main_cmd_buf, 3*6 + 3*2, 1, 0, 0, 0 );
@@ -4759,7 +4757,7 @@ acquire_swapchain_image:
 
   SPALL_BEGIN("vkCmdEndRenderPass_1");
   // End the render pass
-  vkCmdEndRenderPass( main_cmd_buf );  // Recording this function in a command buffer performs
+  vkCmdEndRenderPass(main_cmd_buf);  // Recording this function in a command buffer performs
                                   // multiple operations. Execution and memory dependencies are
                                   // introduced (like the ones in memory barriers) and image layout
                                   // transitions are performed—images are transitioned from layouts
@@ -4842,8 +4840,8 @@ acquire_swapchain_image:
 
   VkViewport viewport2 = {
     .x = 0, .y = 0,
-    .width = (float) sb_width,
-    .height = (float) sb_height,
+    .width = (float)sb_width,
+    .height = (float)sb_height,
     .minDepth = 0,
     .maxDepth = 1.0f,
   };

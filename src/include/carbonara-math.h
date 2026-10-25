@@ -102,6 +102,32 @@ static inline vec3 cross_3( vec3 v1, vec3 v2 )
 
 
 //-------------------------------------------------------------------------------------------------
+// Scalar Multiplication
+
+__attribute__((always_inline))
+static inline vec3 scalar_mul_3( vec3 v, float s )
+{
+  constexpr size_t nr_cols = 3;  // _arr_elem_cnt won't work on ext_vector_type
+  typeof(v) ret = v;
+  for ( unsigned int col_idx = 0; col_idx < nr_cols; col_idx++ ) {
+    ret[col_idx] *= s;
+  }
+  return ret;
+}
+
+__attribute__((always_inline))
+static inline vec2 scalar_mul_2( vec2 v, float s )
+{
+  constexpr size_t nr_cols = _arr_elem_cnt(v);
+  typeof(v) ret = v;
+  for ( unsigned int col_idx = 0; col_idx < nr_cols; col_idx++ ) {
+    ret[col_idx] *= s;
+  }
+  return ret;
+}
+
+
+//-------------------------------------------------------------------------------------------------
 // Matrices
 //
 // MI = IM = M,  (Mᵀ)ᵀ = M,  Dᵀ=Da (D is a diagonal matrix)
@@ -131,68 +157,93 @@ union u_mat4x4 {
   struct mat4x4 mat;
 };
 
+// Assume the last column of the 4x4 matrix is {0, 0, 0, 1}
+struct mat4x3 {
+  vec3 rows[4];
+};
+// Assume the last column of the 4x4 matrix is {0, 0, 0, 1}
+struct mat4x3_slim {
+  float rows[4][3];
+};
+
 
 //-------------------------------------------------------------------------------------------------
+// Matrix-Matrix Multiplication
+// Consider using matrix_type attribute in clang
+
 __attribute__((always_inline))
 static inline struct mat4x4 mul_4x4_4x4(
     struct mat4x4 a, struct mat4x4 b )
 {
   struct mat4x4 ret;
+  constexpr size_t nr_rows = _arr_elem_cnt(ret.rows);
 
-  ret.rows[0].x =
-    a.rows[0].x * b.rows[0].x +  a.rows[0].y * b.rows[1].x +
-    a.rows[0].z * b.rows[2].x +  a.rows[0].w * b.rows[3].x;
-  ret.rows[0].y =
-    a.rows[0].x * b.rows[0].y +  a.rows[0].y * b.rows[1].y +
-    a.rows[0].z * b.rows[2].y +  a.rows[0].w * b.rows[3].y;
-  ret.rows[0].z =
-    a.rows[0].x * b.rows[0].z +  a.rows[0].y * b.rows[1].z +
-    a.rows[0].z * b.rows[2].z +  a.rows[0].w * b.rows[3].z;
-  ret.rows[0].w =
-    a.rows[0].x * b.rows[0].w +  a.rows[0].y * b.rows[1].w +
-    a.rows[0].z * b.rows[2].w +  a.rows[0].w * b.rows[3].w;
+  for ( unsigned int row_idx = 0; row_idx < nr_rows; row_idx++ ) {
+    ret.rows[row_idx].x =
+      a.rows[row_idx].x * b.rows[0].x +  a.rows[row_idx].y * b.rows[1].x +
+      a.rows[row_idx].z * b.rows[2].x +  a.rows[row_idx].w * b.rows[3].x;
+    ret.rows[row_idx].y =
+      a.rows[row_idx].x * b.rows[0].y +  a.rows[row_idx].y * b.rows[1].y +
+      a.rows[row_idx].z * b.rows[2].y +  a.rows[row_idx].w * b.rows[3].y;
+    ret.rows[row_idx].z =
+      a.rows[row_idx].x * b.rows[0].z +  a.rows[row_idx].y * b.rows[1].z +
+      a.rows[row_idx].z * b.rows[2].z +  a.rows[row_idx].w * b.rows[3].z;
+    ret.rows[row_idx].w =
+      a.rows[row_idx].x * b.rows[0].w +  a.rows[row_idx].y * b.rows[1].w +
+      a.rows[row_idx].z * b.rows[2].w +  a.rows[row_idx].w * b.rows[3].w;
+  }
 
-  ret.rows[1].x =
-    a.rows[1].x * b.rows[0].x +  a.rows[1].y * b.rows[1].x +
-    a.rows[1].z * b.rows[2].x +  a.rows[1].w * b.rows[3].x;
-  ret.rows[1].y =
-    a.rows[1].x * b.rows[0].y +  a.rows[1].y * b.rows[1].y +
-    a.rows[1].z * b.rows[2].y +  a.rows[1].w * b.rows[3].y;
-  ret.rows[1].z =
-    a.rows[1].x * b.rows[0].z +  a.rows[1].y * b.rows[1].z +
-    a.rows[1].z * b.rows[2].z +  a.rows[1].w * b.rows[3].z;
-  ret.rows[1].w =
-    a.rows[1].x * b.rows[0].w +  a.rows[1].y * b.rows[1].w +
-    a.rows[1].z * b.rows[2].w +  a.rows[1].w * b.rows[3].w;
+#pragma GCC diagnostic push
+// Ignore the false-positive warning
+// https://github.com/llvm/llvm-project/issues/143121#issuecomment-3817033060
+#pragma GCC diagnostic ignored "-Wconditional-uninitialized"
+  return ret;
+#pragma GCC diagnostic pop
+}
 
-  ret.rows[2].x =
-    a.rows[2].x * b.rows[0].x +  a.rows[2].y * b.rows[1].x +
-    a.rows[2].z * b.rows[2].x +  a.rows[2].w * b.rows[3].x;
-  ret.rows[2].y =
-    a.rows[2].x * b.rows[0].y +  a.rows[2].y * b.rows[1].y +
-    a.rows[2].z * b.rows[2].y +  a.rows[2].w * b.rows[3].y;
-  ret.rows[2].z =
-    a.rows[2].x * b.rows[0].z +  a.rows[2].y * b.rows[1].z +
-    a.rows[2].z * b.rows[2].z +  a.rows[2].w * b.rows[3].z;
-  ret.rows[2].w =
-    a.rows[2].x * b.rows[0].w +  a.rows[2].y * b.rows[1].w +
-    a.rows[2].z * b.rows[2].w +  a.rows[2].w * b.rows[3].w;
 
-  ret.rows[3].x =
-    a.rows[3].x * b.rows[0].x +  a.rows[3].y * b.rows[1].x +
-    a.rows[3].z * b.rows[2].x +  a.rows[3].w * b.rows[3].x;
-  ret.rows[3].y =
-    a.rows[3].x * b.rows[0].y +  a.rows[3].y * b.rows[1].y +
-    a.rows[3].z * b.rows[2].y +  a.rows[3].w * b.rows[3].y;
-  ret.rows[3].z =
-    a.rows[3].x * b.rows[0].z +  a.rows[3].y * b.rows[1].z +
-    a.rows[3].z * b.rows[2].z +  a.rows[3].w * b.rows[3].z;
-  ret.rows[3].w =
-    a.rows[3].x * b.rows[0].w +  a.rows[3].y * b.rows[1].w +
-    a.rows[3].z * b.rows[2].w +  a.rows[3].w * b.rows[3].w;
+//-------------------------------------------------------------------------------------------------
+// Matrix-Vecotr Multiplication (Multiply a single-row matrix by a square matrix)
+
+__attribute__((always_inline))
+static inline vec4 mul_v_4x4( vec4 row, struct mat4x4 mat )
+{
+  vec4 ret;
+
+  ret.x =
+    row.x * mat.rows[0].x +  row.y * mat.rows[1].x +
+    row.z * mat.rows[2].x +  row.w * mat.rows[3].x;
+  ret.y =
+    row.x * mat.rows[0].y +  row.y * mat.rows[1].y +
+    row.z * mat.rows[2].y +  row.w * mat.rows[3].y;
+  ret.z =
+    row.x * mat.rows[0].z +  row.y * mat.rows[1].z +
+    row.z * mat.rows[2].z +  row.w * mat.rows[3].z;
+  ret.w =
+    row.x * mat.rows[0].w +  row.y * mat.rows[1].w +
+    row.z * mat.rows[2].w +  row.w * mat.rows[3].w;
 
   return ret;
 }
+
+__attribute__((always_inline))
+static inline vec3 mul_v_3x3( vec3 row, struct mat3x3 mat )
+{
+  vec3 ret;
+
+  ret.x =
+    row.x * mat.rows[0].x +  row.y * mat.rows[1].x +
+    row.z * mat.rows[2].x;
+  ret.y =
+    row.x * mat.rows[0].y +  row.y * mat.rows[1].y +
+    row.z * mat.rows[2].y;
+  ret.z =
+    row.x * mat.rows[0].z +  row.y * mat.rows[1].z +
+    row.z * mat.rows[2].z;
+
+  return ret;
+}
+
 
 //-------------------------------------------------------------------------------------------------
 __attribute__((always_inline))
@@ -344,7 +395,7 @@ static inline float det_3_via_col( struct mat3x3 mat, unsigned int c )
 //   matrix is nearly singular, even though its determinant is 1. The condition number is the proper
 //   tool for detecting such cases.
 /**
- * \warning You might wanna use det_3_pivoting instead for an optimal performance
+ * \warning You might wanna use det_3_pivoting instead for an optimal performance!
  */
 __attribute__((always_inline))
 static inline float det_3( struct mat3x3 mat )
@@ -354,6 +405,11 @@ static inline float det_3( struct mat3x3 mat )
   return det_3_via_row( mat, 0 );
 }
 
+/**
+ * \param use_row This parameter decides the meaning of \a idx
+ * \param idx The index of the row to use when computing the determinant if \a use_row is true.
+ *            The index of the column to use otherwise.
+ */
 __attribute__((always_inline))
 static inline float det_3_pivoting( struct mat3x3 mat, bool use_row, unsigned int idx )
 {
@@ -463,6 +519,40 @@ static inline bool is_orthogonal( struct mat3x3 mat )
     is_close_norel( dot_3(mat.rows[1], mat.rows[2]), 0 ) &&
     is_close_norel( dot_3(mat.rows[2], mat.rows[2]), 1 );
 }
+
+
+/**
+ * \brief The function produces a similar matrix with orthogonal basis vectors. The standard
+ *        algorithm for constructing a set of orthogonal basis vectors is Gram-Schmidt
+ *        orthogonalization. The basic idea is to go through the basis vectors in order. For each
+ *        basis vector, we subtract off the portion of that vector that is parallel to the
+ *        proceeding basis vectors, which must result in a perpendicular vector.
+ * \warning We need an orthonormal basis to form an orthogonal matrix, and so we should probably
+ *          normalize the vectors in addition to orthogonalizing. Notice that if we normalize the
+ *          vectors as we go, rather than in a second pass, then we can avoid all of the divisions.
+ *          Also, a trick that works in 3D (but not in higher dimensions) is to compute the third
+ *          basis vector using the cross product (TODO)
+ *          The fundtion is biased, the first row will be unchanged and the last row will be changed
+ *          the most. We can implement an unbiased version at the cost of a big loop of computation.
+ */
+__attribute__((always_inline))
+static inline struct mat3x3 orthogonalize( struct mat3x3 mat )
+{
+  struct mat3x3 ret;
+  constexpr size_t nr_rows = _arr_elem_cnt(mat.rows);
+  float arr_self_dp[nr_rows - 1];
+  ret.rows[0] = mat.rows[0];
+  arr_self_dp[0] = dot_3( ret.rows[0], ret.rows[0] );
+  ret.rows[1] = mat.rows[1] - scalar_mul_3( ret.rows[0],
+      dot_3( mat.rows[1], ret.rows[0] ) / arr_self_dp[0] );
+  arr_self_dp[1] = dot_3( ret.rows[1], ret.rows[1] );
+  ret.rows[2] = mat.rows[2];
+  ret.rows[2] -= scalar_mul_3( ret.rows[0], dot_3( mat.rows[2], ret.rows[0] ) / arr_self_dp[0] );
+  ret.rows[2] -= scalar_mul_3( ret.rows[1], dot_3( mat.rows[2], ret.rows[1] ) / arr_self_dp[1] );
+
+  return ret;
+}
+
 
 
 //-------------------------------------------------------------------------------------------------
@@ -619,40 +709,66 @@ static inline struct mat4x4 get_perspective_proj_mat_vk(
   return ret;
 }
 
+
+
 //-------------------------------------------------------------------------------------------------
-/**
- * \param left The coordinate for the left vertical clipping plane.
- * \param right The coordinate for the right vertical clipping plane.
- * \param top The coordinate for the top horizontal clipping plane.
- * \param bottom The coordinate for the bottom horizontal clipping plane.
- * \param near_plane The distance from the viewer to the near clipping plane.
- * \param far_plane The distance from the viewer to the far clipping plane.
- */
+// Polar Coordinates
+//
+
+// 2D Polar Coordinates
+struct p_c_2 {
+  float h;  // Heading, When h=0 it's at [x=0, y>0], as h gets greater it turns clockwise.
+  float r;  // Radial distance, the distance from origin.
+};
+
+// Spherical Coordinates (Polar Coordinates)
+struct p_c_3 {
+  float h;  ///> Heading, When h=p=0 it's at [x=0, z>0], as h gets greater it turns
+            ///>   clockwise(when seen from above i.e. from +y).
+  float r;  // Radial distance, the distance from origin.
+  float p;  // Pitch i.e. declination starting from y=0
+};
+
 __attribute__((always_inline))
-static inline void get_orthographic_proj_matrix(
-    float left, float right, float top, float bottom,
-    float near_plane, float far_plane, float * dst )
+static inline struct p_c_3 v2pc( vec3 v )
 {
-  dst[4*0 + 0] = 2 / (right - left);
-  dst[4*0 + 1] = 0;
-  dst[4*0 + 2] = 0;
-  dst[4*0 + 3] = 0;
+  struct p_c_3 ret;
 
-  dst[4*1 + 0] = 0;
-  dst[4*1 + 1] = 2 / (bottom - top);
-  dst[4*1 + 2] = 0;
-  dst[4*1 + 3] = 0;
+  // The radial distance
+  float magnitude = sqrtf( v.x * v.x +  v.y * v.y +  v.z * v.z );
+  if ( magnitude <= 0.0f ) {
+    ret = (typeof(ret)) {0};
+    //return (typeof(ret)) {0};
+    return ret;
+  }
+  ret.r = magnitude;
 
-  dst[4*2 + 0] = 0;
-  dst[4*2 + 1] = 0;
-  dst[4*2 + 2] = 1 / (near_plane - far_plane);
-  dst[4*2 + 3] = 0;
+  // The declination
+  float pitch = asinf( -v.y / magnitude );
+  ret.p = pitch;
+  if ( fabsf(pitch) >= (typeof(pitch))(M_PI / 2 * 0.9999) ) {
+    ret.h = 0;
+  } else {
+    ret.h = atan2f( v.x, v.z );
+  }
 
-  dst[4*3 + 0] = -(right + left) / (right - left);
-  dst[4*3 + 1] = -(bottom + top) / (bottom - top);
-  dst[4*3 + 2] = near_plane / (near_plane - far_plane);
-  dst[4*3 + 3] = 1;
+  return ret;
 }
+
+__attribute__((always_inline))
+static inline vec3 pc2v( struct p_c_3 pc )
+{
+  float cosp = cosf( pc.p );
+  assume( cosp >= 0 );
+  assume( pc.r >= 0 );
+
+  vec3 ret;
+  ret.x = pc.r * cosp * sinf(pc.h);
+  ret.z = pc.r * cosp * cosf(pc.h);
+  ret.y = -( pc.r * sinf(pc.p) );
+  return ret;
+}
+
 
 
 #endif  // SALAMI_VERTEX_H_

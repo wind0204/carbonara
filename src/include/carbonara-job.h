@@ -114,7 +114,7 @@ struct cara_job_batch_desc_64 {
     - 6 * 2 * sizeof(uint8_t) ];  ///< Use it on whatever purpose.
 };
 static_assert( sizeof(struct cara_job_batch_desc_64) == 64,
-    "64 in the name of the struct means it's 64 bytes long." );
+    "'64' in the name of the struct means it's 64 bytes long." );
 constexpr size_t CARBONARA_MAX_NR_JOBS_IN_A_JOB_DESC_64 =
   _sizeof_member( struct cara_job_batch_desc_64, job_flags );
 
