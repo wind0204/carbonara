@@ -25,6 +25,10 @@ cscope.po.out
 cscope.out
 .cscope.out
 .vimspector.*
+.nvim.lua
+.vimrc
+.exrc
+Session.vim
 
 # OS generated files
 .DS_Store

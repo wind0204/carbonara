@@ -18,7 +18,8 @@ uint8_t u_hwloc_bitmap_init(struct u_hwloc_bitmap_s * set) {
 
   set->ulongs[0] = HWLOC_SUBBITMAP_ZERO;
   set->infinite = 0;
-#ifdef HWLOC_DEBUG
+//#ifdef HWLOC_DEBUG
+#if defined( DEBUG_MODE )
   set->magic = HWLOC_BITMAP_MAGIC;
 #endif
 

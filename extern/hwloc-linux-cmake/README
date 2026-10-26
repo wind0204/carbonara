@@ -1,0 +1,32 @@
+This CMake support for Linux builds is adapted from the Windows CMake build
+in contrib/windows-cmake/ for hwloc 2.15.
+
+May be used with:
+$ cmake [options] -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/path/to/install .
+$ cmake --build .
+$ cmake --build . --target INSTALL
+
+The "Debug" build type is also available, it enables lots of
+verbose debug messages and assertions.
+
+Options:
+-DHWLOC_SKIP_LSTOPO=1 to ignore lstopo
+-DHWLOC_SKIP_TOOLS=1 to ignore other hwloc command-line tools
+-DHWLOC_SKIP_INCLUDES=1 to ignore header installation
+-DHWLOC_WITH_LIBXML2=ON to use libxml2 instead of minimal XML
+-DHWLOC_WITH_OPENCL=ON to enable OpenCL support
+-DHWLOC_WITH_CUDA=ON to enable CUDA support (requires CMake 3.17+)
+-DHWLOC_ENABLE_PLUGINS=ON to enable plugin support (requires BUILD_SHARED_LIBS=ON)
+-DBUILD_SHARED_LIBS=ON to build shared libraries (default is OFF for static)
+
+This build enables the Linux backend and automatically detects optional
+dependencies such as:
+- libnuma (for NUMA support)
+- libudev (for device enumeration)
+- libpciaccess (for PCI device support)
+- libxml2 (for full XML support)
+- OpenCL
+- CUDA
+
+Note: hwloc 2.15 uses autotools by default. This CMake build is a community
+port and may not have all features of the autotools build.

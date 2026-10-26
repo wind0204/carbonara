@@ -21,7 +21,8 @@ struct u_hwloc_bitmap_s {
   unsigned ulongs_allocated; /* how many ulong bitmasks are allocated, >= ulongs_count */
   unsigned long *ulongs;
   int infinite; /* set to 1 if all bits beyond ulongs are set */
-#ifdef HWLOC_DEBUG
+//#ifdef HWLOC_DEBUG
+#if defined( DEBUG_MODE )
   int magic;
 #endif
 };
