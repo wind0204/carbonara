@@ -4,10 +4,10 @@
 
 #include <stdatomic.h>
 #if ATOMIC_CHAR_LOCK_FREE == 1
-#error stdatomic is not really lock-free. it's most likely atomic char is implemented with \
-  mutexes or semaphores.
+#error stdatomic is not really lock-free. it's most likely the case that atomic char is \
+  implemented with mutexes or semaphores.
 #elif ATOMIC_CHAR_LOCK_FREE == 0
-#error stdatomic is never lock-free.
+#error stdatomic on the system is never lock-free.
 #endif
 
 #include <stdint.h>

@@ -15,8 +15,8 @@ void jf_maint_memo_maps(struct cara_worker_state * p_ws);
 
 
 void jf_maint_job_list(struct cara_worker_state * p_ws) {
-  const uint_fast8_t nr_arrays = cara_single.job_list->nr_active_blocks;
-  uint64_t nr_elems = nr_arrays << cara_single.job_list->log2_nr_elems;
+  const uint_fast8_t nr_arrays = cara_single.job_list->active_block_cnt;
+  uint64_t nr_elems = nr_arrays << cara_single.job_list->log2_elem_cnt;
 
   const uint_fast16_t nr_elems_taken_by_workers = atomic_load_explicit(
       &cara_single.nr_job_batch_descriptors_taken, memory_order_acquire);
@@ -33,7 +33,7 @@ void jf_maint_job_list(struct cara_worker_state * p_ws) {
       return;
     }
 
-    const uint64_t nr_elems_per_arr = UINT64_C(1) << cara_single.job_list->log2_nr_elems;
+    const uint64_t nr_elems_per_arr = UINT64_C(1) << cara_single.job_list->log2_elem_cnt;
     for ( uint64_t idx_elem = 0; idx_elem < nr_elems_per_arr; idx_elem++ ) {
       struct cara_job_batch_desc_64 * restrict batch =
         last_arr + ( idx_elem << cara_single.job_list->log2_elem_size );

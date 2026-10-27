@@ -741,7 +741,7 @@ enum err_msg init_carbonara( uint32_t len_each_arena, uint64_t proc_info )
       sizeof(job_spawners_time_to_act)/sizeof(*job_spawners_time_to_act),
       max_nr_pjobs,
       sizeof(*job_spawners_time_to_act) );
-  cara_single.tree_of_times_to_act = bst;
+  cara_single.bst_action_times = bst;
 
 
 
@@ -1569,13 +1569,13 @@ static void foreman_loop( struct cara_worker_state * p_ws )
     }
 
     // See if we should spawn a periodic job or two
-    const uint_fast8_t height = cara_single.tree_of_times_to_act->max_active_depth < 1 ?
-      1 : cara_single.tree_of_times_to_act->max_active_depth;
+    const uint_fast8_t height = cara_single.bst_action_times->max_active_depth < 1 ?
+      1 : cara_single.bst_action_times->max_active_depth;
     uint32_t cur_idx = infos_bst_locate_root( height );
     uint_fast8_t cur_height = height;
 
     uint64_t * restrict const keys =
-      __builtin_assume_aligned( cara_single.tree_of_times_to_act->keys, ALIGN_FOR_AVX );
+      __builtin_assume_aligned( cara_single.bst_action_times->keys, ALIGN_FOR_AVX );
 
     while(-7) {
       // It is due?
@@ -1588,7 +1588,7 @@ static void foreman_loop( struct cara_worker_state * p_ws )
 
           // The index into the array of job_func index
           auto pjob_idx = infos_bst_fetch_sepd_auto(
-              cara_single.tree_of_times_to_act, node_idx );
+              cara_single.bst_action_times, node_idx );
 
           // Write an updated due time.
           keys[cur_idx] = 1 |
@@ -1607,8 +1607,8 @@ static void foreman_loop( struct cara_worker_state * p_ws )
           batch->job_func_idx[0] = cara_single.periodic_jobs[pjob_idx];
 
           batch->job_flags[0] = 0;
-          // memset( batch->job_func_args, 9, sizeof(batch->job_func_args) );
-          atomic_store_explicit( &batch->progress, 9, memory_order_release );
+          // memset( batch->job_func_args, 0, sizeof(batch->job_func_args) );
+          atomic_store_explicit( &batch->progress, 0, memory_order_release );
           atomic_store_explicit( &batch->preferred_core, ~UINT64_C(0), memory_order_release );
         }
 
@@ -1623,7 +1623,7 @@ static void foreman_loop( struct cara_worker_state * p_ws )
       cur_height--;
     }
 
-    infos_insert_sort_bst( cara_single.tree_of_times_to_act );
+    infos_insert_sort_bst( cara_single.bst_action_times );
 
 
 

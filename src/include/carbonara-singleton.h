@@ -31,7 +31,7 @@ struct carbonara {
   struct infos_arr_list * job_list;  // contains cara_job_batch_desc_64
   memorable_arena_t * mem_arena;
   struct infos_stack * foremans_quit_stack;
-  struct infos_bst * tree_of_times_to_act;
+  struct infos_bst * bst_action_times;
   uint32_t * periodic_jobs_periods_5us;
   uint16_t * periodic_jobs;
   static_assert( alignof(void*) >= alignof(uint64_t), "Sort the struct members!" );

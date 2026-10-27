@@ -98,7 +98,7 @@ struct infos_hashtable * infos_hashtable_create(
   ret = infos_multi_al_init_prealloc( &new_table->values,
       userdata,
       custom_malloc,
-      new_table->keys.log2_nr_elems + ( 31 - _lzcnt_u32(item_size) ),
+      new_table->keys.log2_elem_cnt + ( 31 - _lzcnt_u32(item_size) ),
       31 - _lzcnt_u32(item_size),
       log2_nr_buckets,
       false );
@@ -225,7 +225,7 @@ enum err_msg infos_hashtable_remove_3( struct infos_hashtable * p_table,
 {
   uint64_t last_elem_idx = p_table->arr_idx_next_unoccupied_elem[bucket_idx] - 1;
 
-  const uint64_t nr_elems_in_kblock = UINT64_C(1) << p_table->keys.log2_nr_elems;
+  const uint64_t nr_elems_in_kblock = UINT64_C(1) << p_table->keys.log2_elem_cnt;
   const uint64_t base_kidx_cap = nr_elems_in_kblock * p_table->keys.arr_nr_active_blocks[bucket_idx];
   uint64_t base_kidx = 0;  // The base idx of current vacancy block
   //uint64_t node_base_idx = 0;
@@ -280,7 +280,7 @@ found_the_key_to_remove:
     if ( block_idx >= _arr_elem_cnt(k_node->arr_blocks) ) {
       k_node = k_node->next;
       assume( k_node );
-      //node_base_idx += UINT64_C(1) << ( p_table->keys.log2_nr_elems +
+      //node_base_idx += UINT64_C(1) << ( p_table->keys.log2_elem_cnt +
       //    _arr_elem_cnt(p_table->keys.list.head.arr_blocks) );
       block_idx = 0;
     }
@@ -298,7 +298,7 @@ void * infos_hashtable_search_3( const struct infos_hashtable * p_table,
 {
   uint64_t last_elem_idx = p_table->arr_idx_next_unoccupied_elem[bucket_idx] - 1;
 
-  const uint64_t nr_elems_in_kblock = UINT64_C(1) << p_table->keys.log2_nr_elems;
+  const uint64_t nr_elems_in_kblock = UINT64_C(1) << p_table->keys.log2_elem_cnt;
   const uint64_t base_kidx_cap = nr_elems_in_kblock * p_table->keys.arr_nr_active_blocks[bucket_idx];
   uint64_t base_kidx = 0;  // The base idx of current vacancy block
   //uint64_t node_base_idx = 0;
@@ -342,7 +342,7 @@ void * infos_hashtable_search_3( const struct infos_hashtable * p_table,
     if ( block_idx >= _arr_elem_cnt(k_node->arr_blocks) ) {
       k_node = k_node->next;
       assume( k_node );
-      //node_base_idx += UINT64_C(1) << ( p_table->keys.log2_nr_elems +
+      //node_base_idx += UINT64_C(1) << ( p_table->keys.log2_elem_cnt +
       //    _arr_elem_cnt(p_table->keys.list.head.arr_blocks) );
       block_idx = 0;
     }

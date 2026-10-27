@@ -55,10 +55,10 @@ enum err_msg infos_pm_init_prealloc(
   // Copy
   al->log2_block_size = get_log2( node_size );
   al->log2_elem_size = 31 - _lzcnt_u32( sizeof(struct range_u32) );
-  al->log2_nr_elems = al->log2_block_size - al->log2_elem_size;
+  al->log2_elem_cnt = al->log2_block_size - al->log2_elem_size;
   al->list.head.arr_blocks[0] = alloc;
   al->list.head.next = nullptr;
-  al->nr_active_blocks = 1;
+  al->active_block_cnt = 1;
 
   // Just in case we want to do AVX search on al_vacancies in the future
   static_assert( _is_aligned_to_power_of_two(rental_info_node_size, ALIGN_FOR_AVX512) );
@@ -78,10 +78,10 @@ enum err_msg infos_pm_init_prealloc(
   // Paste
   al->log2_block_size = get_log2( node_size );
   al->log2_elem_size = 31 - _lzcnt_u32( sizeof(struct range_u32) );
-  al->log2_nr_elems = al->log2_block_size - al->log2_elem_size;
+  al->log2_elem_cnt = al->log2_block_size - al->log2_elem_size;
   al->list.head.arr_blocks[0] = alloc;
   al->list.head.next = nullptr;
-  al->nr_active_blocks = 1;
+  al->active_block_cnt = 1;
 
   p_vectors = __builtin_assume_aligned(
       p_pm->al_vacancies.list.head.arr_blocks[0], ALIGN_FOR_AVX512 );
@@ -128,9 +128,9 @@ struct range_u32 infos_pm_rent( struct infos_page_mgr * restrict p_pm,
     return invalid_range;
   }
 
-  const uint64_t nr_elems_in_vblock = UINT64_C(1) << p_pm->al_vacancies.log2_nr_elems;
+  const uint64_t nr_elems_in_vblock = UINT64_C(1) << p_pm->al_vacancies.log2_elem_cnt;
   uint64_t base_vidx = 0;  // The base idx of current vacancy block
-  const uint64_t base_vidx_cap = nr_elems_in_vblock * p_pm->al_vacancies.nr_active_blocks;
+  const uint64_t base_vidx_cap = nr_elems_in_vblock * p_pm->al_vacancies.active_block_cnt;
   //uint64_t node_base_idx = 0;
   uint64_t vblock_idx = 0;
   struct linked_list_of_lists_node * restrict v_node = &p_pm->al_vacancies.list.head;
@@ -197,7 +197,7 @@ struct range_u32 infos_pm_rent( struct infos_page_mgr * restrict p_pm,
     if ( vblock_idx >= _arr_elem_cnt(v_node->arr_blocks) ) {
       v_node = v_node->next;
       assume( v_node );
-      //node_base_idx += UINT64_C(1) << ( p_pm->al_vacancies.log2_nr_elems +
+      //node_base_idx += UINT64_C(1) << ( p_pm->al_vacancies.log2_elem_cnt +
       //    _arr_elem_cnt(p_pm->al_vacancies.list.head.arr_blocks) );
       vblock_idx = 0;
     }
@@ -243,9 +243,9 @@ struct range_u32 infos_pm_rent_aligned( struct infos_page_mgr * restrict p_pm,
   struct range_u32 * spacious_range = nullptr;
   struct range_u32 * restrict p_vacancy;
 
-  const uint64_t nr_elems_in_vblock = UINT64_C(1) << p_pm->al_vacancies.log2_nr_elems;
+  const uint64_t nr_elems_in_vblock = UINT64_C(1) << p_pm->al_vacancies.log2_elem_cnt;
   uint64_t base_vidx = 0;  // The base idx of current vacancy block
-  const uint64_t base_vidx_cap = nr_elems_in_vblock * p_pm->al_vacancies.nr_active_blocks;
+  const uint64_t base_vidx_cap = nr_elems_in_vblock * p_pm->al_vacancies.active_block_cnt;
   //uint64_t node_base_idx = 0;
   uint64_t vblock_idx = 0;
   struct linked_list_of_lists_node * restrict v_node = &p_pm->al_vacancies.list.head;
@@ -370,11 +370,11 @@ register_new_rental_info:
     }  // for ( uint_fast32_t vacancy_idx = 0; vacancy_idx < nr_elems_in_vblock; vacancy_idx++ )
 
     vblock_idx++;
-    base_vidx += UINT64_C(1) << p_pm->al_vacancies.log2_nr_elems;
+    base_vidx += UINT64_C(1) << p_pm->al_vacancies.log2_elem_cnt;
     if ( vblock_idx >= _arr_elem_cnt(v_node->arr_blocks) ) {
       v_node = v_node->next;
       assume( v_node );
-      //node_base_idx += UINT64_C(1) << ( p_pm->al_vacancies.log2_nr_elems +
+      //node_base_idx += UINT64_C(1) << ( p_pm->al_vacancies.log2_elem_cnt +
       //    _arr_elem_cnt(p_pm->al_vacancies.list.head.arr_blocks) );
       vblock_idx = 0;
     }
@@ -400,9 +400,9 @@ enum err_msg infos_pm_return( struct infos_page_mgr * restrict p_pm,
 
   uint64_t last_elem_idx = p_pm->nr_rents - 1;
 
-  const uint64_t nr_elems_in_rblock = UINT64_C(1) << p_pm->al_rental_info.log2_nr_elems;
+  const uint64_t nr_elems_in_rblock = UINT64_C(1) << p_pm->al_rental_info.log2_elem_cnt;
   uint64_t base_ridx = 0;  // The base idx of current vacancy block
-  const uint64_t base_ridx_cap = nr_elems_in_rblock * p_pm->al_rental_info.nr_active_blocks;
+  const uint64_t base_ridx_cap = nr_elems_in_rblock * p_pm->al_rental_info.active_block_cnt;
   //uint64_t node_base_idx = 0;
   uint64_t rblock_idx = 0;
   struct linked_list_of_lists_node * restrict r_node = &p_pm->al_rental_info.list.head;
@@ -453,7 +453,7 @@ found_the_key_to_remove:
     if ( rblock_idx >= _arr_elem_cnt(r_node->arr_blocks) ) {
       r_node = r_node->next;
       assume( r_node );
-      //node_base_idx += UINT64_C(1) << ( p_pm->al_rental_info.log2_nr_elems +
+      //node_base_idx += UINT64_C(1) << ( p_pm->al_rental_info.log2_elem_cnt +
       //    _arr_elem_cnt(p_pm->al_rental_info.list.head.arr_blocks) );
       rblock_idx = 0;
     }
@@ -472,9 +472,9 @@ static enum err_msg remove_rent_and_update_vacancy(
   struct range_u32 * p_rightmost_rent )
 {
   // Make a new vacancy information or merge with an existing one if it's a neighbor
-  const uint64_t nr_elems_in_vblock = UINT64_C(1) << p_pm->al_vacancies.log2_nr_elems;
+  const uint64_t nr_elems_in_vblock = UINT64_C(1) << p_pm->al_vacancies.log2_elem_cnt;
   uint64_t base_vidx = 0;  // The base idx of current vacancy block
-  const uint64_t base_vidx_cap = nr_elems_in_vblock * p_pm->al_vacancies.nr_active_blocks;
+  const uint64_t base_vidx_cap = nr_elems_in_vblock * p_pm->al_vacancies.active_block_cnt;
   //uint64_t node_base_idx = 0;
   uint64_t vblock_idx = 0;
   struct linked_list_of_lists_node * restrict v_node = &p_pm->al_vacancies.list.head;
@@ -529,11 +529,11 @@ swap_positions_with_the_last_one:
     }  // for ( uint_fast32_t vacancy_idx = 0; vacancy_idx < nr_elems_in_vblock; vacancy_idx++ )
 
     vblock_idx++;
-    base_vidx += UINT64_C(1) << p_pm->al_vacancies.log2_nr_elems;
+    base_vidx += UINT64_C(1) << p_pm->al_vacancies.log2_elem_cnt;
     if ( vblock_idx >= _arr_elem_cnt(v_node->arr_blocks) ) {
       v_node = v_node->next;
       assume( v_node );
-      //node_base_idx += UINT64_C(1) << ( p_pm->al_vacancies.log2_nr_elems +
+      //node_base_idx += UINT64_C(1) << ( p_pm->al_vacancies.log2_elem_cnt +
       //    _arr_elem_cnt(p_pm->al_vacancies.list.head.arr_blocks) );
       vblock_idx = 0;
     }

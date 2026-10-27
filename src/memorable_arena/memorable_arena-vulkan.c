@@ -122,7 +122,7 @@ void ma_destroy_vk_mem_mgr(
     struct linked_list_of_lists_node * m_node = &p_vmm->mallocs.lists[type_idx].head;
     struct linked_list_of_lists_node * p_node = &p_vmm->page_mgrs.lists[type_idx].head;
     typeof(p_vmm->page_mgrs.arr_nr_active_blocks[0]) block_idx = 0;
-    const uint_fast16_t nr_elems_in_block = UINT32_C(1) << p_vmm->page_mgrs.log2_nr_elems;
+    const uint_fast16_t nr_elems_in_block = UINT32_C(1) << p_vmm->page_mgrs.log2_elem_cnt;
     do {  // while ( p_node )
       constexpr uint_fast16_t nr_blocks_in_node = _arr_elem_cnt(p_node->arr_blocks);
       for ( uint_fast16_t local_block_idx = 0;
@@ -137,7 +137,7 @@ void ma_destroy_vk_mem_mgr(
 
         for ( uint_fast32_t malloc_idx = 0; malloc_idx < nr_elems_in_block; malloc_idx++ ) {
           struct infos_page_mgr_p2 * restrict p_pm = p_block + malloc_idx * sizeof(*p_pm);
-          if ( !p_pm->al_vacancies.nr_active_blocks ) {
+          if ( !p_pm->al_vacancies.active_block_cnt ) {
             break;
           }
 
@@ -152,9 +152,9 @@ void ma_destroy_vk_mem_mgr(
           *p_malloc = VK_NULL_HANDLE;
 
 #if !defined( ARE_WE_SHIPPING_IT )
-          const uint64_t nr_elems_in_rblock = UINT64_C(1) << p_pm->al_rental_info.log2_nr_elems;
+          const uint64_t nr_elems_in_rblock = UINT64_C(1) << p_pm->al_rental_info.log2_elem_cnt;
           uint64_t base_ridx = 0;  // The base idx of current block
-          const uint64_t base_ridx_cap = nr_elems_in_rblock * p_pm->al_rental_info.nr_active_blocks;
+          const uint64_t base_ridx_cap = nr_elems_in_rblock * p_pm->al_rental_info.active_block_cnt;
           //uint64_t node_base_idx = 0;
           uint64_t rblock_idx = 0;
           typeof(p_pm->nr_rents) nr_rents_to_return = p_pm->nr_rents;
@@ -197,7 +197,7 @@ void ma_destroy_vk_mem_mgr(
             if ( rblock_idx >= _arr_elem_cnt(r_node->arr_blocks) ) {
               r_node = r_node->next;
               assume( r_node );
-              //node_base_idx += UINT64_C(1) << ( p_pm->al_rental_info.log2_nr_elems +
+              //node_base_idx += UINT64_C(1) << ( p_pm->al_rental_info.log2_elem_cnt +
               //    _arr_elem_cnt(p_pm->al_rental_info.list.head.arr_blocks) );
               rblock_idx = 0;
             }
@@ -390,7 +390,7 @@ enum err_msg ma_bind_img_to_malloc(
   struct linked_list_of_lists_node * m_node = &p_vmm->mallocs.lists[type_idx].head;
   struct linked_list_of_lists_node * p_node = &p_vmm->page_mgrs.lists[type_idx].head;
   typeof(p_vmm->page_mgrs.arr_nr_active_blocks[0]) block_idx = 0;
-  const uint_fast16_t nr_elems_in_block = UINT32_C(1) << p_vmm->page_mgrs.log2_nr_elems;
+  const uint_fast16_t nr_elems_in_block = UINT32_C(1) << p_vmm->page_mgrs.log2_elem_cnt;
   do {  // while ( p_node )
     constexpr uint_fast16_t nr_blocks_in_node = _arr_elem_cnt(p_node->arr_blocks);
     for ( uint_fast16_t local_block_idx = 0;
@@ -467,7 +467,7 @@ enum err_msg ma_bind_img_to_malloc(
         }  // if ( *p_malloc == 0 )
 
         // We must've failed to init struct infos_page_mgr_p2 before this call
-        if ( !p_pm->al_vacancies.nr_active_blocks ) {
+        if ( !p_pm->al_vacancies.active_block_cnt ) {
           err = infos_pm_init_prealloc( (struct infos_page_mgr*)p_pm, len_chunk_of_pages,
               userdata, local_malloc );
           if ( err ) {
@@ -588,7 +588,7 @@ enum err_msg ma_bind_buf_to_malloc(
   struct linked_list_of_lists_node * m_node = &p_vmm->mallocs.lists[type_idx].head;
   struct linked_list_of_lists_node * p_node = &p_vmm->page_mgrs.lists[type_idx].head;
   typeof(p_vmm->page_mgrs.arr_nr_active_blocks[0]) block_idx = 0;
-  const uint_fast16_t nr_elems_in_block = UINT32_C(1) << p_vmm->page_mgrs.log2_nr_elems;
+  const uint_fast16_t nr_elems_in_block = UINT32_C(1) << p_vmm->page_mgrs.log2_elem_cnt;
   do {  // while ( p_node )
     constexpr uint_fast16_t nr_blocks_in_node = _arr_elem_cnt(p_node->arr_blocks);
     for ( uint_fast16_t local_block_idx = 0;
@@ -665,7 +665,7 @@ enum err_msg ma_bind_buf_to_malloc(
         }  // if ( *p_malloc == 0 )
 
         // We must've failed to init struct infos_page_mgr_p2 before this call
-        if ( !p_pm->al_vacancies.nr_active_blocks ) {
+        if ( !p_pm->al_vacancies.active_block_cnt ) {
           err = infos_pm_init_prealloc( (struct infos_page_mgr*)p_pm, len_chunk_of_pages,
               userdata, local_malloc );
           if ( err ) {
@@ -782,7 +782,7 @@ enum err_msg ma_report_vk_malloc_rel(
   struct linked_list_of_lists_node * m_node = &p_vmm->mallocs.lists[type_idx].head;
   struct linked_list_of_lists_node * p_node = &p_vmm->page_mgrs.lists[type_idx].head;
   typeof(p_vmm->page_mgrs.arr_nr_active_blocks[0]) block_idx = 0;
-  const uint_fast16_t nr_elems_in_block = UINT32_C(1) << p_vmm->page_mgrs.log2_nr_elems;
+  const uint_fast16_t nr_elems_in_block = UINT32_C(1) << p_vmm->page_mgrs.log2_elem_cnt;
   do {  // while ( p_node )
     constexpr uint_fast16_t nr_blocks_in_node = _arr_elem_cnt(p_node->arr_blocks);
     for ( uint_fast16_t local_block_idx = 0;
@@ -799,7 +799,7 @@ enum err_msg ma_report_vk_malloc_rel(
         struct infos_page_mgr_p2 * restrict p_pm = p_block + malloc_idx * sizeof(*p_pm);
 
         //// We must've failed to init struct infos_page_mgr_p2 before this call
-        //if ( !p_pm->al_vacancies.nr_active_blocks ) {
+        //if ( !p_pm->al_vacancies.active_blocks_cnt ) {
         //  err = infos_pm_init_prealloc( (struct infos_page_mgr*)p_pm, len_chunk_of_pages,
         //      userdata, local_malloc );
         //  if ( err ) {

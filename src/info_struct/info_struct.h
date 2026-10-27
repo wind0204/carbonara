@@ -467,16 +467,17 @@ extern void vk_free_wrapper( [[maybe_unused]] void * userdata, void * ptr );
  */
 struct infos_arr_list {
   struct linked_list_of_lists_fh list;
-  uint32_t nr_active_blocks;  // The number of active data blocks
-  uint8_t log2_block_size;  // Log2(data block's size in bytes)
-  uint8_t log2_nr_elems;  // Log2(the number of elements in each block)
+  uint32_t active_block_cnt;  ///< The number of active data blocks
+  uint8_t log2_block_size;  ///< Log2(data block's size in bytes)
+  uint8_t log2_elem_cnt;  ///< Log2(the number of elements in each block)
   uint8_t log2_elem_size;
 };
 struct infos_multi_arr_list {
   struct linked_list_of_lists_fh * lists;
-  uint32_t * arr_nr_active_blocks;  // The array of 'numbers of the active data blocks in each list'
-  uint8_t log2_block_size;  // Log2(data block's size in bytes)
-  uint8_t log2_nr_elems;  // Log2(the number of elements in each block)
+  uint32_t * arr_nr_active_blocks;  // Each object contains the number of the active data blocks
+                                    // in each list
+  uint8_t log2_block_size;  ///< Log2(data block's size in bytes)
+  uint8_t log2_elem_cnt;  ///< Log2(the number of elements in each block)
   uint8_t log2_elem_size;
   uint8_t log2_nr_lists;
 };
@@ -567,9 +568,9 @@ static inline void * infos_al_get_elem_unsafe(
     const struct infos_arr_list * restrict p_al,
     uint32_t elem_idx )
 {
-  void * block = lll_get_elem_unsafe( &p_al->list, elem_idx >> p_al->log2_nr_elems );
+  void * block = lll_get_elem_unsafe( &p_al->list, elem_idx >> p_al->log2_elem_cnt );
   return block +
-    ( _reiterate_under_power_of_two_l2(elem_idx, p_al->log2_nr_elems) << p_al->log2_elem_size );
+    ( _reiterate_under_power_of_two_l2(elem_idx, p_al->log2_elem_cnt) << p_al->log2_elem_size );
 }
 //-------------------------------------------------------------------------------------------------
 /**
@@ -597,9 +598,9 @@ static inline void * infos_multi_al_get_elem_unsafe(
     const struct infos_multi_arr_list * restrict p_mal,
     uint32_t list_idx, uint32_t elem_idx )
 {
-  void * block = lll_get_elem_unsafe( &p_mal->lists[list_idx], elem_idx >> p_mal->log2_nr_elems );
+  void * block = lll_get_elem_unsafe( &p_mal->lists[list_idx], elem_idx >> p_mal->log2_elem_cnt );
   return block +
-    ( _reiterate_under_power_of_two_l2(elem_idx, p_mal->log2_nr_elems) << p_mal->log2_elem_size );
+    ( _reiterate_under_power_of_two_l2(elem_idx, p_mal->log2_elem_cnt) << p_mal->log2_elem_size );
 }
 //-------------------------------------------------------------------------------------------------
 /**

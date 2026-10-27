@@ -576,7 +576,7 @@ stream_more:;
 
                 if ( nr_ass_indices >=
                     ((1 << al_ass_indices->log2_block_size) / sizeof(struct salumi_pack_ass_index)) *
-                    al_ass_indices->nr_active_blocks ) {
+                    al_ass_indices->active_block_cnt ) {
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-value"
                   infos_al_grow( al_ass_indices, nullptr, nullptr, nullptr, nullptr, 1, false, 0 );

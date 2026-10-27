@@ -58,10 +58,10 @@ struct infos_arr_list * infos_al_create(
   p_al->log2_block_size = get_log2( node_size );
   assume( _is_power_of_two( elem_size ) );
   p_al->log2_elem_size = 31 - _lzcnt_u32( elem_size );
-  p_al->log2_nr_elems = p_al->log2_block_size - p_al->log2_elem_size;
+  p_al->log2_elem_cnt = p_al->log2_block_size - p_al->log2_elem_size;
 
   p_al->list.head.arr_blocks[0] = ptr;
-  p_al->nr_active_blocks = 1;
+  p_al->active_block_cnt = 1;
 
   return p_al;
 }
@@ -94,10 +94,10 @@ struct infos_arr_list * infos_al_create_prealloc( struct infos_arr_list * restri
   p_al->log2_block_size = get_log2( node_size );
   assume( _is_power_of_two( elem_size ) );
   p_al->log2_elem_size = 31 - _lzcnt_u32( elem_size );
-  p_al->log2_nr_elems = p_al->log2_block_size - p_al->log2_elem_size;
+  p_al->log2_elem_cnt = p_al->log2_block_size - p_al->log2_elem_size;
 
   p_al->list.head.arr_blocks[0] = ptr;
-  p_al->nr_active_blocks = 1;
+  p_al->active_block_cnt = 1;
 
   return p_al;
 
@@ -121,7 +121,7 @@ enum err_msg infos_al_grow(
   void * (*local_malloc)(void * userdata, size_t alignment, size_t size);
   local_malloc = custom_malloc ? custom_malloc : default_malloc;
 
-  typeof(p_al->nr_active_blocks) block_id = p_al->nr_active_blocks;
+  typeof(p_al->active_block_cnt) block_id = p_al->active_block_cnt;
   typeof(nr_blocks_to_generate) nr_blocks_generated = 0;
   struct linked_list_of_lists_node * restrict cur = &p_al->list.head;
   if ( pp_first_block_among_new_blocks ) {
@@ -183,7 +183,7 @@ enum err_msg infos_al_grow(
   }
 out_of_nested_loop:
 
-  p_al->nr_active_blocks += nr_blocks_generated;
+  p_al->active_block_cnt += nr_blocks_generated;
   return emsg_no_error;
 }
 
@@ -199,11 +199,11 @@ void infos_al_destroy_except_preallocated_struct( struct infos_arr_list * restri
   local_free( userdata, p_al->list.head.arr_blocks );
 
   struct linked_list_of_lists_node * restrict node = p_al->list.head.next;
-  typeof(p_al->nr_active_blocks) block_id = _arr_elem_cnt(node->arr_blocks);
+  typeof(p_al->active_block_cnt) block_id = _arr_elem_cnt(node->arr_blocks);
   while ( node ) {
     constexpr uint_fast16_t local_cap = _arr_elem_cnt(node->arr_blocks);
     for ( uint_fast16_t local_idx = 0; local_idx < local_cap; local_idx++, block_id++ ) {
-      if ( block_id >= p_al->nr_active_blocks ) {
+      if ( block_id >= p_al->active_block_cnt ) {
         local_free( userdata, node );
         goto out_of_nested_loop;
       }
@@ -220,7 +220,7 @@ out_of_nested_loop:
   block_id = 0;
   constexpr uint_fast16_t local_cap = _arr_elem_cnt(node->arr_blocks);
   for ( uint_fast16_t local_idx = 1; local_idx < local_cap; local_idx++, block_id++ ) {
-    if ( block_id >= p_al->nr_active_blocks ) {
+    if ( block_id >= p_al->active_block_cnt ) {
       return;
     }
     void * block = node->arr_blocks[local_idx];
@@ -282,7 +282,7 @@ struct infos_multi_arr_list * infos_multi_al_create(
     ofs_something = ofs_itself + sizeof(struct infos_multi_arr_list);
   }
 
-  // A quick and easy assert for the placing of infos_multi_arr_list::nr_active_blocks
+  // A quick and easy assert for the placement of infos_multi_arr_list::arr_active_blocks_cnts
   uint64_t alignof_count = _alignof_arr_elem(
       _typeof_member(struct infos_multi_arr_list, arr_nr_active_blocks) );
   assume( alignof(struct infos_multi_arr_list) >= alignof_count &&
@@ -312,7 +312,7 @@ struct infos_multi_arr_list * infos_multi_al_create(
   p_mal->log2_block_size = log2_node_size;
   p_mal->log2_elem_size = log2_elem_size;
   p_mal->log2_nr_lists = log2_nr_arr_lists;
-  p_mal->log2_nr_elems = log2_node_size - log2_elem_size;
+  p_mal->log2_elem_cnt = log2_node_size - log2_elem_size;
 
   p_mal->lists = ptr + ofs_list_fh;
   p_mal->arr_nr_active_blocks = ptr + ofs_something;
@@ -370,7 +370,7 @@ uint_fast8_t infos_multi_al_init_prealloc(
   p_mal->log2_block_size = log2_node_size;
   p_mal->log2_elem_size = log2_elem_size;
   p_mal->log2_nr_lists = log2_nr_arr_lists;
-  p_mal->log2_nr_elems = log2_node_size - log2_elem_size;
+  p_mal->log2_elem_cnt = log2_node_size - log2_elem_size;
 
   p_mal->lists = ptr + ( UINT64_C(1) << log2_node_size << log2_nr_arr_lists ) + out_of_align_diff;
   p_mal->arr_nr_active_blocks = (void*) ( p_mal->lists + (UINT64_C(1) << log2_nr_arr_lists) );
@@ -528,9 +528,9 @@ void * infos_al_get_elem( struct infos_arr_list * restrict p_al,
 {
   void * block;
   const struct linked_list_of_lists_node * restrict node = &p_al->list.head;
-  typeof(elem_idx) block_idx = elem_idx >> p_al->log2_nr_elems;
-  typeof(block_idx) nr_blocks_to_generate = block_idx >= p_al->nr_active_blocks ?
-    block_idx + 1 - p_al->nr_active_blocks : 0;
+  typeof(elem_idx) block_idx = elem_idx >> p_al->log2_elem_cnt;
+  typeof(block_idx) nr_blocks_to_generate = block_idx >= p_al->active_block_cnt ?
+    block_idx + 1 - p_al->active_block_cnt : 0;
   if ( nr_blocks_to_generate ) {
     void * (*local_malloc)(void * userdata, size_t alignment, size_t size);
     local_malloc = custom_malloc ? custom_malloc : default_malloc;
@@ -551,7 +551,7 @@ void * infos_al_get_elem( struct infos_arr_list * restrict p_al,
   }
 
   return block +
-    ( _reiterate_under_power_of_two_l2(elem_idx, p_al->log2_nr_elems) << p_al->log2_elem_size );
+    ( _reiterate_under_power_of_two_l2(elem_idx, p_al->log2_elem_cnt) << p_al->log2_elem_size );
 }
 
 //-------------------------------------------------------------------------------------------------
@@ -563,7 +563,7 @@ void * infos_multi_al_get_elem( struct infos_multi_arr_list * p_mal,
 {
   void * block;
   const struct linked_list_of_lists_node * restrict node = &p_mal->lists[list_idx].head;
-  typeof(elem_idx) block_idx = elem_idx >> p_mal->log2_nr_elems;
+  typeof(elem_idx) block_idx = elem_idx >> p_mal->log2_elem_cnt;
   typeof(block_idx) nr_blocks_to_generate = block_idx >= p_mal->arr_nr_active_blocks[list_idx] ?
     block_idx + 1 - p_mal->arr_nr_active_blocks[list_idx] : 0;
   if ( nr_blocks_to_generate ) {
@@ -586,7 +586,7 @@ void * infos_multi_al_get_elem( struct infos_multi_arr_list * p_mal,
   }
 
   return block +
-    ( _reiterate_under_power_of_two_l2(elem_idx, p_mal->log2_nr_elems) << p_mal->log2_elem_size );
+    ( _reiterate_under_power_of_two_l2(elem_idx, p_mal->log2_elem_cnt) << p_mal->log2_elem_size );
 }
 
 
@@ -595,10 +595,10 @@ void * infos_al_get_elem_cond32( const struct infos_arr_list * p_al,
     uint32_t first_slot_to_check, uint32_t cond )
 {
   uint64_t block_base_idx_first_slot_to_check = _align_to_power_of_two_downward_l2(
-      first_slot_to_check, p_al->log2_nr_elems );
+      first_slot_to_check, p_al->log2_elem_cnt );
   uint64_t node_base_idx_first_slot_to_check = _align_to_power_of_two_downward_l2(
       first_slot_to_check,
-      p_al->log2_nr_elems + ct_log2(_arr_elem_cnt(p_al->list.head.arr_blocks)) );
+      p_al->log2_elem_cnt + ct_log2(_arr_elem_cnt(p_al->list.head.arr_blocks)) );
   uint64_t node_base_idx = 0;
   const struct linked_list_of_lists_node * restrict node = &p_al->list.head;
   void * block;
@@ -606,14 +606,14 @@ void * infos_al_get_elem_cond32( const struct infos_arr_list * p_al,
     if ( node_base_idx == node_base_idx_first_slot_to_check ) {
       uint64_t block_idx =
         (block_base_idx_first_slot_to_check - node_base_idx_first_slot_to_check) >>
-        p_al->log2_nr_elems;
+        p_al->log2_elem_cnt;
       block = node->arr_blocks[block_idx];
       break;
     }
     node = node->next;
     assume( node );
     node_base_idx += UINT64_C(1) << (
-        p_al->log2_nr_elems + _arr_elem_cnt(p_al->list.head.arr_blocks) );
+        p_al->log2_elem_cnt + _arr_elem_cnt(p_al->list.head.arr_blocks) );
   }
 
   const typeof(&cond) restrict p_key = __builtin_assume_aligned( block, ALIGN_FOR_AVX512 );
@@ -642,7 +642,7 @@ void * infos_al_get_elem_cond32( const struct infos_arr_list * p_al,
     return p_sibling + ( __tzcnt_u32(mask2) );
   }
 
-  const uint64_t last_idx_plus1 = UINT64_C(1) << p_al->log2_nr_elems;
+  const uint64_t last_idx_plus1 = UINT64_C(1) << p_al->log2_elem_cnt;
   constexpr uint64_t stride = ALIGN_FOR_AVX * 2 / sizeof(cond);
   uint32_t cur_batch_idx = sizeof(cond) * elem_idx / ALIGN_FOR_AVX512;
   for ( uint64_t idx = cur_batch_idx * stride; idx < last_idx_plus1; idx += stride ) {
@@ -676,17 +676,17 @@ void * infos_al_get_elem_cond32( const struct infos_arr_list * p_al,
   }
 
   uint64_t block_base_idx = block_base_idx_first_slot_to_check;
-  block_base_idx += UINT64_C(1) << p_al->log2_nr_elems;
+  block_base_idx += UINT64_C(1) << p_al->log2_elem_cnt;
   const uint64_t block_base_idx_cap =
-    (UINT64_C(1) << p_al->log2_nr_elems) * p_al->nr_active_blocks;
-  uint64_t block_idx = (block_base_idx - node_base_idx) >> p_al->log2_nr_elems;
+    (UINT64_C(1) << p_al->log2_elem_cnt) * p_al->active_block_cnt;
+  uint64_t block_idx = (block_base_idx - node_base_idx) >> p_al->log2_elem_cnt;
   if ( block_idx >= _arr_elem_cnt(node->arr_blocks) ) {
     node = node->next;
     if ( !node ) {
       goto from_zero_to_start;
     }
     node_base_idx += UINT64_C(1) << (
-        p_al->log2_nr_elems + _arr_elem_cnt(p_al->list.head.arr_blocks) );
+        p_al->log2_elem_cnt + _arr_elem_cnt(p_al->list.head.arr_blocks) );
     block_idx = 0;
   }
   do {  // while ( block_base_idx < block_base_idx_cap )
@@ -708,12 +708,12 @@ void * infos_al_get_elem_cond32( const struct infos_arr_list * p_al,
     }
 
     block_idx++;
-    block_base_idx += UINT64_C(1) << p_al->log2_nr_elems;
+    block_base_idx += UINT64_C(1) << p_al->log2_elem_cnt;
     if ( block_idx >= _arr_elem_cnt(node->arr_blocks) ) {
       node = node->next;
       assume( node );
       node_base_idx += UINT64_C(1) << (
-          p_al->log2_nr_elems + _arr_elem_cnt(p_al->list.head.arr_blocks) );
+          p_al->log2_elem_cnt + _arr_elem_cnt(p_al->list.head.arr_blocks) );
       block_idx = 0;
     }
   } while ( block_base_idx < block_base_idx_cap );
@@ -746,7 +746,7 @@ from_zero_to_start:
     }
 
     block_idx++;
-    block_base_idx += UINT64_C(1) << p_al->log2_nr_elems;
+    block_base_idx += UINT64_C(1) << p_al->log2_elem_cnt;
     if ( block_base_idx == block_base_idx_first_slot_to_check ) {
       break;
     }
@@ -754,7 +754,7 @@ from_zero_to_start:
       node = node->next;
       assume( node );
       node_base_idx += UINT64_C(1) << (
-          p_al->log2_nr_elems + _arr_elem_cnt(p_al->list.head.arr_blocks) );
+          p_al->log2_elem_cnt + _arr_elem_cnt(p_al->list.head.arr_blocks) );
       block_idx = 0;
     }
   }
@@ -767,10 +767,10 @@ void * infos_al_get_elem_cond64( const struct infos_arr_list * p_al,
     uint32_t first_slot_to_check, uint64_t cond )
 {
   uint64_t block_base_idx_first_slot_to_check = _align_to_power_of_two_downward_l2(
-      first_slot_to_check, p_al->log2_nr_elems );
+      first_slot_to_check, p_al->log2_elem_cnt );
   uint64_t node_base_idx_first_slot_to_check = _align_to_power_of_two_downward_l2(
       first_slot_to_check,
-      p_al->log2_nr_elems + ct_log2(_arr_elem_cnt(p_al->list.head.arr_blocks)) );
+      p_al->log2_elem_cnt + ct_log2(_arr_elem_cnt(p_al->list.head.arr_blocks)) );
   uint64_t node_base_idx = 0;
   const struct linked_list_of_lists_node * restrict node = &p_al->list.head;
   void * block;
@@ -778,14 +778,14 @@ void * infos_al_get_elem_cond64( const struct infos_arr_list * p_al,
     if ( node_base_idx == node_base_idx_first_slot_to_check ) {
       uint64_t block_idx =
         (block_base_idx_first_slot_to_check - node_base_idx_first_slot_to_check) >>
-        p_al->log2_nr_elems;
+        p_al->log2_elem_cnt;
       block = node->arr_blocks[block_idx];
       break;
     }
     node = node->next;
     assume( node );
     node_base_idx += UINT64_C(1) << (
-        p_al->log2_nr_elems + _arr_elem_cnt(p_al->list.head.arr_blocks) );
+        p_al->log2_elem_cnt + _arr_elem_cnt(p_al->list.head.arr_blocks) );
   }
 
   const typeof(&cond) restrict p_key = __builtin_assume_aligned( block, ALIGN_FOR_AVX512 );
@@ -814,7 +814,7 @@ void * infos_al_get_elem_cond64( const struct infos_arr_list * p_al,
     return p_sibling + ( __tzcnt_u32(mask2) );
   }
 
-  const uint64_t last_idx_plus1 = UINT64_C(1) << p_al->log2_nr_elems;
+  const uint64_t last_idx_plus1 = UINT64_C(1) << p_al->log2_elem_cnt;
   constexpr uint64_t stride = ALIGN_FOR_AVX * 2 / sizeof(cond);
   uint32_t cur_batch_idx = sizeof(cond) * elem_idx / ALIGN_FOR_AVX512;
   for ( uint64_t idx = cur_batch_idx * stride; idx < last_idx_plus1; idx += stride ) {
@@ -848,17 +848,17 @@ void * infos_al_get_elem_cond64( const struct infos_arr_list * p_al,
   }
 
   uint64_t block_base_idx = block_base_idx_first_slot_to_check;
-  block_base_idx += UINT64_C(1) << p_al->log2_nr_elems;
+  block_base_idx += UINT64_C(1) << p_al->log2_elem_cnt;
   const uint64_t block_base_idx_cap =
-    (UINT64_C(1) << p_al->log2_nr_elems) * p_al->nr_active_blocks;
-  uint64_t block_idx = (block_base_idx - node_base_idx) >> p_al->log2_nr_elems;
+    (UINT64_C(1) << p_al->log2_elem_cnt) * p_al->active_block_cnt;
+  uint64_t block_idx = (block_base_idx - node_base_idx) >> p_al->log2_elem_cnt;
   if ( block_idx >= _arr_elem_cnt(node->arr_blocks) ) {
     node = node->next;
     if ( !node ) {
       goto from_zero_to_start;
     }
     node_base_idx += UINT64_C(1) << (
-        p_al->log2_nr_elems + _arr_elem_cnt(p_al->list.head.arr_blocks) );
+        p_al->log2_elem_cnt + _arr_elem_cnt(p_al->list.head.arr_blocks) );
     block_idx = 0;
   }
   do {  // while ( block_base_idx < block_base_idx_cap )
@@ -880,12 +880,12 @@ void * infos_al_get_elem_cond64( const struct infos_arr_list * p_al,
     }
 
     block_idx++;
-    block_base_idx += UINT64_C(1) << p_al->log2_nr_elems;
+    block_base_idx += UINT64_C(1) << p_al->log2_elem_cnt;
     if ( block_idx >= _arr_elem_cnt(node->arr_blocks) ) {
       node = node->next;
       assume( node );
       node_base_idx += UINT64_C(1) << (
-          p_al->log2_nr_elems + _arr_elem_cnt(p_al->list.head.arr_blocks) );
+          p_al->log2_elem_cnt + _arr_elem_cnt(p_al->list.head.arr_blocks) );
       block_idx = 0;
     }
   } while ( block_base_idx < block_base_idx_cap );
@@ -918,7 +918,7 @@ from_zero_to_start:
     }
 
     block_idx++;
-    block_base_idx += UINT64_C(1) << p_al->log2_nr_elems;
+    block_base_idx += UINT64_C(1) << p_al->log2_elem_cnt;
     if ( block_base_idx == block_base_idx_first_slot_to_check ) {
       break;
     }
@@ -926,7 +926,7 @@ from_zero_to_start:
       node = node->next;
       assume( node );
       node_base_idx += UINT64_C(1) << (
-          p_al->log2_nr_elems + _arr_elem_cnt(p_al->list.head.arr_blocks) );
+          p_al->log2_elem_cnt + _arr_elem_cnt(p_al->list.head.arr_blocks) );
       block_idx = 0;
     }
   }
@@ -940,10 +940,10 @@ void * infos_multi_al_get_elem_cond32( const struct infos_multi_arr_list * p_mal
     uint_fast16_t list_idx, uint32_t first_slot_to_check, uint32_t cond )
 {
   uint64_t block_base_idx_first_slot_to_check = _align_to_power_of_two_downward_l2(
-      first_slot_to_check, p_mal->log2_nr_elems );
+      first_slot_to_check, p_mal->log2_elem_cnt );
   uint64_t node_base_idx_first_slot_to_check = _align_to_power_of_two_downward_l2(
       first_slot_to_check,
-      p_mal->log2_nr_elems + ct_log2(_arr_elem_cnt(p_mal->lists[list_idx].head.arr_blocks)) );
+      p_mal->log2_elem_cnt + ct_log2(_arr_elem_cnt(p_mal->lists[list_idx].head.arr_blocks)) );
   uint64_t node_base_idx = 0;
   const struct linked_list_of_lists_node * restrict node = &p_mal->lists[list_idx].head;
   void * block;
@@ -951,14 +951,14 @@ void * infos_multi_al_get_elem_cond32( const struct infos_multi_arr_list * p_mal
     if ( node_base_idx == node_base_idx_first_slot_to_check ) {
       uint64_t block_idx =
         (block_base_idx_first_slot_to_check - node_base_idx_first_slot_to_check) >>
-        p_mal->log2_nr_elems;
+        p_mal->log2_elem_cnt;
       block = node->arr_blocks[block_idx];
       break;
     }
     node = node->next;
     assume( node );
     node_base_idx += UINT64_C(1) << (
-        p_mal->log2_nr_elems + _arr_elem_cnt(p_mal->lists[list_idx].head.arr_blocks) );
+        p_mal->log2_elem_cnt + _arr_elem_cnt(p_mal->lists[list_idx].head.arr_blocks) );
   }
 
   const typeof(&cond) restrict p_key = __builtin_assume_aligned( block, ALIGN_FOR_AVX512 );
@@ -987,7 +987,7 @@ void * infos_multi_al_get_elem_cond32( const struct infos_multi_arr_list * p_mal
     return p_sibling + ( __tzcnt_u32(mask2) );
   }
 
-  const uint64_t last_idx_plus1 = UINT64_C(1) << p_mal->log2_nr_elems;
+  const uint64_t last_idx_plus1 = UINT64_C(1) << p_mal->log2_elem_cnt;
   constexpr uint64_t stride = ALIGN_FOR_AVX * 2 / sizeof(cond);
   uint32_t cur_batch_idx = sizeof(cond) * elem_idx / ALIGN_FOR_AVX512;
   for ( uint64_t idx = cur_batch_idx * stride; idx < last_idx_plus1; idx += stride ) {
@@ -1021,17 +1021,17 @@ void * infos_multi_al_get_elem_cond32( const struct infos_multi_arr_list * p_mal
   }
 
   uint64_t block_base_idx = block_base_idx_first_slot_to_check;
-  block_base_idx += UINT64_C(1) << p_mal->log2_nr_elems;
+  block_base_idx += UINT64_C(1) << p_mal->log2_elem_cnt;
   const uint64_t block_base_idx_cap =
-    (UINT64_C(1) << p_mal->log2_nr_elems) * p_mal->arr_nr_active_blocks[list_idx];
-  uint64_t block_idx = (block_base_idx - node_base_idx) >> p_mal->log2_nr_elems;
+    (UINT64_C(1) << p_mal->log2_elem_cnt) * p_mal->arr_nr_active_blocks[list_idx];
+  uint64_t block_idx = (block_base_idx - node_base_idx) >> p_mal->log2_elem_cnt;
   if ( block_idx >= _arr_elem_cnt(node->arr_blocks) ) {
     node = node->next;
     if ( !node ) {
       goto from_zero_to_start;
     }
     node_base_idx += UINT64_C(1) << (
-        p_mal->log2_nr_elems + _arr_elem_cnt(p_mal->lists[list_idx].head.arr_blocks) );
+        p_mal->log2_elem_cnt + _arr_elem_cnt(p_mal->lists[list_idx].head.arr_blocks) );
     block_idx = 0;
   }
   do {  // while ( block_base_idx < block_base_idx_cap )
@@ -1053,12 +1053,12 @@ void * infos_multi_al_get_elem_cond32( const struct infos_multi_arr_list * p_mal
     }
 
     block_idx++;
-    block_base_idx += UINT64_C(1) << p_mal->log2_nr_elems;
+    block_base_idx += UINT64_C(1) << p_mal->log2_elem_cnt;
     if ( block_idx >= _arr_elem_cnt(node->arr_blocks) ) {
       node = node->next;
       assume( node );
       node_base_idx += UINT64_C(1) << (
-          p_mal->log2_nr_elems + _arr_elem_cnt(p_mal->lists[list_idx].head.arr_blocks) );
+          p_mal->log2_elem_cnt + _arr_elem_cnt(p_mal->lists[list_idx].head.arr_blocks) );
       block_idx = 0;
     }
   } while ( block_base_idx < block_base_idx_cap );
@@ -1091,7 +1091,7 @@ from_zero_to_start:
     }
 
     block_idx++;
-    block_base_idx += UINT64_C(1) << p_mal->log2_nr_elems;
+    block_base_idx += UINT64_C(1) << p_mal->log2_elem_cnt;
     if ( block_base_idx == block_base_idx_first_slot_to_check ) {
       break;
     }
@@ -1099,7 +1099,7 @@ from_zero_to_start:
       node = node->next;
       assume( node );
       node_base_idx += UINT64_C(1) << (
-          p_mal->log2_nr_elems + _arr_elem_cnt(p_mal->lists[list_idx].head.arr_blocks) );
+          p_mal->log2_elem_cnt + _arr_elem_cnt(p_mal->lists[list_idx].head.arr_blocks) );
       block_idx = 0;
     }
   }
@@ -1112,10 +1112,10 @@ void * infos_multi_al_get_elem_cond64( const struct infos_multi_arr_list * p_mal
     uint_fast16_t list_idx, uint32_t first_slot_to_check, uint64_t cond )
 {
   uint64_t block_base_idx_first_slot_to_check = _align_to_power_of_two_downward_l2(
-      first_slot_to_check, p_mal->log2_nr_elems );
+      first_slot_to_check, p_mal->log2_elem_cnt );
   uint64_t node_base_idx_first_slot_to_check = _align_to_power_of_two_downward_l2(
       first_slot_to_check,
-      p_mal->log2_nr_elems + ct_log2(_arr_elem_cnt(p_mal->lists[list_idx].head.arr_blocks)) );
+      p_mal->log2_elem_cnt + ct_log2(_arr_elem_cnt(p_mal->lists[list_idx].head.arr_blocks)) );
   uint64_t node_base_idx = 0;
   const struct linked_list_of_lists_node * restrict node = &p_mal->lists[list_idx].head;
   void * block;
@@ -1123,14 +1123,14 @@ void * infos_multi_al_get_elem_cond64( const struct infos_multi_arr_list * p_mal
     if ( node_base_idx == node_base_idx_first_slot_to_check ) {
       uint64_t block_idx =
         (block_base_idx_first_slot_to_check - node_base_idx_first_slot_to_check) >>
-        p_mal->log2_nr_elems;
+        p_mal->log2_elem_cnt;
       block = node->arr_blocks[block_idx];
       break;
     }
     node = node->next;
     assume( node );
     node_base_idx += UINT64_C(1) << (
-        p_mal->log2_nr_elems + _arr_elem_cnt(p_mal->lists[list_idx].head.arr_blocks) );
+        p_mal->log2_elem_cnt + _arr_elem_cnt(p_mal->lists[list_idx].head.arr_blocks) );
   }
 
   const typeof(&cond) restrict p_key = __builtin_assume_aligned( block, ALIGN_FOR_AVX512 );
@@ -1159,7 +1159,7 @@ void * infos_multi_al_get_elem_cond64( const struct infos_multi_arr_list * p_mal
     return p_sibling + ( __tzcnt_u32(mask2) );
   }
 
-  const uint64_t last_idx_plus1 = UINT64_C(1) << p_mal->log2_nr_elems;
+  const uint64_t last_idx_plus1 = UINT64_C(1) << p_mal->log2_elem_cnt;
   constexpr uint64_t stride = ALIGN_FOR_AVX * 2 / sizeof(cond);
   uint32_t cur_batch_idx = sizeof(cond) * elem_idx / ALIGN_FOR_AVX512;
   for ( uint64_t idx = cur_batch_idx * stride; idx < last_idx_plus1; idx += stride ) {
@@ -1193,17 +1193,17 @@ void * infos_multi_al_get_elem_cond64( const struct infos_multi_arr_list * p_mal
   }
 
   uint64_t block_base_idx = block_base_idx_first_slot_to_check;
-  block_base_idx += UINT64_C(1) << p_mal->log2_nr_elems;
+  block_base_idx += UINT64_C(1) << p_mal->log2_elem_cnt;
   const uint64_t block_base_idx_cap =
-    (UINT64_C(1) << p_mal->log2_nr_elems) * p_mal->arr_nr_active_blocks[list_idx];
-  uint64_t block_idx = (block_base_idx - node_base_idx) >> p_mal->log2_nr_elems;
+    (UINT64_C(1) << p_mal->log2_elem_cnt) * p_mal->arr_nr_active_blocks[list_idx];
+  uint64_t block_idx = (block_base_idx - node_base_idx) >> p_mal->log2_elem_cnt;
   if ( block_idx >= _arr_elem_cnt(node->arr_blocks) ) {
     node = node->next;
     if ( !node ) {
       goto from_zero_to_start;
     }
     node_base_idx += UINT64_C(1) << (
-        p_mal->log2_nr_elems + _arr_elem_cnt(p_mal->lists[list_idx].head.arr_blocks) );
+        p_mal->log2_elem_cnt + _arr_elem_cnt(p_mal->lists[list_idx].head.arr_blocks) );
     block_idx = 0;
   }
   do {  // while ( block_base_idx < block_base_idx_cap )
@@ -1225,12 +1225,12 @@ void * infos_multi_al_get_elem_cond64( const struct infos_multi_arr_list * p_mal
     }
 
     block_idx++;
-    block_base_idx += UINT64_C(1) << p_mal->log2_nr_elems;
+    block_base_idx += UINT64_C(1) << p_mal->log2_elem_cnt;
     if ( block_idx >= _arr_elem_cnt(node->arr_blocks) ) {
       node = node->next;
       assume( node );
       node_base_idx += UINT64_C(1) << (
-          p_mal->log2_nr_elems + _arr_elem_cnt(p_mal->lists[list_idx].head.arr_blocks) );
+          p_mal->log2_elem_cnt + _arr_elem_cnt(p_mal->lists[list_idx].head.arr_blocks) );
       block_idx = 0;
     }
   } while ( block_base_idx < block_base_idx_cap );
@@ -1263,7 +1263,7 @@ from_zero_to_start:
     }
 
     block_idx++;
-    block_base_idx += UINT64_C(1) << p_mal->log2_nr_elems;
+    block_base_idx += UINT64_C(1) << p_mal->log2_elem_cnt;
     if ( block_base_idx == block_base_idx_first_slot_to_check ) {
       break;
     }
@@ -1271,7 +1271,7 @@ from_zero_to_start:
       node = node->next;
       assume( node );
       node_base_idx += UINT64_C(1) << (
-          p_mal->log2_nr_elems + _arr_elem_cnt(p_mal->lists[list_idx].head.arr_blocks) );
+          p_mal->log2_elem_cnt + _arr_elem_cnt(p_mal->lists[list_idx].head.arr_blocks) );
       block_idx = 0;
     }
   }

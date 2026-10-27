@@ -43,16 +43,16 @@ void (* const known_jobs[])( struct cara_worker_state * p_ws ) = {
 struct cara_job_batch_desc_64 * cara_get_job( const struct ms_worker_info * worker_info )
 {
   struct infos_arr_list * p_al = cara_single.job_list;
-  const uint64_t nr_elems_in_block = UINT64_C(1) << p_al->log2_nr_elems;
-  const uint64_t nr_valid_elems = nr_elems_in_block * p_al->nr_active_blocks;
-  uint64_t base_idx = 0;  // The base idx of current vacancy block
+  const uint64_t nr_elems_in_block = UINT64_C(1) << p_al->log2_elem_cnt;
+  //const uint64_t nr_valid_elems = nr_elems_in_block * p_al->active_blocks_cnt;
+  //uint64_t base_idx = 0;  // The base idx of current vacancy block
   //uint64_t node_base_idx = 0;
   uint64_t block_idx = 0;
   struct linked_list_of_lists_node * restrict node = &p_al->list.head;
   do {  // while ( base_idx < nr_valid_elems )
-    if ( base_idx + block_idx * nr_elems_in_block >= nr_valid_elems ) {
-      goto out_of_nested_loop;
-    }
+    //if ( base_idx + block_idx * nr_elems_in_block >= nr_valid_elems ) {
+    //  goto out_of_nested_loop;
+    //}
     void * block = node->arr_blocks[block_idx];
 
     for ( uint_fast32_t local_elem_idx = 0;
@@ -106,16 +106,16 @@ continue_to_next_elem:
        // local_elem_idx < nr_elems_in_block; local_elem_idx++ )
 
     block_idx++;
-    base_idx += nr_elems_in_block;
+    //base_idx += nr_elems_in_block;
     if ( block_idx >= _arr_elem_cnt(node->arr_blocks) ) {
       node = node->next;
       assume( node );
-      //node_base_idx += UINT64_C(1) << ( p_smm->al_vacancies.log2_nr_elems +
+      //node_base_idx += UINT64_C(1) << ( p_smm->al_vacancies.log2_elem_cnt +
       //    _arr_elem_cnt(p_smm->al_vacancies.list.head.arr_blocks) );
       block_idx = 0;
     }
-  } while ( base_idx < nr_valid_elems );
-out_of_nested_loop:
+  } while ( block_idx < p_al->active_block_cnt );
+//out_of_nested_loop:
 
   return nullptr;
 }
@@ -125,16 +125,11 @@ out_of_nested_loop:
 struct cara_job_batch_desc_64 * cara_get_unoccupied_job_batch_desc(void)
 {
   struct infos_arr_list * p_al = cara_single.job_list;
-  const uint64_t nr_elems_in_block = UINT64_C(1) << p_al->log2_nr_elems;
-  const uint64_t nr_valid_elems = nr_elems_in_block * p_al->nr_active_blocks;
-  uint64_t base_idx = 0;  // The base idx of current vacancy block
+  const uint64_t nr_elems_in_block = UINT64_C(1) << p_al->log2_elem_cnt;
   //uint64_t node_base_idx = 0;
   uint64_t block_idx = 0;
   struct linked_list_of_lists_node * restrict node = &p_al->list.head;
   do {  // while ( base_idx < nr_valid_elems )
-    if ( base_idx + block_idx * nr_elems_in_block >= nr_valid_elems ) {
-      goto out_of_nested_loop;
-    }
     void * block = node->arr_blocks[block_idx];
 
     for ( uint_fast32_t local_elem_idx = 0;
@@ -156,16 +151,14 @@ struct cara_job_batch_desc_64 * cara_get_unoccupied_job_batch_desc(void)
        // local_elem_idx < nr_elems_in_block; local_elem_idx++ )
 
     block_idx++;
-    base_idx += nr_elems_in_block;
     if ( block_idx >= _arr_elem_cnt(node->arr_blocks) ) {
       node = node->next;
       assume( node );
-      //node_base_idx += UINT64_C(1) << ( p_smm->al_vacancies.log2_nr_elems +
+      //node_base_idx += UINT64_C(1) << ( p_smm->al_vacancies.log2_elem_cnt +
       //    _arr_elem_cnt(p_smm->al_vacancies.list.head.arr_blocks) );
       block_idx = 0;
     }
-  } while ( base_idx < nr_valid_elems );
-out_of_nested_loop:
+  } while ( block_idx < p_al->active_block_cnt );
 
   return nullptr;
 
@@ -175,16 +168,12 @@ out_of_nested_loop:
 //-------------------------------------------------------------------------------------------------
 void cara_init_job_list_node( struct infos_arr_list * p_al )
 {
-  const uint64_t nr_elems_in_block = UINT64_C(1) << p_al->log2_nr_elems;
-  const uint64_t nr_valid_elems = nr_elems_in_block * p_al->nr_active_blocks;
-  uint64_t base_idx = 0;  // The base idx of current vacancy block
+  const uint64_t nr_elems_in_block = UINT64_C(1) << p_al->log2_elem_cnt;
+  //const uint64_t nr_valid_elems = nr_elems_in_block * p_al->active_blocks_cnt;
   //uint64_t node_base_idx = 0;
   uint64_t block_idx = 0;
   struct linked_list_of_lists_node * restrict node = &p_al->list.head;
   do {  // while ( base_idx < nr_valid_elems )
-    if ( base_idx + block_idx * nr_elems_in_block >= nr_valid_elems ) {
-      goto out_of_nested_loop;
-    }
     void * block = node->arr_blocks[block_idx];
 
     for ( uint_fast32_t local_elem_idx = 0;
@@ -213,16 +202,14 @@ void cara_init_job_list_node( struct infos_arr_list * p_al )
        // local_elem_idx < nr_elems_in_vblock; local_elem_idx++ )
 
     block_idx++;
-    base_idx += nr_elems_in_block;
     if ( block_idx >= _arr_elem_cnt(node->arr_blocks) ) {
       node = node->next;
       assume( node );
-      //node_base_idx += UINT64_C(1) << ( p_smm->al_vacancies.log2_nr_elems +
+      //node_base_idx += UINT64_C(1) << ( p_smm->al_vacancies.log2_elem_cnt +
       //    _arr_elem_cnt(p_smm->al_vacancies.list.head.arr_blocks) );
       block_idx = 0;
     }
-  } while ( base_idx < nr_valid_elems );
-out_of_nested_loop:
+  } while ( block_idx < p_al->active_block_cnt );
 
 }
 
