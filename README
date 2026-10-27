@@ -9,13 +9,9 @@ Prepare SDL3
  clone the git repo and place it in `extern/SDL`
  install the development headers of liburing (e.g. liburing-dev on Ubuntu)
 
-Prepare for xdg-shell.xml (NOT NEEDED ANYMORE)
- $ sudo apt install wayland-protocols
-
 Prepare hwloc
  clone the git repo and place it in `extern/hwloc`
- install the development headers of libpciaccess (e.g. libpciaccess-dev on Ubuntu)
- install the development headers of libudev (e.g. libudev-dev on Ubuntu)
+ Do we need to libpciaccess and/or libudev? Probably?
 
 Configure cmake build
  $ CC=clang-21 cmake -B build-Debug -DCMAKE_BUILD_TYPE=Debug -G Ninja
@@ -28,17 +24,7 @@ Start building
 You can get the list of the compile commands and use it for auto-complete or other useful tools.
  $ ln -s build-RelWithDebInfo/compile_commands.json .
 
-If the build fails because the object of libhwloc is missing:
- $ mkdir -p build-Debug/extern && cd $_ && ln -s ../../extern/hwloc/hwloc/.libs/libhwloc.a ./ && cd -
- $ mkdir -p build-RelWithDebInfo/extern && cd $_ && ln -s ../../extern/hwloc/hwloc/.libs/libhwloc.a ./ && cd -
- $ mkdir -p build-ship_it/extern && cd $_ && ln -s ../../extern/hwloc/hwloc/.libs/libhwloc.a ./ && cd -
-
-Remove the original cmake build directory and reconfigure
- $ BUILD_DIRECTORY=build-Debug && rm -rf $BUILD_DIRECTORY && CC=clang-21 cmake -B $BUILD_DIRECTORY -DCMAKE_BUILD_TYPE=Debug -G Ninja && mkdir -p $BUILD_DIRECTORY/extern && cd $_ && ln -s ../../extern/hwloc/hwloc/.libs/libhwloc.a ./ && cd -
- $ BUILD_DIRECTORY=build-RelWithDebInfo && rm -rf $BUILD_DIRECTORY && CC=clang-21 cmake -B $BUILD_DIRECTORY -DCMAKE_BUILD_TYPE=RelWithDebInfo -G Ninja && mkdir -p $BUILD_DIRECTORY/extern && cd $_ && ln -s ../../extern/hwloc/hwloc/.libs/libhwloc.a ./ && cd -
- $ BUILD_DIRECTORY=build-ship_it && rm -rf $BUILD_DIRECTORY && CC=clang-21 cmake -B $BUILD_DIRECTORY -DCMAKE_BUILD_TYPE=Release -G Ninja && mkdir -p $BUILD_DIRECTORY/extern && cd $_ && ln -s ../../extern/hwloc/hwloc/.libs/libhwloc.a ./ && cd -
-
-Debug
+I'm getting used to debugging tools
  $ valgrind --track-origins=yes --leak-check=yes build-RelWithDebInfo/RelWithDebInfo/carbonara 
  $ build-Debug/Debug/carbonara
  $ build-RelWithDebInfo/RelWithDebInfo/carbonara
