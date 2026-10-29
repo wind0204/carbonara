@@ -45,25 +45,21 @@ struct cara_malloc_helper {
 void * cara_malloc( void * cara_malloc_helper, size_t alignment, size_t size );
 
 //-------------------------------------------------------------------------------------------------
+//_Pragma ( "GCC diagnostic ignored \"-Wgnu-alignof-expression\"" )
 #define _carbonara_malloc_array( ptr_to_carbonara_malloc_helper,                            \
     ptr_to_the_ptr_to_populate, element_count )                                             \
-_Pragma ( "GCC diagnostic push" )                                                           \
-_Pragma ( "GCC diagnostic ignored \"-Wgnu-alignof-expression\"" )                           \
   *(ptr_to_the_ptr_to_populate) = (typeof(*(ptr_to_the_ptr_to_populate))) cara_malloc( \
       (ptr_to_carbonara_malloc_helper),                                                     \
       alignof(*(*(ptr_to_the_ptr_to_populate))),                                            \
-      (element_count) * sizeof(*(*(ptr_to_the_ptr_to_populate))) )                          \
-_Pragma ( "GCC diagnostic pop" )
+      (element_count) * sizeof(*(*(ptr_to_the_ptr_to_populate))) )
 
+//_Pragma ( "GCC diagnostic ignored \"-Wgnu-alignof-expression\"" )
 #define _vk_malloc_array( ptr_to_vk_alloc_callbacks,                                        \
     ptr_to_the_ptr_to_populate, element_count )                                             \
-_Pragma ( "GCC diagnostic push" )                                                           \
-_Pragma ( "GCC diagnostic ignored \"-Wgnu-alignof-expression\"" )                           \
   *(ptr_to_the_ptr_to_populate) = (typeof(*(ptr_to_the_ptr_to_populate)))                   \
     (ptr_to_vk_alloc_callbacks)->pfnAllocation( (ptr_to_vk_alloc_callbacks)->pUserData,     \
         (element_count) * sizeof(*(*(ptr_to_the_ptr_to_populate))),                         \
-        alignof(*(*(ptr_to_the_ptr_to_populate))), 0 )                                      \
-_Pragma ( "GCC diagnostic pop" )
+        alignof(*(*(ptr_to_the_ptr_to_populate))), 0 )
 
 //-------------------------------------------------------------------------------------------------
 /**

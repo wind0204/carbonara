@@ -738,7 +738,7 @@ enum err_msg init_carbonara( uint32_t len_each_arena, uint64_t proc_info )
 
   struct infos_bst * bst = infos_bst_create( &tmp_ws.malloc_helper, cara_malloc,
       job_spawners_time_to_act,
-      sizeof(job_spawners_time_to_act)/sizeof(*job_spawners_time_to_act),
+      sizeof(job_spawners_time_to_act) / sizeof(*job_spawners_time_to_act),
       max_nr_pjobs,
       sizeof(*job_spawners_time_to_act) );
   cara_single.bst_action_times = bst;
@@ -1270,15 +1270,12 @@ done_with_sand:
       proc_idx < cara_single.proc_map->nr_processors;
       proc_idx++ ) {
     SPALL_BEGIN("spawn_a_worker");
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wint-to-pointer-cast"
     err = create_thread(
         .thread = &threads[proc_idx],
         .func = launch_worker,
-        .arg = (void*)proc_idx,  // NOLINT(performance-no-int-to-ptr)
+        .arg = ui2ptr(proc_idx),
         .priority = 2,
         );
-#pragma GCC diagnostic pop
     SPALL_END();  // spawn a worker
 
     if ( err ) {
@@ -1553,13 +1550,10 @@ static void foreman_loop( struct cara_worker_state * p_ws )
     SPALL_BEGIN("foreman_loop");
 
     const uint64_t new_pc = starting_pc;
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wconditional-uninitialized"
     std_pc += new_pc - prev_pc;
     pc_accumultor += new_pc - prev_pc;
     prev_pc = new_pc;
     if ( pc_accumultor >= cara_single.nr_pc_in_5us ) {
-#pragma GCC diagnostic pop
       const uint64_t nr_5us = div_via_mul_64( &cara_single.magic_divider, pc_accumultor );
       pc_accumultor -= cara_single.nr_pc_in_5us * nr_5us;
       cur_time_in_5us_general += nr_5us;

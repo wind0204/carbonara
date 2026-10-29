@@ -143,9 +143,9 @@ struct processor_map * prepare_processor_map(void)
   uint32_t len_highest_priv_d_cache = 0;  // The length of the highest-level data cache that is
                                           // private for each core, in units of cache-line-sized
                                           // chunks
-  hwloc_obj = hwloc_get_obj_below_by_type(topology,
+  hwloc_obj = hwloc_get_obj_below_by_type( topology,
       HWLOC_OBJ_PACKAGE, package_gpu->logical_index,
-      HWLOC_OBJ_CORE, 0);
+      HWLOC_OBJ_CORE, 0 );
   hwloc_obj = hwloc_obj->parent;
   if ( !hwloc_obj_type_is_cache(hwloc_obj->type) ) {
     fprintf(stderr, "ERROR: A CPU core is not a child of an L1 cache in the hwloc tree. "
@@ -156,17 +156,18 @@ struct processor_map * prepare_processor_map(void)
   }
 
   //struct hwloc_cache_attr_s * cache = &hwloc_obj->attr->cache;
-  union hwloc_obj_attr_u * cache = hwloc_obj->attr;
-  cacheline_len = cache->cache.linesize;
-  uint_fast8_t min_weight = hwloc_bitmap_weight(hwloc_obj->cpuset);
+  union hwloc_obj_attr_u * cache_attrs = hwloc_obj->attr;
+  cacheline_len = cache_attrs->cache.linesize;
 
-  // The length of the last-level data cache divided by associativity set count
+  // The number of processors connected to the L1 cache
+  uint_fast8_t proc_cnt_for_l1_cache = hwloc_bitmap_weight(hwloc_obj->cpuset);
+
+  // The length of the last-level data cache divided by associativity set count in 128 KiBs
   [[maybe_unused]] uint_fast8_t len_ll_dcache_cycle = 0;
 
   while(-7) {
-    //struct hwloc_cache_attr_s * cache = &hwloc_obj->attr->cache;
-    union hwloc_obj_attr_u * il_cache = hwloc_obj->attr;
-    uint_fast16_t nr_cache_sets = GET_NR_SETS_FROM_HWLOC_CACHE_ATTR(il_cache);
+    cache_attrs = hwloc_obj->attr;
+    uint_fast16_t nr_cache_sets = GET_NR_SETS_FROM_HWLOC_CACHE_ATTR(cache_attrs);
     if ( nr_cache_sets < min_nr_cache_sets ) {
       min_nr_cache_sets = nr_cache_sets;
     }
@@ -175,10 +176,10 @@ struct processor_map * prepare_processor_map(void)
     }
     
     if ( hwloc_obj->arity == 1 && hwloc_obj_type_is_dcache(hwloc_obj->type) ) {
-      if ( il_cache->cache.depth > highest_lv_priv_d_cache ) {
-        highest_lv_priv_d_cache = il_cache->cache.depth;
-        len_highest_priv_d_cache = il_cache->cache.size / il_cache->cache.linesize;
-        //len_highest_priv_d_cache = il_cache->cache.size / cacheline_len;
+      if ( cache_attrs->cache.depth > highest_lv_priv_d_cache ) {
+        highest_lv_priv_d_cache = cache_attrs->cache.depth;
+        len_highest_priv_d_cache = cache_attrs->cache.size / cache_attrs->cache.linesize;
+        //len_highest_priv_d_cache = cache_attrs->cache.size / cacheline_len;
       }
     }
 
@@ -192,27 +193,27 @@ struct processor_map * prepare_processor_map(void)
       str[0] = ' ';
     }
     fprintf( stdout, "CACHE(%s) size=%lu linesize=%u (%d)-way depth:%u weight:%d\n",
-        str, il_cache->cache.size, il_cache->cache.linesize, il_cache->cache.associativity,
-        il_cache->cache.depth, hwloc_bitmap_weight(hwloc_obj->cpuset) );
-    //fprintf(stdout, "CACHE(%s) size=%lu linesize=%u (%d)-way depth:%u weight:%d\n", str, il_cache->cache.size, cacheline_len, il_cache->cache.associativity, il_cache->cache.depth, hwloc_bitmap_weight(hwloc_obj->cpuset));
+        str, cache_attrs->cache.size, cache_attrs->cache.linesize, cache_attrs->cache.associativity,
+        cache_attrs->cache.depth, hwloc_bitmap_weight(hwloc_obj->cpuset) );
+    //fprintf(stdout, "CACHE(%s) size=%lu linesize=%u (%d)-way depth:%u weight:%d\n", str, cache_attrs->cache.size, cacheline_len, cache_attrs->cache.associativity, cache_attrs->cache.depth, hwloc_bitmap_weight(hwloc_obj->cpuset));
 #endif
     if ( !_is_power_of_two(nr_cache_sets) ) {
       fprintf(stderr,
           "ERROR: The number of sets in the associative cache(L%u) is not a power of two. "
           "%lu is not.\n",
-          il_cache->cache.depth, nr_cache_sets);
+          cache_attrs->cache.depth, nr_cache_sets);
       hwloc_topology_destroy(topology);
       errno = emsg_system_not_supported;
       return 0;
     }
     uint_fast8_t weight = hwloc_bitmap_weight(hwloc_obj->cpuset);
-    if ( weight > min_weight && il_cache->cache.associativity > 1 ) {
-      len_ll_dcache_cycle = il_cache->cache.size / il_cache->cache.associativity;
+    if ( weight > proc_cnt_for_l1_cache && cache_attrs->cache.associativity > 1 ) {
+      len_ll_dcache_cycle = cache_attrs->cache.size / cache_attrs->cache.associativity / 128 / 1024;
     }
 
     hwloc_obj = hwloc_obj->parent;
     if ( !hwloc_obj_type_is_cache(hwloc_obj->type) ) {
-      max_cache_level = il_cache->cache.depth;
+      max_cache_level = cache_attrs->cache.depth;
       break;
     }
   }
@@ -291,68 +292,91 @@ struct processor_map * prepare_processor_map(void)
   processor_map->set_index_mask = (min_nr_cache_sets - 1) << _tzcnt_u16(CACHELINE_LEN);
   processor_map->topology = topology;
   processor_map->flags.whole = 0;
+  processor_map->len_ll_dcache_cycle = len_ll_dcache_cycle;
 
   hwloc_obj_t numa_0 = hwloc_get_obj_by_type(topology, HWLOC_OBJ_NUMANODE, 0);
   processor_map->large_page_size_class = 0;
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wunreachable-code-loop-increment"
+  typeof(processor_map->large_page_size_class) large_page_size_class = 0;
   for ( typeof(numa_0->attr->numanode.page_types_len) il_i = 0;
       il_i < numa_0->attr->numanode.page_types_len; il_i++ ) {
-#pragma GCC diagnostic pop
+    // Ignore the page class if the number of the pages is 0
+    if ( numa_0->attr->numanode.page_types[il_i].count == 0 ) {
+#ifdef DEBUG_MODE
+      fprintf( stdout, "page count is 0 for %lu-KiB pages.\n",
+          numa_0->attr->numanode.page_types[il_i].size / 1024 );
+#endif
+      continue;
+    }
+
     size_t size = numa_0->attr->numanode.page_types[il_i].size;
     switch ( size ) {
       case UINT64_C(1024) * 4:
-        processor_map->large_page_size_class = 1;
-        goto large_page_size_determined;
+        if ( large_page_size_class < 1 )
+          large_page_size_class = 1;
+        break;
       case UINT64_C(1024) * 16:
-        processor_map->large_page_size_class = 2;
-        goto large_page_size_determined;
+        if ( large_page_size_class < 2 )
+          large_page_size_class = 2;
+        break;
       case UINT64_C(1024) * 64:
-        processor_map->large_page_size_class = 3;
-        goto large_page_size_determined;
+        if ( large_page_size_class < 3 )
+          large_page_size_class = 3;
+        break;
       case UINT64_C(1024) * 1024:
-        processor_map->large_page_size_class = 4;
-        goto large_page_size_determined;
+        if ( large_page_size_class < 4 )
+          large_page_size_class = 4;
+        break;
       case UINT64_C(1024) * 1024 * 2:
-        processor_map->large_page_size_class = 5;
-        goto large_page_size_determined;
+        if ( large_page_size_class < 5 )
+          large_page_size_class = 5;
+        break;
       case UINT64_C(1024) * 1024 * 16:
-        processor_map->large_page_size_class = 6;
-        goto large_page_size_determined;
+        if ( large_page_size_class < 6 )
+          large_page_size_class = 6;
+        break;
       case UINT64_C(1024) * 1024 * 64:
-        processor_map->large_page_size_class = 7;
-        goto large_page_size_determined;
+        if ( large_page_size_class < 7 )
+          large_page_size_class = 7;
+        break;
       case UINT64_C(1024) * 1024 * 128:
-        processor_map->large_page_size_class = 8;
-        goto large_page_size_determined;
+        if ( large_page_size_class < 8 )
+          large_page_size_class = 8;
+        break;
       case UINT64_C(1024) * 1024 * 256:
-        processor_map->large_page_size_class = 9;
-        goto large_page_size_determined;
+        if ( large_page_size_class < 9 )
+          large_page_size_class = 9;
+        break;
       case UINT64_C(1024) * 1024 * 512:
-        processor_map->large_page_size_class = 10;
-        goto large_page_size_determined;
+        if ( large_page_size_class < 10 )
+          large_page_size_class = 10;
+        break;
       case UINT64_C(1024) * 1024 * 1024:
-        processor_map->large_page_size_class = 11;
-        goto large_page_size_determined;
+        if ( large_page_size_class < 11 )
+          large_page_size_class = 11;
+        break;
       case UINT64_C(1024) * 1024 * 1024 * 2:
-        processor_map->large_page_size_class = 12;
-        goto large_page_size_determined;
+        if ( large_page_size_class < 12 )
+          large_page_size_class = 12;
+        break;
       case UINT64_C(1024) * 1024 * 1024 * 4:
-        processor_map->large_page_size_class = 13;
-        goto large_page_size_determined;
+        if ( large_page_size_class < 13 )
+          large_page_size_class = 13;
+        break;
       case UINT64_C(1024) * 1024 * 1024 * 64:
-        processor_map->large_page_size_class = 14;
-        goto large_page_size_determined;
+        if ( large_page_size_class < 14 )
+          large_page_size_class = 14;
+        break;
       case UINT64_C(1024) * 1024 * 1024 * 128:
-        processor_map->large_page_size_class = 15;
-        goto large_page_size_determined;
+        if ( large_page_size_class < 15 )
+          large_page_size_class = 15;
+        break;
       default:
         fprintf(stderr, "Unknown largepage(hugepage) size (%zu bytes)\n", size);
         errno = emsg_system_not_supported;
         return 0;
     }
   }
-large_page_size_determined:;
+  processor_map->large_page_size_class = large_page_size_class;
 
 #ifdef DEBUG_MODE
   fprintf(stdout, "min_nr_cache_sets = %lu\n", min_nr_cache_sets);

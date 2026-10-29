@@ -54,41 +54,48 @@ struct ms_worker_info {
 //  .deployment_flags = worker_deployment_flag_yielder,
 //};
 
+constexpr size_t proc_map_dcache_unit = 128 * 1024;
 struct processor_map {
   struct ms_worker_info * processors;
   hwloc_topology_t topology;
-  uint32_t len_highest_priv_d_cache; ///< The length of the highest-level data cache that is private for each
-                                     ///< core, in units of cache-line-sized chunks
-  uint32_t set_index_mask;  ///< The bit mask for obtaining of the index of a cache set on set-associative cache
-                            ///< that corresponds the target address.
-  uint8_t cacheline_len_exp;  ///< It's written in a way that 2**len_cache_line_exp is the length of cache line
-                               ///< e.g. 6 for 64-byte long cache lines
-  uint8_t cacheline_len;  ///< The length of a cache line
-  uint8_t nr_processors;  ///< The number of the worker threads currently assigned.
+  uint32_t len_highest_priv_d_cache; ///< The length of the highest-level data cache that is
+                                     ///< private for each core, in units of cache-line-sized
+                                     ///< chunks
+  uint32_t set_index_mask;  ///< The bit mask for obtaining of the index of a cache set on
+                            ///< set-associative cache that corresponds the target address.
+  uint8_t cacheline_len_exp;  ///< It's written in a way that 2**len_cache_line_exp is the length
+                              ///< of cache line. e.g. 6 for 64-byte long cache lines
+  uint8_t cacheline_len;  ///< The length of a cache line in bytes
+  uint8_t nr_processors;  ///< The number of the worker threads currently assigned
   union {
     struct {
       uint8_t no_hyperthread : 1;
     };
     uint8_t whole;
   } flags;
-  uint8_t large_page_size_class;  ///< 4K(1), 16K(2), 64K(3), 1M, 2M, 16M, 64M, 128M, 256M, 512M, 1G, 2G, 4G, 64G, 128G(15)
-  uint8_t len_ll_dcache_cycle;  ///< The length of the data that would let you access the first cache set of the
-                                ///< last-level data cache again, in units of 128KiB.
-                                ///< 0 will be assigned if the last-level data cache is not shared among the cores
-                                ///< or we can't tell that the last-level data cache is set associative.
-                                ///< e.g. You need to access a sequence of 64byte*4096(=256KiB) to reach the first
-                                ///< set again in a L3 data cache if it's 8-way set associative with 2MiB of total
-                                ///< length. (1024*1024*2 / 8 = 4096)
-                                ///< I think for an algorithm that accesses a big dataset with a sparse access
-                                ///< pattern it's better to align the size of the dataset to this value and limit
-                                ///< the size of the sub-dataset to a multiple of this value that is less than
-                                ///< 2MiB--or other large page size-- in order to prevent an imbalance between
-                                ///< the access rates of the cache sets of the last-level data cache since the
-                                ///< last-level data cache would stop using virtual addresses and start using
-                                ///< physical addresses and each page would not be arbitrarily dispersed with 4KiB
-                                ///< granularity anymore because the default behaviour of some of the memory
-                                ///< allocation code of yours might favor the 2MiB-sized page.--No problem with
-                                ///< 1GiB-sized pages --
+  uint8_t large_page_size_class;  ///< 4K(1), 16K(2), 64K(3), 1M, 2M, 16M, 64M, 128M, 256M, 512M,
+                                  ///< 1G, 2G, 4G, 64G, 128G(15)
+  uint8_t len_ll_dcache_cycle;  ///< The length of the data that you would have to traverse to
+                                ///< access the same cache set of the last-level data cache again,
+                                ///< in units of `proc_map_dcache_unit` bytes. (128 KiBs)
+                                ///< 0 will be assigned if the last-level data cache is not shared
+                                ///< among the cores or we can't tell that the last-level data
+                                ///< cache is set associative.
+                                ///< e.g. You need to access a sequence of 64byte*4096(=256KiB) to
+                                ///< reach the first set again in a L3 data cache if it's 8-way set
+                                ///< associative with 2MiB of total length(1024*1024*2 / 8 = 4096).
+                                ///< I think for an algorithm that accesses a big dataset with a
+                                ///< sparse access pattern it's better to align the size of the
+                                ///< dataset to this value and limit the size of the sub-dataset to
+                                ///< a multiple of this value that is less than 2MiB--or another
+                                ///< large page size--in order to prevent an imbalance between the
+                                ///< access rates of the cache sets of the last-level data cache
+                                ///< since the last-level data cache would stop using virtual
+                                ///< addresses and start using physical addresses and each page
+                                ///< would not be arbitrarily dispersed with 4KiB granularity
+                                ///< anymore because the default behaviour of some of the memory
+                                ///< allocation code of yours might favor the 2MiB-sized page--
+                                ///< there is no problem with 1GiB-sized pages.
 
 };
 

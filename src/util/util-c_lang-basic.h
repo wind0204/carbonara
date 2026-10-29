@@ -132,12 +132,6 @@ uint64_t init_util_c_lang(void);
 /**
  * brief It works only on a non-pointer value, for a const pointer you need to dereference.
  */
-//#define DECONST_TYPE_PLZ2( x ) \
-//  _Pragma ( "GCC diagnostic push" ) \
-//  _Pragma ( "GCC diagnostic ignored \"-Wgnu-statement-expression-from-macro-expansion\"" ) \
-//  DECONST_TYPE_PLZ(x) \
-//  _Pragma ( "GCC diagnostic pop" )
-
 #define DECONST_TYPE_PLZ( x ) _Generic((x),         \
     const float: ({typeof(float) y; y;}),           \
     const double: ({typeof(double) y; y;}),         \
@@ -160,6 +154,12 @@ uint64_t init_util_c_lang(void);
     const int8_t *: ({typeof(int8_t *) y; y;}),     \
     default: ({typeof((x + 0)) y; y;})              \
     )
+//#define DECONST_TYPE_PLZ2( x ) \
+//  _Pragma ( "GCC diagnostic push" ) \
+//  _Pragma ( "GCC diagnostic ignored \"-Wgnu-statement-expression-from-macro-expansion\"" ) \
+//  DECONST_TYPE_PLZ(x) \
+//  _Pragma ( "GCC diagnostic pop" )
+
 //-------------------------------------------------------------------------------------------------
 #define deconst_typeof( x )                                                                 \
   _Pragma ( "GCC diagnostic push" )                                                         \
@@ -185,7 +185,7 @@ uint64_t init_util_c_lang(void);
 /**
  * Cast a pointer to an unsigned integer
  */
-// What about just writing (uintptr_t)(pointer)
+// What about just writing '(uintptr_t)(pointer)' ?
 //#define (uintptr_t)(pointer)                                                                \
 //  _Pragma ( "GCC diagnostic push" )                                                         \
 //  _Pragma ( "GCC diagnostic ignored \"-Wgnu-statement-expression-from-macro-expansion\"" )  \

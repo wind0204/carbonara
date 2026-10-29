@@ -401,7 +401,7 @@ __attribute__((always_inline))
 static inline float det_3( struct mat3x3 mat )
 {
   // TODO check if it's optimized and reduced down to 6+3 mul, 3 sub and 2 add
-  //   naive approach: 12 mul, 3 sub and 2 add
+  //   The naive approach is 12 mul, 3 sub and 2 add
   return det_3_via_row( mat, 0 );
 }
 

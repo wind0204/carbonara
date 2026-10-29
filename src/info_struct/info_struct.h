@@ -1349,6 +1349,7 @@ struct infos_bst * infos_bst_create( //void * restrict data,
   _Pragma ( "GCC diagnostic ignored \"-Wnon-literal-null-conversion\"" ) \
   CWDV( infos_bst_create, V(0, 0, 0, 0, 512-1, sizeof(void*)), __VA_ARGS__ ) \
   _Pragma ( "GCC diagnostic pop" )
+// I'm not sure if the ignored statement is still needed
 
 //-------------------------------------------------------------------------------------------------
 void infos_bst_destroy(struct infos_bst * restrict tree,
@@ -1787,6 +1788,7 @@ constexpr uint_fast8_t default_log2_nr_buckets = 7;
   CWDV( infos_hashtable_create, \
       V(0, 0, 0, 64*sizeof(void*), sizeof(void*), 7), __VA_ARGS__ ) \
   _Pragma ( "GCC diagnostic pop" )
+// I'm not sure if the ignored statement is still needed
 
 //-------------------------------------------------------------------------------------------------
 void infos_hashtable_destroy(

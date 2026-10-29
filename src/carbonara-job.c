@@ -18,9 +18,6 @@
 //-------------------------------------------------------------------------------------------------
 
 static_assert(true);
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wincompatible-pointer-types"
-#pragma GCC diagnostic ignored "-Wincompatible-function-pointer-types-strict"
 // Each element of this array is a job functiona and the index of each element is
 // an enum job_func_indices declared in list-jobs.h
 void (* const known_jobs[])( struct cara_worker_state * p_ws ) = {
@@ -35,7 +32,6 @@ void (* const known_jobs[])( struct cara_worker_state * p_ws ) = {
 
   jf_police_patrol,  // #8
   //jf_render_frame,
-#pragma GCC diagnostic pop
 };
 
 

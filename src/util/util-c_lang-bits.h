@@ -666,9 +666,10 @@ static inline void set_bits_sp_i8( void * arr_bits,
 #define _uintlen_t_item(len) \
   uint ## len ## _t item;
 #define _get_bits_unaligned_template                                            \
-  const uint64_t head_bit_idx = item_idx * item_len_in_bits;                          \
-  const uint32_t byte_idx = head_bit_idx / 8;                                         \
-  const uint32_t pos_head_bit_in_head_byte = head_bit_idx % 8;                        \
+  const uint64_t head_bit_idx = item_idx * item_len_in_bits;                    \
+  const uint32_t byte_idx = head_bit_idx / 8;                                   \
+  const uint32_t pos_head_bit_in_head_byte = head_bit_idx % 8;                  \
+  assume( (item_len_in_bits + 8 - 1) / 8 <= 8 );                                \
   switch ( (item_len_in_bits + 8 - 1) / 8 ) {                                   \
     case 1:                                                                     \
       {                                                                         \
@@ -699,6 +700,7 @@ static inline void set_bits_sp_i8( void * arr_bits,
     case 5:                                                                     \
     case 6:                                                                     \
     case 7:                                                                     \
+    case 8:                                                                     \
       {                                                                         \
         _uintlen_t_item(64)                                                     \
                                                                                 \
@@ -710,9 +712,9 @@ static inline void set_bits_sp_i8( void * arr_bits,
                                                                                 \
         return item;                                                            \
       }                                                                         \
+    default:                                                                    \
+      return 0;                                                                 \
   }
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wreturn-type"
 //-------------------------------------------------------------------------------------------------
 __attribute__((always_inline))
 static inline uint64_t get_bits_unaligned_u64( const void * arr_bits,
@@ -745,16 +747,16 @@ static inline uint8_t get_bits_unaligned_u8( const void * arr_bits,
 
         return item;
 }
-#pragma GCC diagnostic pop
 
 #undef _uintlen_t_item
 #undef _get_bits_unaligned_template
 #define _for_get_bits_unaligned_signed_template( len ) \
   uint ## len ## _t item; int ## len ## _t item_s;
 #define _get_bits_unaligned_signed_template                                     \
-  const uint64_t head_bit_idx = item_idx * item_len_in_bits;                          \
-  const uint32_t byte_idx = head_bit_idx / 8;                                         \
-  const uint32_t pos_head_bit_in_head_byte = head_bit_idx % 8;                        \
+  const uint64_t head_bit_idx = item_idx * item_len_in_bits;                    \
+  const uint32_t byte_idx = head_bit_idx / 8;                                   \
+  const uint32_t pos_head_bit_in_head_byte = head_bit_idx % 8;                  \
+  assume( (item_len_in_bits + 8 - 1) / 8 <= 8 );                                \
   switch ( (item_len_in_bits + 8 - 1) / 8 ) {                                   \
     case 1:                                                                     \
       {                                                                         \
@@ -791,6 +793,7 @@ static inline uint8_t get_bits_unaligned_u8( const void * arr_bits,
     case 5:                                                                     \
     case 6:                                                                     \
     case 7:                                                                     \
+    case 8:                                                                     \
       {                                                                         \
         _for_get_bits_unaligned_signed_template(64)                             \
                                                                                 \
@@ -805,12 +808,12 @@ static inline uint8_t get_bits_unaligned_u8( const void * arr_bits,
                                                                                 \
         return item_s;                                                          \
       }                                                                         \
+    default:                                                                    \
+      return 0;                                                                 \
   }
 // NOTE item_len_in_bits 64 is not supported.
 // NOTE No effective bit-shift would be done when item_len_in_bits%64==0 with the current code,
 //  simply adding "case 8:" here would not do it.
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wreturn-type"
 
 //-------------------------------------------------------------------------------------------------
 __attribute__((always_inline))
@@ -847,7 +850,6 @@ static inline int8_t get_bits_unaligned_i8( const void * arr_bits,
 
         return item_s;
 }
-#pragma GCC diagnostic pop
 #undef _for_get_bits_unaligned_signed_template
 #undef _get_bits_unaligned_signed_template
 

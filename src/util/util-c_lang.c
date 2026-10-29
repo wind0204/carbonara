@@ -632,8 +632,8 @@ uint16_t get_idx_of_nth_1( unsigned int string_len, const uint8_t string[static 
     }
   }
   return UINT16_MAX;
-  // TODO Implement different types because when bits are few and far between, you might be able to
-  // consider using the combination of _tzcnt_u32 and log2_ui32, or another method.
+  // TODO Implement different types because when bits are few and far between, you might want to
+  // consider using the combination of _tzcnt_u32 and log2_ui32, or some other method perhaps.
   //uint32_t buffer;
   //for (; idx_byte < string_len; idx_byte+=sizeof(buffer) ) {
   //  if ( idx_byte+sizeof(buffer)-1 >= string_len ) {
