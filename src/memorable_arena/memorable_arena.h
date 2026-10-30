@@ -323,10 +323,11 @@ struct ma_vk_mem_mgr {
   struct infos_multi_arr_list mallocs;  ///< One array list per memory type. It stores
                                         ///< VkDeviceMemory objects for paging, each VkDeviceMemory
                                         ///< object is one single "chunk of pages"
-  struct infos_page_mgr uploads;  // Bookkeeper of staging buffer allocations
+  struct infos_page_mgr uploads;  ///< Bookkeeper of staging buffer allocations.
+                                  ///< Treat each byte of staging_buf as one page.
   uint32_t heap_cnt;
   uint32_t type_cnt;
-  uint32_t len_staging_buf;
+  uint32_t len_staging_buf;  ///< The length of the staging buffer in bytes
   uint16_t len_non_coherent_atom;  ///< The size and alignment in bytes that bounds concurrent
                                    ///<  access to host-mapped device memory. The value must be a
                                    ///<  power of two.

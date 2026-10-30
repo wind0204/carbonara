@@ -353,7 +353,7 @@ enum err_msg ma_prepare_upload_mgr(
   //constexpr size_t max_nr_pages = 1024*1024*1024;
   //constexpr size_t default_nr_pages = 1024*1024*128;
   //nr_pages = nr_pages ? min( max_nr_pages, nr_pages ) : default_nr_pages;
-  uint32_t nr_pages = vmm->len_staging_buf;
+  uint32_t nr_pages = vmm->len_staging_buf;  // Treat each byte of staging_buf as a page
   enum err_msg err = infos_pm_init_prealloc( &vmm->uploads, nr_pages, userdata, custom_malloc );
   if ( err ) {
     return err;

@@ -63,6 +63,9 @@ float4 frag_main( VertexShaderOutput input ) : SV_TARGET
   //float4 color = texture_arr.Sample( std_sampler, sample_coords );
 
   float4 color = textures[input.tex_id].Sample(immut_sampler, input.tex_coords);
+  //uint residency_status;
+  //float4 color = textures[input.tex_id].SampleLevel(
+  //        immut_sampler, input.tex_coords, 10, 0, residency_status );
 
   return color;
 }

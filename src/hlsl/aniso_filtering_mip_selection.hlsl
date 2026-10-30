@@ -87,7 +87,7 @@ float calc_lod_lv(
 
 
 const float2 std_tex_size = float2(2048, 2048);
-const float max_aniso_lv = 16;
+const float max_aniso_lv = 12;
 
 float4 aniso_sampling_exmaple_fragment_shader()
 {
@@ -97,7 +97,7 @@ float4 aniso_sampling_exmaple_fragment_shader()
   float orig_mip_lv = calc_lod_lv(
       std_tex_size, ddx(input.tex_coords), ddy(input.tex_coords),
       max_aniso_lv, orig_ratio_of_aniso, aniso_line_direction);
-  uint tex_status;
+  uint residency_status;
 
   // Take multiple samples and average them
   if ( orig_ratio_of_aniso > 1.0 ) {
@@ -106,9 +106,9 @@ float4 aniso_sampling_exmaple_fragment_shader()
     float ratio_of_aniso = orig_ratio_of_aniso;
     float ratio_of_aniso_rounded;
     float4 sum;
-    do {  // while ( !CheckAccessFullyMapped(residencyCode) )
+    do {  // while ( !CheckAccessFullyMapped(residency_status) )
       ratio_of_aniso_rounded = round( ratio_of_aniso );
-      sum = 0;  // Probably not needed if SampleLevel returns all-zero when texture is not resident:
+      sum = 0;  // Probably not needed if SampleLevel returns all-zero when texture is not resident
       // https://docs.vulkan.org/spec/latest/chapters/sparsemem.html#sparsememory-accessing-unbound
 
       // Convert ratio to [0; 1] space
@@ -121,13 +121,14 @@ float4 aniso_sampling_exmaple_fragment_shader()
 
       // Get the current sample position
       float2 sample_pos = lerp( start_pos, end_pos, aniso_idx / (ratio_of_aniso_rounded-1) );
+      float4 color = textures[input.tex_id].SampleLevel(
+          immut_sampler, sample_pos, mip_lv, 0, residency_status );
 
       // Accumulate the sample
-      sum += textures[input.tex_id].SampleLevel(
-          immut_sampler, sample_pos, mip_lv, 0, tex_status );
+      sum += color;
       mip_lv += 1;
       ratio_of_aniso *= 0.5;
-    } while ( !CheckAccessFullyMapped(residencyCode) );
+    } while ( !CheckAccessFullyMapped(residency_status) );
     mip_lv -= 1;
     ratio_of_aniso *= 2.0;
 
@@ -145,12 +146,17 @@ float4 aniso_sampling_exmaple_fragment_shader()
 
       // Accumulate the sample
       sum += textures[input.tex_id].SampleLevel(
-          immut_sampler, sample_pos, mip_lv, 0, tex_status );
+          immut_sampler, sample_pos, mip_lv, 0, residency_status );
     }
     return sum / aniso_idx;
   }  // if ( orig_ratio_of_aniso > 1.0 )
   else {
-    return textures[input.tex_id].SampleLevel(
-        immut_sampler, input.tex_coords, mip_lv, 0, tex_status );
+    float4 color;
+    do {
+      color = textures[input.tex_id].SampleLevel(
+          immut_sampler, input.tex_coords, mip_lv, 0, residency_status );
+      mip_lv += 1;
+    } while ( !CheckAccessFullyMapped(residency_status) );
+    return color;
   }
 }

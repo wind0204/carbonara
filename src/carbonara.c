@@ -796,8 +796,8 @@ enum err_msg init_carbonara( uint32_t len_each_arena, uint64_t proc_info )
   cara_vk.spv_swapchain_vert = nullptr;
   cara_vk.spv_swapchain_frag = nullptr;
   cara_vk.asset_size = 0;
-  constexpr char fpath_stone[] = "/home/dewr/Products/carbonara/assets/textures/stone-01.dds";
-  constexpr char fpath_sand[] = "/home/dewr/Products/carbonara/assets/textures/sand-01.dds";
+  constexpr char fpath_stone[] = "assets/textures/stone-01.dds";
+  constexpr char fpath_sand[] = "assets/textures/sand-01.dds";
   constexpr unsigned int dds_header_size =
     4 + sizeof(TCTex_DDS_HEADER) + sizeof(TCTex_DDS_HEADER_DXT10);
   constexpr unsigned int len_mipmapped_2048 = 16 + 16 + (4*4)*4/4 + (8*8)*4/4 + (16*16)*4/4 +
@@ -982,7 +982,7 @@ done_with_sand:
 
   // simple_test.hlsl.vert.spv
   p_new_async_io = SDL_AsyncIOFromFile(
-      "/home/dewr/Products/carbonara/spirv/simple_test.hlsl.vert.spv", "r" );
+      "spirv/simple_test.hlsl.vert.spv", "r" );
   file_size = SDL_GetAsyncIOSize( p_new_async_io );
   asset_buf3 = cara_malloc( &tmp_ws.malloc_helper, CACHELINE_LEN, file_size );
   if ( !SDL_ReadAsyncIO(
@@ -1027,7 +1027,7 @@ done_with_sand:
 
   // simple_test.hlsl.frag.spv
   p_new_async_io = SDL_AsyncIOFromFile(
-      "/home/dewr/Products/carbonara/spirv/simple_test.hlsl.frag.spv", "r" );
+      "spirv/simple_test.hlsl.frag.spv", "r" );
   file_size = SDL_GetAsyncIOSize( p_new_async_io );
   asset_buf4 = cara_malloc( &tmp_ws.malloc_helper, CACHELINE_LEN, file_size );
   if ( !SDL_ReadAsyncIO(
@@ -1071,7 +1071,7 @@ done_with_sand:
 
   // depth_only_prepass.hlsl.vert.spv
   p_new_async_io = SDL_AsyncIOFromFile(
-      "/home/dewr/Products/carbonara/spirv/depth_only_prepass.hlsl.vert.spv", "r" );
+      "spirv/depth_only_prepass.hlsl.vert.spv", "r" );
   file_size = SDL_GetAsyncIOSize( p_new_async_io );
   asset_buf5 = cara_malloc( &tmp_ws.malloc_helper, CACHELINE_LEN, file_size );
   if ( !SDL_ReadAsyncIO(
@@ -1116,7 +1116,7 @@ done_with_sand:
 
   // depth_only_prepass.hlsl.frag.spv
   p_new_async_io = SDL_AsyncIOFromFile(
-      "/home/dewr/Products/carbonara/spirv/depth_only_prepass.hlsl.frag.spv", "r" );
+      "spirv/depth_only_prepass.hlsl.frag.spv", "r" );
   file_size = SDL_GetAsyncIOSize( p_new_async_io );
   asset_buf6 = cara_malloc( &tmp_ws.malloc_helper, CACHELINE_LEN, file_size );
   if ( !SDL_ReadAsyncIO(
@@ -1161,7 +1161,7 @@ done_with_sand:
 
   // copy_to_swapchain_img.hlsl.vert.spv
   p_new_async_io = SDL_AsyncIOFromFile(
-      "/home/dewr/Products/carbonara/spirv/copy_to_swapchain_img.hlsl.vert.spv", "r" );
+      "spirv/copy_to_swapchain_img.hlsl.vert.spv", "r" );
   file_size = SDL_GetAsyncIOSize( p_new_async_io );
   asset_buf7 = cara_malloc( &tmp_ws.malloc_helper, CACHELINE_LEN, file_size );
   if ( !SDL_ReadAsyncIO(
@@ -1206,7 +1206,7 @@ done_with_sand:
 
   // copy_to_swapchain_img.hlsl.frag.spv
   p_new_async_io = SDL_AsyncIOFromFile(
-      "/home/dewr/Products/carbonara/spirv/copy_to_swapchain_img.hlsl.frag.spv", "r" );
+      "spirv/copy_to_swapchain_img.hlsl.frag.spv", "r" );
   file_size = SDL_GetAsyncIOSize( p_new_async_io );
   asset_buf8 = cara_malloc( &tmp_ws.malloc_helper, CACHELINE_LEN, file_size );
   if ( !SDL_ReadAsyncIO(
