@@ -25,6 +25,8 @@ And I've recently picked it up again.
 - volk
 - the standard C library
 
+<br>
+
 # Build Instructions
 ## Prepare SDL3
 - clone the [git repo](https://github.com/libsdl-org/SDL) and place it in `extern/SDL`
@@ -64,6 +66,8 @@ dxc -spirv -T ps_6_8 -Zpr -enable-16bit-types -fvk-use-scalar-layout -E frag_mai
 ```sh
 ln -s build-Debug/compile_commands.json .
 ```
+
+<br>
 
 # How to run
 ## Run the binary when .dds files and .spv files are ready
