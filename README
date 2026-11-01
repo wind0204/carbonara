@@ -6,18 +6,18 @@ I worked on it for a while and rendered a rotating pyramid and a square tile und
 And I've recently picked it up again.
 
 Goals
+- Make a game framework that can be used to build a feature-rich 3D RPG
 - Learn to write in C23 first, and probably adopt C2y in the future
 - Target linux PC's first in the beginning, because my PC runs a Linux system
 - The minimum CPU requirement is AVX2 and LZCNT
-- Make a game framework that can be used to build a feature-rich 3D RPG
 
 Here's the roadmap(can be changed):
 - Implement a basic job-stealing multi-threaded app (implemented)
 - Implement basic 3D RPG features
 - Start using box3d
-- Implement a multiplayer game mode
-- Utilize CPU features that are available only on newer processors
-- Port the Linux version either to a console, or to Mac, or to Windows 11 after having achieved a decent set of features
+- Implement a multiplayer game mode that is robust enough for action games
+- Utilize CPU instructions that are available only on newer processors
+- Port the Linux version either to a console, or to Mac and Windows 11 after having achieved a decent set of features!
 
 I'm currently using(can be changed):
 - vulkan
