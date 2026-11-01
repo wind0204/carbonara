@@ -1,6 +1,4 @@
-┌───────────────────────────────┐
-│   1. What is this?            │
-└───────────────────────────────┘
+# What is this?
 It is a WIP RPG game framework being worked on by an amateur hobbyist developer.
 I worked on it for a while and rendered a rotating pyramid and a square tile under it with textures on them using Vulkan in 2025, and dropped the project.
 And I've recently picked it up again.
@@ -26,9 +24,7 @@ And I've recently picked it up again.
 - hwloc
 - the standard C library
 
-┌───────────────────────────────┐
-│   2. How to build             │
-└───────────────────────────────┘
+# How to build
 ## Prepare SDL3
 - clone the git repo and place it in `extern/SDL`
 - install the development headers of liburing (e.g. liburing-dev on Ubuntu)
@@ -67,9 +63,7 @@ dxc -spirv -T ps_6_8 -Zpr -enable-16bit-types -fvk-use-scalar-layout -E frag_mai
 ln -s build-RelWithDebInfo/compile_commands.json .
 ```
 
-┌───────────────────────────────┐
-│   3. How to run               │
-└───────────────────────────────┘
+# How to run
 ## Run the binary when .dds files and .spv files are ready
 ```sh
 build-Debug/Debug/carbonara
