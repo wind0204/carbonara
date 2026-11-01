@@ -1,4 +1,4 @@
-# What is this?
+# Introduction
 It is a WIP RPG game framework being worked on by an amateur hobbyist developer.
 I worked on it for a while and rendered a rotating pyramid and a square tile under it with textures on them using Vulkan in 2025, and dropped the project.
 And I've recently picked it up again.
@@ -25,7 +25,7 @@ And I've recently picked it up again.
 - volk
 - the standard C library
 
-# How to build
+# Build Instructions
 ## Prepare SDL3
 - clone the [git repo](https://github.com/libsdl-org/SDL) and place it in `extern/SDL`
 - install the development headers of liburing (e.g. liburing-dev on Ubuntu)
