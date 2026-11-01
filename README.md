@@ -21,16 +21,17 @@ And I've recently picked it up again.
 - vulkan
 - SDL3
 - simde
-- hwloc
+- hwloc v2.15
 - the standard C library
 
 # How to build
 ## Prepare SDL3
-- clone the git repo and place it in `extern/SDL`
+- clone the [git repo](https://github.com/libsdl-org/SDL) and place it in `extern/SDL`
 - install the development headers of liburing (e.g. liburing-dev on Ubuntu)
 
 ## Prepare hwloc
-- clone the git repo and place it in `extern/hwloc`
+- clone the [git repo](https://github.com/open-mpi/hwloc) and place it in `extern/hwloc`
+- check out `v2.15` tag in the git repo
 
 ## Configure cmake builds for debugging and releasing
 ```sh
