@@ -1973,7 +1973,7 @@ end_of_nested_loop:
     goto error_after_swapchain_images;
   }
 
-  // Create VkImageViews
+  // Create VkImageViews for swapchain images
   VkImageViewCreateInfo iv_create_info = {
     .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
     .pNext = nullptr,
@@ -3875,7 +3875,7 @@ enum err_msg create_renderpass_and_framebuffer_first_time( struct cara_vk_render
     }
   }
 
-  // Create the image views
+  // Create VkImageViews for depth buffers and color buffers
   VkImageViewCreateInfo iv_create_info = {
     .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
     .pNext = nullptr,
@@ -4212,7 +4212,7 @@ enum err_msg expand_swapchain_and_framebuffer(
   }
 
 
-  // Create the image views
+  // Create VkImageViews for depth buffers and color buffers
   VkImageViewCreateInfo iv_create_info = {
     .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
     .pNext = nullptr,
@@ -4333,7 +4333,7 @@ enum err_msg expand_swapchain_and_framebuffer(
     goto stop_everything_after_failure;
   }
 
-  // Create VkImageViews
+  // Create VkImageViews for swapchain images
   iv_create_info.format = renderer->swapchain_img_fmt;
   iv_create_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
   for ( unsigned int i = 0; i < nr_swapchain_imgs; i++ ) {

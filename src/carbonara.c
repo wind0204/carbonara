@@ -2635,7 +2635,12 @@ static enum err_msg init_renderer( struct cara_worker_state * p_ws )
     .flags = 0,
     .magFilter = VK_FILTER_LINEAR,
     .minFilter = VK_FILTER_LINEAR,
-    .mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR,
+    .mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR,  // trilinear filtering when combined with
+                                                  // VK_FILTER_LINEAR
+    // FIXME I see SIGSEGV with nearest point sampling
+    //.magFilter = VK_FILTER_NEAREST,
+    //.minFilter = VK_FILTER_NEAREST,
+    //.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST,
     .addressModeU = VK_SAMPLER_ADDRESS_MODE_MIRRORED_REPEAT,
     .addressModeV = VK_SAMPLER_ADDRESS_MODE_MIRRORED_REPEAT,
     .addressModeW = VK_SAMPLER_ADDRESS_MODE_MIRRORED_REPEAT,
@@ -2666,7 +2671,6 @@ static enum err_msg init_renderer( struct cara_worker_state * p_ws )
   sampler_create_info.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER;
   sampler_create_info.anisotropyEnable = VK_FALSE;
   sampler_create_info.maxLod = .0f;
-  sampler_create_info.borderColor = VK_BORDER_COLOR_FLOAT_TRANSPARENT_BLACK;
   SPALL_BEGIN("vkCreateSampler_SS");
   result = vkCreateSampler( cara_vk.log_dev, &sampler_create_info,
       &vk_alloc_callbacks, &cara_vk.cbuf_sampler
@@ -3521,11 +3525,7 @@ static enum err_msg init_renderer( struct cara_worker_state * p_ws )
   arr_gpl_create_infos[cs_z_only].layout = cara_vk.pll_z_only;
   arr_gpl_create_infos[cs_z_only].renderPass = cara_vk.arr_renderpasses[0];
   arr_gpl_create_infos[cs_z_only].subpass = cs_z_only;
-  arr_gpl_create_infos[cs_z_only].basePipelineIndex = -1;  // We can't use both
-                        // basePipelineHandle and basePipelineIndex members; we can provide value
-                        // only for one of them. If we want to specify a handle, we must provide a
-                        // -1 value for the basePipelineIndex field. If we want to specify an index,
-                        // we need to provide a VK_NULL_HANDLE value for basePipelineHandle
+  arr_gpl_create_infos[cs_z_only].basePipelineIndex = -1;
 
   // cs_draw_opaq_objs pipeline
   arr_gpl_create_infos[cs_opaq_objs].stageCount = _arr_elem_cnt( main_render_plss_create_info );
@@ -3562,7 +3562,7 @@ static enum err_msg init_renderer( struct cara_worker_state * p_ws )
   cp2sc_gpl_create_info->layout = cara_vk.pll_cp2sc;
   cp2sc_gpl_create_info->renderPass = cara_vk.arr_renderpasses[1];
   cp2sc_gpl_create_info->subpass = cs2_copy_to_sc;
-  cp2sc_gpl_create_info->basePipelineIndex = cs_opaq_objs;
+  cp2sc_gpl_create_info->basePipelineIndex = -1;
   // NOTE You might want to utilized a pipeline cache if you have a lot of pipelines to create
   SPALL_BEGIN("create_G_pl");
   result = vkCreateGraphicsPipelines( cara_vk.log_dev,

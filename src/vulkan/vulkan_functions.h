@@ -1,3 +1,9 @@
+/*
+ *
+ * NOTE This code has been abandoned. I've given up on maintaining this code and started using volk
+ *
+ */
+
 #if !defined VULKAN_FUNCTIONS_H_
 #define VULKAN_FUNCTIONS_H_
 

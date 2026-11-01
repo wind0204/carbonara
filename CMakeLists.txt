@@ -551,7 +551,7 @@ target_link_libraries( carbonara PRIVATE Memorable_arena )
 target_link_libraries( carbonara PRIVATE Err_msg )
 target_link_libraries( carbonara PRIVATE Info_struct )
 target_link_libraries( carbonara PRIVATE Util-c_lang )
-target_link_libraries( carbonara PRIVATE ${CMAKE_DL_LIBS} )  # for volk
+target_link_libraries( carbonara PRIVATE ${CMAKE_DL_LIBS} )  # The libraries linked this way = {volk}
 #target_link_libraries( carbonara PRIVATE joltc )
 
 #target_link_libraries( carbonara PRIVATE ${SDL2_LIBRARIES} )

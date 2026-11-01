@@ -1,3 +1,9 @@
+/*
+ *
+ * NOTE This code has been abandoned. I've given up on maintaining this code and started using volk
+ *
+ */
+
 #include <stdio.h>
 #include <string.h>
 
