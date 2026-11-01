@@ -1,30 +1,53 @@
 ┌───────────────────────────────┐
-│   1. How to build             │
+│   1. What is this?            │
 └───────────────────────────────┘
+It is a WIP RPG game framework being worked on by an amateur hobbyist developer.
+I worked on it for a while and rendered a rotating pyramid and a square tile under it with textures on them using Vulkan in 2025, and dropped the project.
+And I've recently picked it up again.
 
-Prepare for FindWayland.cmake (NOT NEEDED ANYMORE)
- $ sudo apt install extra-cmake-modules
+Goals
+- Learn to write in C23 first, and probably adopt C2y in the future
+- Target linux PC's first in the beginning, because my PC runs a Linux system
+- The minimum CPU requirement is AVX2 and LZCNT
+- Make a game framework that can be used to build a feature-rich 3D RPG
 
+Here's the roadmap(can be changed):
+- Implement a basic job-stealing multi-threaded app (implemented)
+- Implement basic 3D RPG features
+- Start using box3d
+- Implement a multiplayer game mode
+- Utilize CPU features that are available only on newer processors
+- Port the Linux version either to a console, or to Mac, or to Windows 11 after having achieved a decent set of features
+
+I'm currently using(can be changed):
+- vulkan
+- SDL3
+- simde
+- hwloc
+- the standard C library
+
+┌───────────────────────────────┐
+│   2. How to build             │
+└───────────────────────────────┘
 Prepare SDL3
- clone the git repo and place it in `extern/SDL`
- install the development headers of liburing (e.g. liburing-dev on Ubuntu)
+ # clone the git repo and place it in `extern/SDL`
+ # install the development headers of liburing (e.g. liburing-dev on Ubuntu)
 
 Prepare hwloc
- clone the git repo and place it in `extern/hwloc`
- Do we need to libpciaccess and/or libudev? Probably?
+ # clone the git repo and place it in `extern/hwloc`
 
-Configure cmake build
+Configure cmake builds for debugging and releasing
  $ CC=clang-21 cmake -B build-Debug -DCMAKE_BUILD_TYPE=Debug -G Ninja
  $ CC=clang-21 cmake -B build-RelWithDebInfo -DCMAKE_BUILD_TYPE=RelWithDebInfo -G Ninja
  $ CC=clang-21 cmake -B build-ship_it -DCMAKE_BUILD_TYPE=Release -G Ninja
 
-Start building
+Start building a cmake build
  $ time cmake --build build-RelWithDebInfo
 
-You can get the list of the compile commands and use it for auto-complete or other useful tools.
+You can get the list of the compile commands and provide it to your LSP
  $ ln -s build-RelWithDebInfo/compile_commands.json .
 
 I'm getting used to debugging tools
  $ valgrind --track-origins=yes --leak-check=yes build-RelWithDebInfo/RelWithDebInfo/carbonara 
- $ build-Debug/Debug/carbonara
- $ build-RelWithDebInfo/RelWithDebInfo/carbonara
+ $ nnd build-Debug/Debug/carbonara
+ $ nnd build-RelWithDebInfo/RelWithDebInfo/carbonara
