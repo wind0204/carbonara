@@ -42,7 +42,7 @@ CC=clang-21 cmake -B build-ship_it -DCMAKE_BUILD_TYPE=Release -G Ninja
 
 ## Start building a cmake build
 ```sh
-time cmake --build build-RelWithDebInfo
+time cmake --build build-Debug
 ```
 
 ## Prepare SPIR-V code files in `spirv` directory (TODO: include it in the cmake configuration)
@@ -61,7 +61,7 @@ dxc -spirv -T ps_6_8 -Zpr -enable-16bit-types -fvk-use-scalar-layout -E frag_mai
 
 ## You can get the list of the compile commands and provide it to your LSP
 ```sh
-ln -s build-RelWithDebInfo/compile_commands.json .
+ln -s build-Debug/compile_commands.json .
 ```
 
 # How to run
