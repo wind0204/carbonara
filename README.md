@@ -22,6 +22,7 @@ And I've recently picked it up again.
 - SDL3
 - simde
 - hwloc v2.15
+- volk
 - the standard C library
 
 # How to build
