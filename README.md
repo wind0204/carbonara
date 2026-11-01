@@ -57,7 +57,7 @@ dxc -spirv -T ps_6_8 -Zpr -enable-16bit-types -fvk-use-scalar-layout -E frag_mai
 
 ## Prepare 12-mip-level albedo maps in .dds files
 - assets/textures/stone-01.dds
-- assets/textures/stone-01.dds
+- assets/textures/sand-01.dds
 
 ## You can get the list of the compile commands and provide it to your LSP
 ```sh
