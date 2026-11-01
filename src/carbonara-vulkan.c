@@ -647,7 +647,8 @@ uint8_t init_vulkan(
       continue;
     }
 
-    // Sparse Residency builds on (and requires) the sparseBinding feature. It includes the following capabilities:
+    // Sparse Residency builds on (and requires) the sparseBinding feature.
+    // It includes the following capabilities:
     // - Resources do not have to be completely bound to memory before use on the device.
     // - Images have a prescribed sparse image block layout, allowing specific rectangular regions
     //   of the image to be bound to specific offsets in memory allocations.
@@ -2471,7 +2472,7 @@ end_of_nested_loop:
             VK_IMAGE_USAGE_SAMPLED_BIT, VK_IMAGE_TILING_OPTIMAL, &nr_elems, arr_sif_props );
         bool found_props_for_color_aspect = false;
         for ( typeof(nr_elems) i = 0; i < nr_elems; i++ ) {
-          auto aspect_mask = arr_sif_props[i].aspectMask;  // TODO should contain VK_IMAGE_ASPECT_COLOR_BIT 
+          auto aspect_mask = arr_sif_props[i].aspectMask;
           [[maybe_unused]] auto flags = arr_sif_props[i].flags;
           [[maybe_unused]] auto sparse_img_block_dims = arr_sif_props[i].imageGranularity;
 #if defined(DEBUG_MODE)
@@ -2481,6 +2482,10 @@ end_of_nested_loop:
               );
 #endif
           if ( (aspect_mask & VK_IMAGE_ASPECT_COLOR_BIT) == 0 ) {
+#if defined(DEBUG_MODE)
+            fprintf( stdout, "[Vulkan-Debug] skipping a VkSparseImageFormatProperties with its"
+                "aspectMask marked zero on VK_IMAGE_ASPECT_COLOR_BIT\n" );
+#endif
             continue;
           }
           found_props_for_color_aspect = true;

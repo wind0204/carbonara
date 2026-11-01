@@ -62,10 +62,13 @@ float4 frag_main( VertexShaderOutput input ) : SV_TARGET
   //float3 sample_coords = float3( input.tex_coords.x, input.tex_coords.y, input.tex_id );
   //float4 color = texture_arr.Sample( std_sampler, sample_coords );
 
+
   float4 color = textures[input.tex_id].Sample(immut_sampler, input.tex_coords);
+  // TODO: Try this when sparse image is impelemented
   //uint residency_status;
   //float4 color = textures[input.tex_id].SampleLevel(
   //        immut_sampler, input.tex_coords, 10, 0, residency_status );
+
 
   return color;
 }

@@ -2355,17 +2355,18 @@ static enum err_msg init_renderer( struct cara_worker_state * p_ws )
   vkCmdCopyBufferToImage(
       trans_cmdbuf,
       cara_vk.vmm.staging_buf,
-      cara_vk.albmaps[0],
+      cara_vk.albmaps[0],  // albedo ID 0 is assigned to the sand texture for now
       VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
       _arr_elem_cnt( arr_regions ),
       arr_regions
       );
   SPALL_END();
-
   base_ofs = rent_for_sand.start;
   for ( unsigned int mip_lv = 0, width = 2048, offset = 0;
       mip_lv < nr_miplvls; mip_lv++, width/=2 ) {
     arr_regions[mip_lv].bufferOffset = base_ofs + offset;
+    // We don't need to repopulate arr_regions except for `bufferOffset` field since it was already
+    // done above when dealing with the first albedo map(stone)
     assume( _is_power_of_two(width) );
     switch ( width ) {
       case 4:
@@ -2383,7 +2384,7 @@ static enum err_msg init_renderer( struct cara_worker_state * p_ws )
   vkCmdCopyBufferToImage(
       trans_cmdbuf,
       cara_vk.vmm.staging_buf,
-      cara_vk.albmaps[1],
+      cara_vk.albmaps[1],  // albedo ID 1 is assigned to the sand texture for now
       VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
       _arr_elem_cnt( arr_regions ),
       arr_regions

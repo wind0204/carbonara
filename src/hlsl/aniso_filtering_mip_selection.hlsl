@@ -108,8 +108,6 @@ float4 aniso_sampling_exmaple_fragment_shader()
     float4 sum;
     do {  // while ( !CheckAccessFullyMapped(residency_status) )
       ratio_of_aniso_rounded = round( ratio_of_aniso );
-      sum = 0;  // Probably not needed if SampleLevel returns all-zero when texture is not resident
-      // https://docs.vulkan.org/spec/latest/chapters/sparsemem.html#sparsememory-accessing-unbound
 
       // Convert ratio to [0; 1] space
       float2 ratio_in_uv_space =
@@ -125,7 +123,7 @@ float4 aniso_sampling_exmaple_fragment_shader()
           immut_sampler, sample_pos, mip_lv, 0, residency_status );
 
       // Accumulate the sample
-      sum += color;
+      sum = color;
       mip_lv += 1;
       ratio_of_aniso *= 0.5;
     } while ( !CheckAccessFullyMapped(residency_status) );
