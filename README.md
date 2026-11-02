@@ -48,16 +48,6 @@ CC=clang-21 cmake -B build-ship_it -DCMAKE_BUILD_TYPE=Release -G Ninja
 time cmake --build build-Debug
 ```
 
-## Prepare SPIR-V code files in `spirv` directory (TODO: include it in the cmake configuration)
-```sh
-dxc -spirv -T vs_6_8 -Zpr -enable-16bit-types -fvk-use-scalar-layout -E vert_main src/hlsl/depth_only_prepass.hlsl -Fo spirv/depth_only_prepass.hlsl.vert.spv
-dxc -spirv -T ps_6_8 -Zpr -enable-16bit-types -fvk-use-scalar-layout -E frag_main src/hlsl/depth_only_prepass.hlsl -Fo spirv/depth_only_prepass.hlsl.frag.spv
-dxc -spirv -T vs_6_8 -Zpr -enable-16bit-types -fvk-use-scalar-layout -E vert_main src/hlsl/simple_test.hlsl -Fo spirv/simple_test.hlsl.vert.spv
-dxc -spirv -T ps_6_8 -Zpr -enable-16bit-types -fvk-use-scalar-layout -E frag_main src/hlsl/simple_test.hlsl -Fo spirv/simple_test.hlsl.frag.spv
-dxc -spirv -T vs_6_8 -Zpr -enable-16bit-types -fvk-use-scalar-layout -E vert_main src/hlsl/copy_to_swapchain_img.hlsl -Fo spirv/copy_to_swapchain_img.hlsl.vert.spv
-dxc -spirv -T ps_6_8 -Zpr -enable-16bit-types -fvk-use-scalar-layout -E frag_main src/hlsl/copy_to_swapchain_img.hlsl -Fo spirv/copy_to_swapchain_img.hlsl.frag.spv
-```
-
 ## Prepare 12-mip-level albedo maps in .dds files
 - assets/textures/stone-01.dds
 - assets/textures/sand-01.dds

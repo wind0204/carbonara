@@ -573,6 +573,68 @@ target_link_libraries( Info_struct PRIVATE Sorter )
 
 
 
+##-------------------------------------------------------------------------------------------------
+# SPIR-V Shader Compilation
+##-------------------------------------------------------------------------------------------------
+# Find dxc compiler
+find_program(DXC dxc)
+if(NOT DXC)
+  message(FATAL_ERROR "dxc compiler not found. Please install DirectXShaderCompiler.")
+endif()
+
+# Create spirv output directory
+file(MAKE_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/spirv")
+
+# List of HLSL shader files (without extension)
+set(SHADER_FILES
+  copy_to_swapchain_img
+  depth_only_prepass
+  simple_test
+)
+
+foreach(SHADER_NAME ${SHADER_FILES})
+  # Vertex shader
+  add_custom_command(
+    OUTPUT "${CMAKE_CURRENT_SOURCE_DIR}/spirv/${SHADER_NAME}.hlsl.vert.spv"
+    COMMAND ${DXC}
+      -spirv
+      -T vs_6_8
+      -Zpr
+      -enable-16bit-types
+      -fvk-use-scalar-layout
+      -E vert_main
+      "${CMAKE_CURRENT_SOURCE_DIR}/src/hlsl/${SHADER_NAME}.hlsl"
+      -Fo "${CMAKE_CURRENT_SOURCE_DIR}/spirv/${SHADER_NAME}.hlsl.vert.spv"
+    DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/src/hlsl/${SHADER_NAME}.hlsl"
+    COMMENT "Compiling ${SHADER_NAME}.hlsl vertex shader to SPIR-V"
+    VERBATIM
+  )
+
+  # Fragment shader
+  add_custom_command(
+    OUTPUT "${CMAKE_CURRENT_SOURCE_DIR}/spirv/${SHADER_NAME}.hlsl.frag.spv"
+    COMMAND ${DXC}
+      -spirv
+      -T ps_6_8
+      -Zpr
+      -enable-16bit-types
+      -fvk-use-scalar-layout
+      -E frag_main
+      "${CMAKE_CURRENT_SOURCE_DIR}/src/hlsl/${SHADER_NAME}.hlsl"
+      -Fo "${CMAKE_CURRENT_SOURCE_DIR}/spirv/${SHADER_NAME}.hlsl.frag.spv"
+    DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/src/hlsl/${SHADER_NAME}.hlsl"
+    COMMENT "Compiling ${SHADER_NAME}.hlsl fragment shader to SPIR-V"
+    VERBATIM
+  )
+
+  list(APPEND SPIRV_OUTPUTS
+    "${CMAKE_CURRENT_SOURCE_DIR}/spirv/${SHADER_NAME}.hlsl.vert.spv"
+    "${CMAKE_CURRENT_SOURCE_DIR}/spirv/${SHADER_NAME}.hlsl.frag.spv")
+endforeach()
+add_custom_target(spirv_shaders ALL DEPENDS ${SPIRV_OUTPUTS})
+
+add_dependencies(carbonara spirv_shaders)
+
 
 # NOTE XXX You can use this block to check the assembly code of target_exec
 #set( C_FLAGS ${CMAKE_C_FLAGS} )
