@@ -36,6 +36,10 @@ And I've recently picked it up again.
 - clone the [git repo](https://github.com/open-mpi/hwloc) and place it in `extern/hwloc`
 - check out `v2.15` tag in the git repo
 
+## Prepare dxc and volk
+- You need dxc for shader compilation and volk library that carbonara utilizes for Vulkan function calls.
+- [Vulkan SDK](https://vulkan.lunarg.com) continas these; You can set up the relevant environment variables via `$Vulkan_SDK/setup-env.sh`
+
 ## Configure cmake builds for debugging and releasing
 ```sh
 CC=clang-21 cmake -B build-Debug -DCMAKE_BUILD_TYPE=Debug -G Ninja
