@@ -585,12 +585,24 @@ endif()
 # Create spirv output directory
 file(MAKE_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/spirv")
 
-# List of HLSL shader files (without extension)
-set(SHADER_FILES
-  copy_to_swapchain_img
-  depth_only_prepass
-  simple_test
-)
+# List of HLSL shader files to exclude from compilation
+# (except the file extension name)
+if(NOT DEFINED UNCOMPILED_SHADERS)
+  list(APPEND UNCOMPILED_SHADERS "aniso_filtering_mip_selection")
+endif()
+
+# Find all .hlsl files in src/hlsl
+file(GLOB ALL_HLSL_FILES "${CMAKE_CURRENT_SOURCE_DIR}/src/hlsl/*.hlsl")
+
+# Filter out uncompiled shader files
+set(SHADER_FILES "")
+foreach(HLSL_FILE ${ALL_HLSL_FILES})
+  get_filename_component(SHADER_NAME ${HLSL_FILE} NAME_WE)
+  list(FIND UNCOMPILED_SHADERS ${SHADER_NAME} IS_UNCOMPILED)
+  if(IS_UNCOMPILED EQUAL -1)
+    list(APPEND SHADER_FILES ${SHADER_NAME})
+  endif()
+endforeach()
 
 foreach(SHADER_NAME ${SHADER_FILES})
   # Vertex shader
