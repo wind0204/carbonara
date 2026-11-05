@@ -58,12 +58,13 @@ SamplerState immut_sampler : register(s0, space1);
 [shader("pixel")]
 float4 frag_main( VertexShaderOutput input ) : SV_TARGET
 {
-  // For combind sampler array:
+  // You would write these lines with a combind sampler array:
   //float3 sample_coords = float3( input.tex_coords.x, input.tex_coords.y, input.tex_id );
   //float4 color = texture_arr.Sample( std_sampler, sample_coords );
 
-
+  // A simple texture sampler call
   float4 color = textures[input.tex_id].Sample(immut_sampler, input.tex_coords);
+  //float4 color = textures[input.tex_id].SampleLevel(immut_sampler, input.tex_coords, 0);
   // TODO: Try this when sparse image is impelemented
   //uint residency_status;
   //float4 color = textures[input.tex_id].SampleLevel(

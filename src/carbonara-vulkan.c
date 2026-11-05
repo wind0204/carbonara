@@ -3451,7 +3451,7 @@ static enum err_msg create_2nd_renderpass( struct cara_vk_renderer * renderer )
     sp_dep[dep_idx].sType = VK_STRUCTURE_TYPE_SUBPASS_DEPENDENCY_2;
     sp_dep[dep_idx].viewOffset = 0;
   }
-  // cs_draw_opaq_objs - cs2_copy_to_sc
+  // cs_opaq_objs - cs2_copy_to_sc
   sp_dep[0].srcSubpass = VK_SUBPASS_EXTERNAL;
   sp_dep[0].dstSubpass = cs2_copy_to_sc;
   sp_dep[0].srcStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT_KHR;
@@ -3628,7 +3628,7 @@ enum err_msg create_renderpass_and_framebuffer_first_time( struct cara_vk_render
     sp_dep[dep_idx].sType = VK_STRUCTURE_TYPE_SUBPASS_DEPENDENCY_2;
     sp_dep[dep_idx].viewOffset = 0;
   }
-  // cs_depth_only - cs_draw_opaq_objs
+  // cs_z_only - cs_opaq_objs
   sp_dep[0].srcSubpass = cs_z_only;  // The index of a subpass from which ("producing")
                                      // operations should be finished before the second set of
                                      // ("consuming") operations (or a VK_SUBPASS_EXTERNAL value

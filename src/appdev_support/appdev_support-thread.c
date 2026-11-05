@@ -63,7 +63,9 @@ enum err_msg init_appdev_support_thread(void)
   // A stack overflow would occur in vf_load_instance_level_functions between
   //  (16384+1*32768)-(16384+2*32768)
   // A stack overflow would occur in vkCmdPipelineBarrier2KHR+Validation with 16384 + 3*16384
-  constexpr size_t default_stack_size = 2*32768;
+  // A stack deficiency would occur in vkCreateGraphicsPipelines with 2*32768
+  //  I needed about 96KiB on the current mesa driver + shaders
+  constexpr size_t default_stack_size = 128*1024;
   size_t desired_stack_size = default_stack_size;
   if ( desired_stack_size < PTHREAD_STACK_MIN ) {
     desired_stack_size = PTHREAD_STACK_MIN;

@@ -879,14 +879,13 @@ do_it_synchronoously_for_now:
   }
 
 done_with_stone:
-  // Stone done; Now round 2: sand.
-  //
+  // Past stone; Now sand.
 
   p_new_async_io = SDL_AsyncIOFromFile( fpath_sand, "r" );
   file_size = SDL_GetAsyncIOSize( p_new_async_io );
   if ( file_size < 0 ) {
     fprintf( stderr, "[Carbonara] SDL_GetAsyncIOSize failed! reason:'%s'\n", SDL_GetError() );
-    goto done_with_stone;
+    goto done_with_sand;
   }
 
   asset_buf2 = cara_malloc(
@@ -2671,7 +2670,7 @@ static enum err_msg init_renderer( struct cara_worker_state * p_ws )
   sampler_create_info.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER;
   sampler_create_info.anisotropyEnable = VK_FALSE;
   sampler_create_info.maxLod = .0f;
-  SPALL_BEGIN("vkCreateSampler_SS");
+  SPALL_BEGIN("vkCreateSampler_cp2sc");
   result = vkCreateSampler( cara_vk.log_dev, &sampler_create_info,
       &vk_alloc_callbacks, &cara_vk.cbuf_sampler
       );
@@ -2744,7 +2743,7 @@ static enum err_msg init_renderer( struct cara_worker_state * p_ws )
     .flags = 0,
   };
 
-  // Bindings for cs_draw_opaq_objs
+  // Bindings for cs_opaq_objs
   VkDescriptorSetLayoutBinding dsl_binding_main_render_img = {
     .binding = 0,
     .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
@@ -2784,20 +2783,20 @@ static enum err_msg init_renderer( struct cara_worker_state * p_ws )
   }
 
   // We're going to use update-after-bind, so we need to make sure the flag is set correctly in the
-  //   set layout.
+  //  set layout.
   // These sets need to be allocated with UPDATE_AFTER_BIND pools later.
   dsl_create_info.flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT_EXT;
   dsl_create_info.bindingCount = 1;
   dsl_create_info.pBindings = &dsl_binding_main_render_img;
-  // Typically, if you're using descriptor indexing, you will want to use all four of these, but all of these are separate feature bits.
+  // Typically, if you're using descriptor indexing, you will want to use all four of these, but
+  //  all of these are separate feature bits.
   const VkDescriptorBindingFlagsEXT flags =
     VK_DESCRIPTOR_BINDING_VARIABLE_DESCRIPTOR_COUNT_BIT_EXT |
     VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT_EXT |
     VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT_EXT |
     VK_DESCRIPTOR_BINDING_UPDATE_UNUSED_WHILE_PENDING_BIT_EXT;
   // In unextended Vulkan, there is no way to pass down flags to a binding, so we're going to do so
-  //   via a pNext.
-  // Each pBinding has a corresponding pBindingFlags.
+  //  via a pNext.
   VkDescriptorSetLayoutBindingFlagsCreateInfoEXT binding_flags = {
     .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO_EXT,
     .pNext = nullptr,
@@ -2805,6 +2804,7 @@ static enum err_msg init_renderer( struct cara_worker_state * p_ws )
     .pBindingFlags = &flags,
   };
   dsl_create_info.pNext = &binding_flags;
+
   result = vkCreateDescriptorSetLayout( cara_vk.log_dev, &dsl_create_info,
       &vk_alloc_callbacks, &cara_vk.dsl_main_render_img
       );
@@ -2852,7 +2852,7 @@ static enum err_msg init_renderer( struct cara_worker_state * p_ws )
     {
       .type = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,
       .descriptorCount = max_nr_img_descriptors_in_set  // The maximal number of images that can be
-                                                        //   allocated in the pool.
+                                                        //  allocated in the pool.
     },
   };
   VkDescriptorPoolCreateInfo dp_create_info = {
@@ -2880,7 +2880,7 @@ static enum err_msg init_renderer( struct cara_worker_state * p_ws )
 
   // The common case for bindless is to have an array of sampled images, not combined image sampler.
   // It is more efficient to use a single sampler instead, and we can just use a single immutable
-  //   sampler for this purpose.
+  //  sampler for this purpose.
   // Create the sampler, descriptor set layout and allocate an immutable descriptor set.
   arr_pool_sizes[0].type = VK_DESCRIPTOR_TYPE_SAMPLER;
   arr_pool_sizes[0].descriptorCount = 1;
@@ -2970,7 +2970,7 @@ static enum err_msg init_renderer( struct cara_worker_state * p_ws )
   // Write on the descriptor
   //
   VkDescriptorImageInfo desc_img_info = {
-    .sampler = cara_vk.albmap_sampler,  // Actually not needed for immutable samplers
+    .sampler = cara_vk.albmap_sampler,  // This field is actuallly not used with immutable samplers
     .imageView = cara_vk.albmap_ivs[0],
     .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
   };
@@ -3140,11 +3140,11 @@ static enum err_msg init_renderer( struct cara_worker_state * p_ws )
     .vertexAttributeDescriptionCount = _arr_elem_cnt( arr_via_desc_depth_only ),
     .pVertexAttributeDescriptions = arr_via_desc_depth_only,
   };
-  // Vertex input binding description for cs_draw_opaq_objs
+  // Vertex input binding description for cs_opaq_objs
   VkVertexInputBindingDescription arr_vib_desc_main_render[] = {
     {
       .binding = 0,
-      .stride = sizeof(float)*3,
+      .stride = sizeof(float)*3,  // position
       .inputRate = VK_VERTEX_INPUT_RATE_VERTEX,
     },
     {
@@ -3498,7 +3498,7 @@ static enum err_msg init_renderer( struct cara_worker_state * p_ws )
                         // to create a pipeline, we can use basePipelineHandle or basePipelineIndex
   }
 
-  // cs_depth_only pipeline
+  // cs_z_only pipeline
   arr_gpl_create_infos[cs_z_only].stageCount = _arr_elem_cnt( depth_only_plss_create_info );
   arr_gpl_create_infos[cs_z_only].stageCount = _arr_elem_cnt( depth_only_plss_create_info );
   arr_gpl_create_infos[cs_z_only].pStages = depth_only_plss_create_info;
@@ -3527,7 +3527,7 @@ static enum err_msg init_renderer( struct cara_worker_state * p_ws )
   arr_gpl_create_infos[cs_z_only].subpass = cs_z_only;
   arr_gpl_create_infos[cs_z_only].basePipelineIndex = -1;
 
-  // cs_draw_opaq_objs pipeline
+  // cs_opaq_objs pipeline
   arr_gpl_create_infos[cs_opaq_objs].stageCount = _arr_elem_cnt( main_render_plss_create_info );
   arr_gpl_create_infos[cs_opaq_objs].pStages = main_render_plss_create_info;
   arr_gpl_create_infos[cs_opaq_objs].pVertexInputState = &plvis_create_info_main_render;
@@ -3576,7 +3576,7 @@ static enum err_msg init_renderer( struct cara_worker_state * p_ws )
                        // linked properly). Results of these operations may be stored in a cache.
                        // This cache can then be reused to speed up the creation of pipeline objects
                        // with similar properties.
-      //cara_nr_subpasses, arr_gpl_create_infos,
+      // cara_nr_subpasses, arr_gpl_create_infos,
       (unsigned int)cara_nr_subpasses + cara_nr_subpasses_in_2nd_rp, arr_gpl_create_infos,
       &vk_alloc_callbacks,
       cara_vk.arr_pipelines
@@ -4567,6 +4567,9 @@ acquire_swapchain_image:
   // TODO Cast shadows
   // TODO Move the light sources
 
+//-------------------------------------------------------------------------------------------------
+// 1st Render Pass
+//-------------------------------------------------------------------------------------------------
 
   // VK_SUBPASS_CONTENTS_INLINE  specifies that the contents of the subpass will be recorded inline
   //  in the primary command buffer, and secondary command buffers must not be executed within the
@@ -4605,7 +4608,9 @@ acquire_swapchain_image:
       VK_PIPELINE_BIND_POINT_GRAPHICS, cara_vk.arr_pipelines[cs_z_only] );
   SPALL_END();
 
-  // SUBPASS cs_depth_only
+  //
+  // SUBPASS cs_z_only
+  //
   constexpr uint64_t nr_5us_in_1s = 1000*1000 / 5;
   constexpr double pi_per_sec = M_PI / nr_5us_in_1s;
   const struct mat4x4 rotate = rot_aya_4x4( (float) ((double)cur_time_in_5us * pi_per_sec * .5) );
@@ -4664,13 +4669,14 @@ acquire_swapchain_image:
 
 
 
+  //
+  // SUBPASS cs_opaq_objs
+  //
   SPALL_BEGIN("vkCmdNextSubpass");
   vkCmdNextSubpass( main_cmd_buf, VK_SUBPASS_CONTENTS_INLINE );
   SPALL_END();
 
-  //
   // Bind descriptor sets to the pipeline layout
-  //
   SPALL_BEGIN("vkCmdBindDescriptorSets");
   vkCmdBindDescriptorSets( main_cmd_buf, VK_PIPELINE_BIND_POINT_GRAPHICS, cara_vk.pll_main_render,
       0,  // The first set number
@@ -4688,23 +4694,17 @@ acquire_swapchain_image:
       1,  // The first set number
       1, &cara_vk.ds_main_render_sampler,  // Descriptor sets
       0, nullptr );  // Dynamic offsets
-                     // If any of the sets being bound include dynamic uniform or storage buffers,
-                     // then pDynamicOffsets includes one element for each array element in each
-                     // dynamic descriptor type binding in each set. Values are taken from
-                     // pDynamicOffsets in an order such that all entries for set N come before set
-                     // N+1; within a set, entries are ordered by the binding numbers in the
-                     // descriptor set layouts; and within a binding array, elements are in order
   SPALL_END();
+
+  // Bind the pipeline
   SPALL_BEGIN("vkCmdBindPipeline");
   vkCmdBindPipeline( main_cmd_buf,
       VK_PIPELINE_BIND_POINT_GRAPHICS, cara_vk.arr_pipelines[cs_opaq_objs] );
   SPALL_END();
 
-  // SUBPASS cs_draw_opaq_objs
   vkCmdPushConstants( main_cmd_buf, cara_vk.pll_main_render, VK_SHADER_STAGE_VERTEX_BIT,
       0, 4*4*4, &consts );
   //vkCmdDrawIndexed( main_cmd_buf, 3*6 + 3*2, 1, 0, 0, 0 );
-  //
   static _typeof_member(VkDescriptorPoolSize, descriptorCount) desc_ofs = 0;
   typeof(desc_ofs) local_desc_idx = 0;
   VkDescriptorImageInfo desc_img_info = {
@@ -4751,7 +4751,7 @@ acquire_swapchain_image:
 
 
   SPALL_BEGIN("vkCmdEndRenderPass_1");
-  // End the render pass
+  // End the 1st render pass
   vkCmdEndRenderPass(main_cmd_buf);  // Recording this function in a command buffer performs
                                   // multiple operations. Execution and memory dependencies are
                                   // introduced (like the ones in memory barriers) and image layout
@@ -4768,9 +4768,9 @@ acquire_swapchain_image:
 
 
 
-  //
-  // 2nd Renderpass
-  //
+//-------------------------------------------------------------------------------------------------
+//   2nd Render Pass
+//-------------------------------------------------------------------------------------------------
 
   // The first thing we need to record after acquiring a swapchain image is to change the swapchain
   //  image's layout to a VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL layout.
@@ -4890,12 +4890,6 @@ acquire_swapchain_image:
       0,  // The first set number
       1, &cara_vk.ds_cp2sc[frame_id % cara_max_nr_fif],  // Descriptor sets
       0, nullptr );  // Dynamic offsets
-                     // If any of the sets being bound include dynamic uniform or storage buffers,
-                     // then pDynamicOffsets includes one element for each array element in each
-                     // dynamic descriptor type binding in each set. Values are taken from
-                     // pDynamicOffsets in an order such that all entries for set N come before set
-                     // N+1; within a set, entries are ordered by the binding numbers in the
-                     // descriptor set layouts; and within a binding array, elements are in order
   SPALL_END();
   SPALL_BEGIN("vkCmdBindPipeline");
   vkCmdBindPipeline( main_cmd_buf,
@@ -4903,7 +4897,7 @@ acquire_swapchain_image:
       cara_vk.arr_pipelines[(unsigned int)cara_nr_subpasses + cs2_copy_to_sc] );
   SPALL_END();
 
-  // TODO cs2_copy_to_sc
+  // cs2_copy_to_sc
   vkCmdDraw( main_cmd_buf, 3, 1, 0, 0 );
 
   //SPALL_BEGIN("vkCmdNextSubpass");
