@@ -52,7 +52,7 @@ CC=clang-21 cmake -B build-ship_it -DCMAKE_BUILD_TYPE=Release -G Ninja
 time cmake --build build-Debug
 ```
 
-## Prepare 12-mip-level albedo maps in .dds files
+## Prepare 12-mip-level 2048x2048 albedo maps in .dds files
 - assets/textures/stone-01.dds
 - assets/textures/sand-01.dds
 
