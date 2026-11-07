@@ -1,5 +1,6 @@
 #include <SDL3/SDL_asyncio.h>
 #include <SDL3/SDL_error.h>
+#include <SDL3/SDL_events.h>
 #include <SDL3/SDL_init.h>
 #include <SDL3/SDL_log.h>
 #include <SDL3/SDL_hints.h>
@@ -253,6 +254,21 @@ SDL_AppResult SDL_AppEvent( [[maybe_unused]] void *appstate, [[maybe_unused]] SD
       };
       atomic_store_explicit(
           &cara_vk.win_size.atomic_whole, new_size.whole, memory_order_release );
+      break;
+    case SDL_EVENT_WINDOW_CLOSE_REQUESTED:
+      struct cara_job_batch_desc_64 * batch = cara_get_unoccupied_job_batch_desc();
+      while ( !batch ) {
+        batch = cara_get_unoccupied_job_batch_desc();
+      }
+      for ( uint_fast8_t job_idx = 1; job_idx < CARBONARA_MAX_NR_JOBS_IN_A_JOB_DESC_64;
+          job_idx++ ) {
+        batch->job_func_idx[job_idx] = 0;
+        batch->job_flags[job_idx] = 0;
+      }
+      batch->job_func_idx[0] = jf_idx_start_kill_chain;
+      batch->job_flags[0] = 0;
+      atomic_store_explicit( &batch->progress, 0, memory_order_release );
+      atomic_store_explicit( &batch->preferred_core, UINT8_MAX, memory_order_release );
       break;
   }
 
