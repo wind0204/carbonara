@@ -47,7 +47,7 @@ CC=clang-21 cmake -B build-RelWithDebInfo -DCMAKE_BUILD_TYPE=RelWithDebInfo -G N
 CC=clang-21 cmake -B build-ship_it -DCMAKE_BUILD_TYPE=Release -G Ninja
 ```
 
-## Start building a cmake build
+## Start building default executables including `carbonara` (Ignore the warning messages about memory binding not being supported. We do not use the feature)
 ```sh
 time cmake --build build-Debug
 ```
@@ -64,7 +64,7 @@ ln -s build-Debug/compile_commands.json .
 <br>
 
 # How to run
-## Run the binary when .dds files and .spv files are ready
+## When the .dds files mentioned above are ready and a build of `carbonara` has been completed, run the executable.
 ```sh
 build-Debug/Debug/carbonara
 ```
