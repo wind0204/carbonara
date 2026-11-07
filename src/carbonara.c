@@ -683,14 +683,14 @@ enum err_msg init_carbonara( uint32_t len_each_arena, uint64_t proc_info )
   // usually around 25MHz, 24MHz ~19.2MHz, which means the resolution is 40ns, 41.666ns or
   // 52.083ns and the least common multiple is 5000ns i.e. 5us.
   //__float128 pc_freq = SDL_GetPerformanceFrequency();
-  __float128 pc_freq = get_performance_frequency();
+  __float128 pc_freq = get_perf_counter_freq();
   const uint64_t nr_pc_in_5us = (typeof(nr_pc_in_5us)) (pc_freq / 1000000 * 5);
   cara_single.nr_pc_in_5us = (typeof(nr_pc_in_5us)) nr_pc_in_5us;
   unsigned_division_magic_64( &cara_single.magic_divider, nr_pc_in_5us );
 
-  const uint32_t leap_sec_freq = get_performance_frequency() / nr_pc_in_5us;
+  const uint32_t leap_sec_freq = get_perf_counter_freq() / nr_pc_in_5us;
   // Do we want to deal with offsetting performance counter every leaf second?
-  const uint32_t pc_ofs_per_sec = get_performance_frequency() % nr_pc_in_5us;
+  const uint32_t pc_ofs_per_sec = get_perf_counter_freq() % nr_pc_in_5us;
   if ( pc_ofs_per_sec ) {
     fprintf( stdout, "Please tell the developer about the issue:  "
         "pc_ofs_per_sec = %u;  leap_sec_freq = %u;\n", pc_ofs_per_sec, leap_sec_freq );
@@ -1442,7 +1442,7 @@ static void worker_loop( struct cara_worker_state * p_ws )
 
   //uint64_t cur_time_in_5us_general = 0;
   while(-7) {
-    const uint64_t starting_pc = get_performance_counter();
+    const uint64_t starting_pc = get_perf_counter();
     SPALL_BEGIN("worker_loop");
 
     // This worker is not a foreman.
@@ -1538,13 +1538,13 @@ static void foreman_loop( struct cara_worker_state * p_ws )
       stack_len );
   cara_single.foremans_quit_stack = quit_stack;
 
-  prev_pc = get_performance_counter();
+  prev_pc = get_perf_counter();
 
 
   uint64_t cur_time_in_5us_general = 0;
   uint64_t prev_time_in_5us_render = 0;
   while(-7) {
-    const uint64_t starting_pc = get_performance_counter();
+    const uint64_t starting_pc = get_perf_counter();
 
     SPALL_BEGIN("foreman_loop");
 
@@ -1755,7 +1755,7 @@ void jf_start_kill_chain( struct cara_worker_state * p_ws )
   while ( atomic_load_explicit(&cara_single.nr_workers_resigned, memory_order_acquire) <
       cara_single.proc_map->nr_processors - 1 ) {
     // Take a break for about 320 usec.
-    const uint64_t starting_pc = get_performance_counter();
+    const uint64_t starting_pc = get_perf_counter();
     delay_precise( starting_pc + cara_single.nr_pc_in_5us * 64 );
   }
   SPALL_END();  // wait_for_fellow_workers

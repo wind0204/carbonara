@@ -26,6 +26,7 @@ uint64_t get_nr_tsc_in_1s_when_os_helps(void);
  * \warning \a nsec MUST be less than 1,000,000,000
  */
 void hold_up_thread( uint64_t nsec );
+void hold_up_thread_wo_early_ret( uint64_t nsec );
 
 //-------------------------------------------------------------------------------------------------
 /**
@@ -38,15 +39,15 @@ void delay_precise( uint_fast32_t target_pc );
 /**
  * \brief Get monotonic timestamp in nano seconds.
  */
-uint64_t get_performance_counter();
+uint64_t get_perf_counter();
 
 /**
  * \brief Explicitly show the frequency in performance counter per second.
  */
 __attribute__((always_inline))
-static inline uint64_t get_performance_frequency()
+static inline uint64_t get_perf_counter_freq()
 {
-  return 1000000000;
+  return 1000 * 1000 * 1000;
 }
 
 
