@@ -4,6 +4,8 @@
 #include <SDL3/SDL_init.h>
 #include <SDL3/SDL_log.h>
 #include <SDL3/SDL_hints.h>
+#include <SDL3/SDL_keycode.h>
+#include <SDL3/SDL_video.h>
 #if defined(__i386) || defined(__i386__) || defined(_M_IX86) || defined(__x86_64) \
     || defined(__x86_64__) || defined(__amd64) || defined(_M_X64)
   #ifdef _MSC_VER
@@ -269,6 +271,19 @@ SDL_AppResult SDL_AppEvent( [[maybe_unused]] void *appstate, [[maybe_unused]] SD
       batch->job_flags[0] = 0;
       atomic_store_explicit( &batch->progress, 0, memory_order_release );
       atomic_store_explicit( &batch->preferred_core, UINT8_MAX, memory_order_release );
+      break;
+    case SDL_EVENT_KEY_DOWN:
+      // Alt+Enter toggles fullscreen. The resulting size change arrives as
+      // SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED and is handled above.
+      if ( !event->key.repeat &&
+          (event->key.key == SDLK_RETURN || event->key.key == SDLK_KP_ENTER) &&
+          (event->key.mod & SDL_KMOD_ALT) ) {
+        const bool is_fullscreen =
+          ( SDL_GetWindowFlags(cara_vk.window) & SDL_WINDOW_FULLSCREEN ) != 0;
+        if ( !SDL_SetWindowFullscreen(cara_vk.window, !is_fullscreen) ) {
+          fprintf( stderr, "[Carbonara] Could not toggle fullscreen. (%s)\n", SDL_GetError() );
+        }
+      }
       break;
   }
 
