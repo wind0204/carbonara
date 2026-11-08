@@ -17,6 +17,7 @@ set(DEPS_DIR "${CMAKE_BINARY_DIR}/deps/")
 # Options
 ##-------------------------------------------------------------------------------------------------
 option( CARA_ASAN_DEBUG_BUILD "Use the address sanitizer in Debug build" OFF )
+option( USE_SDL_IN_EXTERN "Use SDL in extern/SDL" ON )
 option( LINK_SDL_STATIC_LIB "Disable the dynamic API of SDL and link to the static library" OFF )
 
 
@@ -54,8 +55,6 @@ add_dependencies(hwloc::hwloc hwloc)
 # SDL
 ##-------------------------------------------------------------------------------------------------
 
-option( USE_SDL_IN_EXTERN "Use SDL in extern directory" ON )
-
 set( BUILD_SHARED_LIBS OFF CACHE INTERNAL "" )
 set( SDL_SHARED OFF CACHE INTERNAL "" FORCE )
 set( SDL_STATIC ON CACHE INTERNAL "" FORCE )
@@ -63,7 +62,6 @@ if ( LINK_SDL_STATIC_LIB )
   add_definitions( -DSDL_DYNAMIC_API=0 )
 endif()
 
-#set(SDL_REVISION "My Vendored SDL" CACHE INTERNAL "")  # This prevents re-configures every time a git change occurs: https://github.com/libsdl-org/SDL/issues/9998
 #set( SDL_X11_XTEST OFF CACHE INTERNAL "" )  # You might have to deal with unimproved mouse warping by setting it off
 
 set( SDL_VULKAN ON CACHE INTERNAL "" )
@@ -230,8 +228,6 @@ if( CMAKE_TARGET_ARCHITECTURE_CODE MATCHES "x86_64" )
     set( CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${C_FLAGS_TARG_ARCH}" )
   endif()
 
-  # TODO Should I consider distributing another build for the CPUs like The Knights Landing where using
-  # 128-bit SIMD instructions can hurt the performance and there is no way to mitigate it?
   #if( DEFINED ENV{ENABLE_AVX2_OPTIMIZATION} )
   #  set( CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -mavx2" )
   #endif()
@@ -288,12 +284,7 @@ set_property( TARGET packer PROPERTY C_STANDARD 23 )
 if( NOT CMAKE_BUILD_TYPE MATCHES Debug )
   set_property( TARGET packer PROPERTY INTERPROCEDURAL_OPTIMIZATION TRUE )
 endif()
-#add_custom_command(TARGET packer POST_BUILD
-#  COMMAND cscope -bqUR
-#  WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
-#  )
 
-#file( GLOB CARBONARA_SRC CONFIGURE_DEPENDS "src/carbonara*.c" )
 #add_library( carbonara ${CARBONARA_SRC} )
 add_executable( carbonara
   src/carbonara.c
@@ -302,7 +293,7 @@ add_executable( carbonara
   src/carbonara-rainbow.c
   src/carbonara-mm.c
   src/carbonara-vulkan.c
-  #src/vulkan/vulkan_functions.c
+  #src/vulkan/vulkan_functions.c  # Just use volk
   src/util/util-spall.c
   )
   target_compile_options( carbonara PRIVATE -Weverything -Werror -Wno-c++98-compat -Wno-pre-c11-compat -Wno-unused-macros -Wno-gnu-alignof-expression -Wno-error=unused-function -Wno-double-promotion -Wno-logical-op-parentheses -Wno-unsafe-buffer-usage -Wno-extra-semi-stmt -Wno-shorten-64-to-32 -Wno-sign-conversion -Wno-vla -Wno-switch-enum -Wno-cast-qual -Wno-implicit-int-enum-cast -Wno-implicit-void-ptr-cast -Wno-implicit-int-conversion -Wno-declaration-after-statement -Wno-gnu-pointer-arith -Wno-keyword-macro -Wno-padded -Wno-pre-c23-compat -Wno-switch-default -Wno-jump-misses-init -Wno-disabled-macro-expansion $<$<CONFIG:Release>:-Wno-error=unused-variable -Wno-error=unused-but-set-variable -Wno-error=unused-parameter> ${C_FLAGS_IN_HOUSE} )
@@ -331,11 +322,6 @@ endif()
 
 #target_compile_options(carbonara PRIVATE
 #  $<$<CONFIG:Release>:-ffast-math>)
-
-#add_custom_command(TARGET carbonara POST_BUILD
-#  COMMAND cscope -bqUR
-#  WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
-#  )
 
 
 #file( GLOB APP_DEV_SUPPORT_SRC CONFIGURE_DEPENDS "src/appdev_support/*.c" )
@@ -411,8 +397,6 @@ if( NOT CMAKE_BUILD_TYPE MATCHES Debug )
   set_property(TARGET Sorter PROPERTY INTERPROCEDURAL_OPTIMIZATION TRUE)
 endif()
 
-# hwloc is now built via add_subdirectory and available as hwloc::hwloc target
-
 #add_library( Netloc STATIC IMPORTED )
 #set_target_properties( Netloc PROPERTIES
 #  IMPORTED_LOCATION "${PROJECT_BINARY_DIR}/extern/libnetloc.a"
@@ -421,16 +405,8 @@ endif()
 #)
 #add_dependencies( Netloc OurHwloc )
 
-#add_library( LibSDL STATIC IMPORTED )
-#set_target_properties( LibSDL PROPERTIES
-#  IMPORTED_LOCATION "${PROJECT_BINARY_DIR}/extern/build-sdl/libSDL3.a"
-#  INTERFACE_LINK_LIBRARIES "m"  # You need libm for math.h
-#  GENERATED TRUE
-#)
-#add_dependencies( LibSDL build-sdl )
 
-#find_package(SDL2 REQUIRED)
-
+# NOTE There is actually no code that uses snappy at the moment
 # Snappy is fetched at build time when packer is actually built.
 # Build snappy-c as a static library using add_custom_command for proper output tracking
 set(SNAPPY_C_DIR "${DEPS_DIR}/snappy-c")
@@ -458,19 +434,16 @@ target_include_directories(packer PRIVATE "${SNAPPY_C_DIR}")
 # You can find carbonara-config.h here
 include_directories( "${PROJECT_BINARY_DIR}/src" )
 
-# clangd was not as smart as I thought it would be; the linting information didn't take into account which header file was loaded by which source.
-# So I made some header filles visible globally:
+# I wrote theses comments a long time ago:
+# clangd was not as smart as I thought it would be; the linting information didn't take into account which header file was loaded by which source. So I made some header filles visible globally:
 include_directories( "${CMAKE_CURRENT_SOURCE_DIR}/src/appdev_support" )
 include_directories( "${CMAKE_CURRENT_SOURCE_DIR}/src/memorable_arena" )
 include_directories( "${CMAKE_CURRENT_SOURCE_DIR}/src/util" )
 
-#include_directories( SYSTEM "${CMAKE_CURRENT_SOURCE_DIR}/extern/SOIL2" )
 include_directories( SYSTEM "${CMAKE_CURRENT_SOURCE_DIR}/extern/tclib" )
-
 include_directories( SYSTEM "$ENV{VULKAN_SDK}/include" )
 # hwloc includes are now provided via hwloc::hwloc target
 
-#include_directories( "${CMAKE_CURRENT_SOURCE_DIR}/src/err_msg" )
 target_include_directories( Err_msg PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src/err_msg" )
 target_include_directories( Info_struct PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src/err_msg" )
 target_include_directories( App-dev_support PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src/err_msg" )
@@ -481,9 +454,9 @@ target_include_directories( carbonara PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src" 
 target_include_directories( carbonara PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src/include" )
 # For carbonara-texture.h:
 target_include_directories( packer PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src/include" )
-# For vk_page
+# For vk_page:
 target_include_directories( Memorable_arena PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src/include" )
-# For carbonara-math.h
+# For carbonara-math.h:
 target_include_directories( tester PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src/include" )
 
 target_include_directories( carbonara PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src/vulkan" )
@@ -491,41 +464,22 @@ target_include_directories( App-dev_support PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}
 target_include_directories( Memorable_arena PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src/vulkan" )
 
 target_include_directories( App-dev_support PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src/appdev_support" )
-#target_include_directories( carbonara PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src/appdev_support" )
-#target_include_directories( tester PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src/appdev_support" )
-#target_include_directories( Info_struct PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src/appdev_support" )
-#target_include_directories( Memorable_arena PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src/appdev_support" )
-#target_include_directories( packer PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src/appdev_support" )
 
 target_include_directories( Memorable_arena PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src/memorable_arena" )
-#target_include_directories( carbonara PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src/memorable_arena" )
-#target_include_directories( Info_struct PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src/memorable_arena" )
 
 target_include_directories( Info_struct PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src/info_struct" )
 target_include_directories( Memorable_arena PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src/info_struct" )
-#target_include_directories( carbonara PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src/info_struct" )
-#target_include_directories( tester PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src/info_struct" )
-#target_include_directories( App-dev_support PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src/info_struct" )
 
 target_include_directories( Sorter PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src/sorter" )
-#target_include_directories( carbonara PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src/sorter" )
-#target_include_directories( tester PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src/sorter" )
-#target_include_directories( packer PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src/sorter" )
-#target_include_directories( Info_struct PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src/sorter" )
 
 #target_include_directories( carbonara PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src/asspacker" )
 
 target_include_directories( Util-hwloc PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/extern/util" )
-#target_include_directories( App-dev_support PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/extern/util" )
 target_include_directories( carbonara PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/extern/util" )
 target_include_directories( Info_struct PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/extern/util" )
 target_include_directories( Memorable_arena PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/extern/util" )
 
 # hwloc includes are now provided via hwloc::hwloc target
-
-##include_directories( "${CMAKE_CURRENT_SOURCE_DIR}/extern/sdl/include" )
-##target_include_directories( carbonara PRIVATE ${SDL3_INCLUDE_DIRS} )
-#target_include_directories( carbonara PRIVATE SDL3::Headers )
 
 #if( CARBONARA_TARGET_PLATFORM STREQUAL "WIN32" )  # win32 support is not implemented
 ##elseif( CARBONARA_TARGET_PLATFORM STREQUAL "XCB" )
@@ -571,10 +525,9 @@ target_link_libraries( carbonara PRIVATE Err_msg )
 target_link_libraries( carbonara PRIVATE Info_struct )
 target_link_libraries( carbonara PRIVATE Util-c_lang )
 target_link_libraries( carbonara PRIVATE ${CMAKE_DL_LIBS} )  # The libraries linked this way = {volk}
-#target_link_libraries( carbonara PRIVATE joltc )
 
-#target_link_libraries( carbonara PRIVATE ${SDL2_LIBRARIES} )
-target_link_libraries( carbonara PUBLIC SDL3::SDL3-static )  # NOTE Link to SDL3::SDL3 regardless of if it's static or dynamic, it should map it to the right one for you
+target_link_libraries( carbonara PUBLIC SDL3::SDL3-static )  # NOTE Link to SDL3::SDL3 regardless
+                  # of whether it's static or dynamic, This should map it to the right one for you
 
 target_link_libraries( tester PRIVATE App-dev_support )
 target_link_libraries( tester PRIVATE Sorter )
@@ -668,7 +621,10 @@ add_custom_target(spirv_shaders ALL DEPENDS ${SPIRV_OUTPUTS})
 add_dependencies(carbonara spirv_shaders)
 
 
-# NOTE XXX You can use this block to check the assembly code of target_exec
+
+##-------------------------------------------------------------------------------------------------
+# You can use this block to check the assembly code of target_exec
+##-------------------------------------------------------------------------------------------------
 #set( C_FLAGS ${CMAKE_C_FLAGS} )
 #if( CMAKE_BUILD_TYPE MATCHES Release)
 #  string( APPEND C_FLAGS " ${CMAKE_C_FLAGS_RELEASE}" )
