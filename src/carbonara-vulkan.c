@@ -28,9 +28,8 @@
 #include "carbonara-mm.h"
 #include "carbonara-singleton.h"
 #include "carbonara-graphics.h"
-#include "carbonara-asset.h"
 #include "util-c_lang-basic.h"
-//#include "vulkan_functions.h"
+//#include "vulkan_functions.h"  // Just use volk
 #include "memorable_arena.h"
 #include "err_msg.h"
 #include "util-spall.h"

@@ -6,7 +6,6 @@
 #include <stdint.h>
 #include <stddef.h>
 #include <vulkan/vulkan_core.h>
-#include <SDL3/SDL_asyncio.h>
 
 #include "util-c_lang-basic.h"
 #include "info_struct.h"
