@@ -397,11 +397,13 @@ uint64_t init_util_c_lang(void);
 
 
 //-------------------------------------------------------------------------------------------------
+//NOLINTBEGIN(performance-no-int-to-ptr)
 #define _align_ptr_to_power_of_two(ptr, power_of_two)                   \
 {                                                                       \
   uintptr_t n_to_align = (uintptr_t)(ptr);                              \
   (ptr) = (void*)_align_to_power_of_two( n_to_align, (power_of_two) );  \
 }
+//NOLINTEND(performance-no-int-to-ptr)
 
 //-------------------------------------------------------------------------------------------------
 #define _align_ptr(ptr)                                       \
