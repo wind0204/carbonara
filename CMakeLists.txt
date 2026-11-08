@@ -1,17 +1,6 @@
 cmake_minimum_required( VERSION 3.25 )
 project( Carbonara )
 
-
-##-------------------------------------------------------------------------------------------------
-# Options
-##-------------------------------------------------------------------------------------------------
-set( CARA_ASAN_DEBUG_BUILD OFF )  # A top-level user can set this variable
-
-if ( NOT DEFINED CARA_ASAN_DEBUG_BUILD )
-  set( CARA_ASAN_DEBUG_BUILD ON )  # The default value of CARA_ASAN_DEBUG_BUILD is defined here
-endif()
-option( CARA_ASAN_DEBUG_BUILD "Use the address sanitizer in Debug build" CARA_ASAN_DEBUG_BUILD )
-
 # Set the output directory for built objects.
 # This makes sure that the dynamic library goes into the build directory automatically.
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/$<CONFIGURATION>")
@@ -19,6 +8,16 @@ set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/$<CONFIGURATION>")
 
 # Prevent installing to system directories.
 set( CMAKE_INSTALL_PREFIX "${CMAKE_BINARY_DIR}/$<CONFIGURATION>" CACHE INTERNAL "" )
+
+# The directory where dynamic dependencies are placed in
+set(DEPS_DIR "${CMAKE_BINARY_DIR}/deps/")
+
+
+##-------------------------------------------------------------------------------------------------
+# Options
+##-------------------------------------------------------------------------------------------------
+option( CARA_ASAN_DEBUG_BUILD "Use the address sanitizer in Debug build" OFF )
+option( LINK_SDL_STATIC_LIB "Disable the dynamic API of SDL and link to the static library" OFF )
 
 
 
@@ -38,14 +37,14 @@ endif()
 set(BUILD_SHARED_LIBS OFF CACHE INTERNAL "build static libraries" FORCE)
 
 # Use the CMake build from hwloc-linux-cmake
-add_subdirectory(extern/hwloc-linux-cmake ${CMAKE_BINARY_DIR}/hwloc EXCLUDE_FROM_ALL)
+add_subdirectory(extern/hwloc-linux-cmake ${DEPS_DIR}/hwloc EXCLUDE_FROM_ALL)
 
 # Create imported target for hwloc
 # Put build directory FIRST so generated hwloc/autogen/config.h is found
 add_library(hwloc::hwloc STATIC IMPORTED GLOBAL)
 set_target_properties(hwloc::hwloc PROPERTIES
-  IMPORTED_LOCATION "${CMAKE_BINARY_DIR}/hwloc/libhwloc.a"
-  INTERFACE_INCLUDE_DIRECTORIES "${CMAKE_BINARY_DIR}/hwloc/include;${CMAKE_CURRENT_SOURCE_DIR}/extern/hwloc/include"
+  IMPORTED_LOCATION "${DEPS_DIR}/hwloc/libhwloc.a"
+  INTERFACE_INCLUDE_DIRECTORIES "${DEPS_DIR}/hwloc/include;${CMAKE_CURRENT_SOURCE_DIR}/extern/hwloc/include"
 )
 add_dependencies(hwloc::hwloc hwloc)
 
@@ -60,7 +59,9 @@ option( USE_SDL_IN_EXTERN "Use SDL in extern directory" ON )
 set( BUILD_SHARED_LIBS OFF CACHE INTERNAL "" )
 set( SDL_SHARED OFF CACHE INTERNAL "" FORCE )
 set( SDL_STATIC ON CACHE INTERNAL "" FORCE )
-add_definitions( -DSDL_DYNAMIC_API=0 )
+if ( LINK_SDL_STATIC_LIB )
+  add_definitions( -DSDL_DYNAMIC_API=0 )
+endif()
 
 #set(SDL_REVISION "My Vendored SDL" CACHE INTERNAL "")  # This prevents re-configures every time a git change occurs: https://github.com/libsdl-org/SDL/issues/9998
 #set( SDL_X11_XTEST OFF CACHE INTERNAL "" )  # You might have to deal with unimproved mouse warping by setting it off
@@ -279,7 +280,7 @@ configure_file(
 
 
 
-add_executable( packer
+add_executable( packer EXCLUDE_FROM_ALL
   src/asspacker/packer.c
   )
   target_compile_options( packer PRIVATE -Weverything -Werror -Wno-c++98-compat -Wno-pre-c11-compat -Wno-unused-macros -Wno-gnu-alignof-expression -Wno-error=unused-function -Wno-double-promotion -Wno-logical-op-parentheses -Wno-unsafe-buffer-usage -Wno-extra-semi-stmt -Wno-shorten-64-to-32 -Wno-sign-conversion -Wno-vla -Wno-switch-enum -Wno-cast-qual -Wno-implicit-int-enum-cast -Wno-implicit-void-ptr-cast -Wno-implicit-int-conversion -Wno-declaration-after-statement -Wno-gnu-pointer-arith -Wno-keyword-macro -Wno-padded -Wno-pre-c23-compat -Wno-switch-default -Wno-jump-misses-init -Wno-disabled-macro-expansion $<$<CONFIG:Release>:-Wno-error=unused-variable -Wno-error=unused-but-set-variable -Wno-error=unused-parameter> ${C_FLAGS_IN_HOUSE} )
@@ -315,7 +316,7 @@ if( CMAKE_BUILD_TYPE MATCHES Debug AND CARA_ASAN_DEBUG_BUILD )
   add_definitions( -DLLVM_ENABLE_PROJECTS="clang" -DLLVM_ENABLE_RUNTIMES="compiler-rt" )
 endif()
 
-add_executable( tester
+add_executable( tester EXCLUDE_FROM_ALL
   src/tester.c
   )
   target_compile_options( tester PRIVATE -Weverything -Werror -Wno-c++98-compat -Wno-pre-c11-compat -Wno-unused-macros -Wno-gnu-alignof-expression -Wno-error=unused-function -Wno-double-promotion -Wno-logical-op-parentheses -Wno-unsafe-buffer-usage -Wno-extra-semi-stmt -Wno-shorten-64-to-32 -Wno-sign-conversion -Wno-vla -Wno-switch-enum -Wno-cast-qual -Wno-implicit-int-enum-cast -Wno-implicit-void-ptr-cast -Wno-implicit-int-conversion -Wno-declaration-after-statement -Wno-gnu-pointer-arith -Wno-keyword-macro -Wno-padded -Wno-pre-c23-compat -Wno-switch-default -Wno-jump-misses-init -Wno-disabled-macro-expansion $<$<CONFIG:Release>:-Wno-error=unused-variable -Wno-error=unused-but-set-variable -Wno-error=unused-parameter> ${C_FLAGS_IN_HOUSE} )
@@ -430,9 +431,29 @@ endif()
 
 #find_package(SDL2 REQUIRED)
 
-add_library( Snappy STATIC
-  extern/snappy-c/snappy.c )
-#target_compile_options( Snappy PRIVATE -Werror -Wno-c++98-compat -Wno-pre-c11-compat -Wno-unused-macros -Wno-gnu-alignof-expression -Wno-error=unused-function -Wno-double-promotion -Wno-logical-op-parentheses -Wno-unsafe-buffer-usage -Wno-extra-semi-stmt -Wno-shorten-64-to-32 -Wno-sign-conversion -Wno-vla -Wno-switch-enum -Wno-cast-qual -Wno-implicit-int-conversion -Wno-declaration-after-statement -Wno-gnu-pointer-arith -Wno-keyword-macro -Wno-padded -Wno-reserved-macro-identifier -Wno-language-extension-token -Wno-gnu-statement-expression-from-macro-expansion -Wno-cast-qual -Wno-cast-align -Wno-noshorten-64-to-32 -Wno-reserved-macro-identifier )
+# Snappy is fetched at build time when packer is actually built.
+# Build snappy-c as a static library using add_custom_command for proper output tracking
+set(SNAPPY_C_DIR "${DEPS_DIR}/snappy-c")
+add_custom_command(
+  OUTPUT "${SNAPPY_C_DIR}/libsnappy-c.a"
+  COMMAND ${CMAKE_COMMAND} -E make_directory "${DEPS_DIR}"
+  COMMAND ${CMAKE_COMMAND} -E env sh -c \"ls "${SNAPPY_C_DIR}/snappy.c"\" || ${CMAKE_COMMAND} -E rm -r "${SNAPPY_C_DIR}" && ${CMAKE_COMMAND} -E env git clone --depth 1 --branch master https://github.com/andikleen/snappy-c.git "${SNAPPY_C_DIR}"
+  COMMAND ${CMAKE_C_COMPILER} -c "${SNAPPY_C_DIR}/snappy.c" -o "${SNAPPY_C_DIR}/snappy.c.o"
+  COMMAND ${CMAKE_AR} rcs "${SNAPPY_C_DIR}/libsnappy-c.a" "${SNAPPY_C_DIR}/snappy.c.o"
+  WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"
+  COMMENT "Fetching and building snappy-c static library"
+)
+
+# Create a target that depends on the custom command output
+add_custom_target(build_snappy_c DEPENDS "${SNAPPY_C_DIR}/libsnappy-c.a")
+
+add_library(Snappy STATIC IMPORTED GLOBAL)
+set_target_properties(Snappy PROPERTIES
+  IMPORTED_LOCATION "${SNAPPY_C_DIR}/libsnappy-c.a"
+)
+
+# Set snappy include directory on packer target at build time
+target_include_directories(packer PRIVATE "${SNAPPY_C_DIR}")
 
 # You can find carbonara-config.h here
 include_directories( "${PROJECT_BINARY_DIR}/src" )
@@ -506,8 +527,6 @@ target_include_directories( Memorable_arena PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}
 ##target_include_directories( carbonara PRIVATE ${SDL3_INCLUDE_DIRS} )
 #target_include_directories( carbonara PRIVATE SDL3::Headers )
 
-target_include_directories( Snappy PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/extern/snappy-c" )
-
 #if( CARBONARA_TARGET_PLATFORM STREQUAL "WIN32" )  # win32 support is not implemented
 ##elseif( CARBONARA_TARGET_PLATFORM STREQUAL "XCB" )
 ##  target_sources( App-dev_support PRIVATE ${XCB_INCLUDE_DIRS} )
@@ -567,6 +586,7 @@ target_link_libraries( packer PRIVATE Sorter )
 target_link_libraries( packer PRIVATE Util-c_lang )
 target_link_libraries( packer PRIVATE App-dev_support )
 target_link_libraries( packer PRIVATE Info_struct )
+target_link_libraries( packer PRIVATE Snappy )
 target_link_libraries( packer PRIVATE m )
 
 target_link_libraries( Info_struct PRIVATE Sorter )

@@ -2,9 +2,6 @@ spirv/
 build-*/
 build/
 extern/SDL
-extern/hwloc
-extern/simde
-extern/snappy-c
 assets/
 
 *.com

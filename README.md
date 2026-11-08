@@ -29,12 +29,14 @@ And I've recently picked it up again.
 
 # Build Instructions
 ## Prepare SDL3
-- clone the [git repo](https://github.com/libsdl-org/SDL) and place it in `extern/SDL`
-- install the development headers of liburing (e.g. liburing-dev on Ubuntu)
+- Clone the [git repo](https://github.com/libsdl-org/SDL) and place it in `extern/SDL`
+- You can link to the static library of SDL by setting `LINK_SDL_STATIC_LIB` on at the cmake configuration time, and you also have to comment out the #error statement in `extern/SDL/src/dynapi/SDL_dynapi.h` which is supposed to make you think twice on the decision
+- Install the development headers of liburing (e.g. liburing-dev on Ubuntu)
 
-## Prepare hwloc
-- clone the [git repo](https://github.com/open-mpi/hwloc) and place it in `extern/hwloc`
-- check out `v2.15` tag in the git repo
+## Initialize submodules once after cloning the repo
+```sh
+git submodule update --init --recursive
+```
 
 ## Prepare dxc and volk
 - You need dxc for shader compilation and volk library that carbonara utilizes for Vulkan function calls.
@@ -42,7 +44,7 @@ And I've recently picked it up again.
 
 ## Configure cmake builds for debugging and releasing
 ```sh
-CC=clang-21 cmake -B build-Debug -DCMAKE_BUILD_TYPE=Debug -G Ninja
+CC=clang-21 cmake -B build-Debug -DLINK_SDL_STATIC_LIB=1 -DCMAKE_BUILD_TYPE=Debug -G Ninja
 CC=clang-21 cmake -B build-RelWithDebInfo -DCMAKE_BUILD_TYPE=RelWithDebInfo -G Ninja
 CC=clang-21 cmake -B build-ship_it -DCMAKE_BUILD_TYPE=Release -G Ninja
 ```

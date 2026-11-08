@@ -1,0 +1,6 @@
+[submodule "extern/hwloc"]
+	path = extern/hwloc
+	url = https://github.com/open-mpi/hwloc.git
+[submodule "extern/simde"]
+	path = extern/simde
+	url = https://github.com/simd-everywhere/simde.git
