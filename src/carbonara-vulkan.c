@@ -1997,7 +1997,7 @@ end_of_nested_loop:
     arr_swapchain_img_views[sci_idx] = VK_NULL_HANDLE;
   }
 
-  SPALL_BEGIN("vk_create_swapchain_ivs");
+  TRACE_BEGIN("vk_create_swapchain_ivs");
   for ( unsigned int sci_idx = 0; sci_idx < nr_swapchain_imgs; sci_idx++ ) {
     iv_create_info.image = arr_swapchain_images[sci_idx];
     result = vkCreateImageView( new_log_dev, &iv_create_info, &vk_alloc_callbacks,
@@ -2008,7 +2008,7 @@ end_of_nested_loop:
       goto error_after_swapchain_images;
     }
   }
-  SPALL_END();
+  TRACE_END();
 
 
 
@@ -3481,12 +3481,12 @@ static enum err_msg create_2nd_renderpass( struct cara_vk_renderer * renderer )
     .correlatedViewMaskCount = 0,
     .pCorrelatedViewMasks = nullptr,
   };
-  SPALL_BEGIN("vkCreateRenderPass2");
+  TRACE_BEGIN("vkCreateRenderPass2");
   VkResult result;
   result = vkCreateRenderPass2( renderer->log_dev, &rp_create_info,
       &vk_alloc_callbacks,
       &renderer->arr_renderpasses[1] );
-  SPALL_END();
+  TRACE_END();
   if ( result != VK_SUCCESS ) {
     fprintf( stderr, "[Carbonara] Error occurred creating a render pass. '%s'\n",
         string_VkResult(result) );
@@ -3673,13 +3673,13 @@ enum err_msg create_renderpass_and_framebuffer_first_time( struct cara_vk_render
     .correlatedViewMaskCount = 0,
     .pCorrelatedViewMasks = nullptr,
   };
-  SPALL_BEGIN("vkCreateRenderPass2");
+  TRACE_BEGIN("vkCreateRenderPass2");
   VkResult result;
   result = vkCreateRenderPass2( renderer->log_dev, &rp_create_info,
       &vk_alloc_callbacks,
       //nullptr,
       &renderer->arr_renderpasses[0] );
-  SPALL_END();
+  TRACE_END();
   if ( result != VK_SUCCESS ) {
     fprintf( stderr, "[Carbonara] Error occurred creating a render pass. '%s'\n",
         string_VkResult(result) );
@@ -3768,10 +3768,10 @@ enum err_msg create_renderpass_and_framebuffer_first_time( struct cara_vk_render
     fb_create_info.renderPass = renderer->arr_renderpasses[0];
     fb_atts_create_info.attachmentImageInfoCount = _arr_elem_cnt( fb_att_img_info1 );
     fb_atts_create_info.pAttachmentImageInfos = fb_att_img_info1;
-    SPALL_BEGIN("vkCreateFramebuffer");
+    TRACE_BEGIN("vkCreateFramebuffer");
     result = vkCreateFramebuffer( renderer->log_dev, &fb_create_info, &vk_alloc_callbacks,
         &renderer->arr_framebuffers[fif_idx][0] );
-    SPALL_END();
+    TRACE_END();
     if ( result != VK_SUCCESS ) {
       fprintf( stderr, "[Carbonara] Error occurred in vkCreateFramebuffer. '%s'\n",
           string_VkResult(result) );
@@ -3782,10 +3782,10 @@ enum err_msg create_renderpass_and_framebuffer_first_time( struct cara_vk_render
     fb_create_info.renderPass = renderer->arr_renderpasses[1];
     fb_atts_create_info.attachmentImageInfoCount = _arr_elem_cnt( fb_att_img_info2 );
     fb_atts_create_info.pAttachmentImageInfos = fb_att_img_info2;
-    SPALL_BEGIN("vkCreateFramebuffer");
+    TRACE_BEGIN("vkCreateFramebuffer");
     result = vkCreateFramebuffer( renderer->log_dev, &fb_create_info, &vk_alloc_callbacks,
         &renderer->arr_framebuffers[fif_idx][1] );
-    SPALL_END();
+    TRACE_END();
     if ( result != VK_SUCCESS ) {
       fprintf( stderr, "[Carbonara] Error occurred in vkCreateFramebuffer. '%s'\n",
           string_VkResult(result) );
@@ -3818,10 +3818,10 @@ enum err_msg create_renderpass_and_framebuffer_first_time( struct cara_vk_render
   for ( unsigned int fif_idx = 0; fif_idx < cara_max_nr_fif; fif_idx++ ) {
     img_create_info.format = renderer->zbuf_fmt;
     img_create_info.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
-    SPALL_BEGIN("vkCreateImage");
+    TRACE_BEGIN("vkCreateImage");
     result = vkCreateImage( renderer->log_dev, &img_create_info, &vk_alloc_callbacks,
         &renderer->zbuf_n_cbuf[fif_idx][fb_zbuf] );
-    SPALL_END();
+    TRACE_END();
     if ( result != VK_SUCCESS ) {
       fprintf( stderr, "[Carbonara] Error occurred in vkCreateImage. '%s'\n",
           string_VkResult(result) );
@@ -3830,10 +3830,10 @@ enum err_msg create_renderpass_and_framebuffer_first_time( struct cara_vk_render
     img_create_info.format = VK_FORMAT_R8G8B8A8_UNORM;
     img_create_info.usage =
       VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
-    SPALL_BEGIN("vkCreateImage");
+    TRACE_BEGIN("vkCreateImage");
     result = vkCreateImage( renderer->log_dev, &img_create_info, &vk_alloc_callbacks,
         &renderer->zbuf_n_cbuf[fif_idx][fb_cbuf] );
-    SPALL_END();
+    TRACE_END();
     if ( result != VK_SUCCESS ) {
       fprintf( stderr, "[Carbonara] Error occurred in vkCreateImage. '%s'\n",
           string_VkResult(result) );
@@ -3846,10 +3846,10 @@ enum err_msg create_renderpass_and_framebuffer_first_time( struct cara_vk_render
     for ( unsigned int fb_idx = fb_zbuf; fb_idx <= fb_cbuf; fb_idx++ ) {
       // Obtain the requirements
       VkMemoryRequirements req;
-      SPALL_BEGIN("vkGetImageMemoryRequirements");
+      TRACE_BEGIN("vkGetImageMemoryRequirements");
       vkGetImageMemoryRequirements( renderer->log_dev,
           renderer->zbuf_n_cbuf[fif_idx][fb_idx], &req );
-      SPALL_END();
+      TRACE_END();
 
       // Choose the best memory type
       VkMemoryPropertyFlags preferred_props, required_props, tolerable_props;
@@ -3898,10 +3898,10 @@ enum err_msg create_renderpass_and_framebuffer_first_time( struct cara_vk_render
     iv_create_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
     iv_create_info.format = renderer->zbuf_fmt;
     iv_create_info.image = renderer->zbuf_n_cbuf[fif_idx][fb_zbuf];
-    SPALL_BEGIN("vkCreateImageView");
+    TRACE_BEGIN("vkCreateImageView");
     result = vkCreateImageView( renderer->log_dev, &iv_create_info, &vk_alloc_callbacks,
         &renderer->zbuf_n_cbuf_iv[fif_idx][fb_zbuf] );
-    SPALL_END();
+    TRACE_END();
     if ( result != VK_SUCCESS ) {
       fprintf( stderr, "[Carbonara] Error occurred in vkCreateImageView. '%s'\n",
           string_VkResult(result) );
@@ -3910,10 +3910,10 @@ enum err_msg create_renderpass_and_framebuffer_first_time( struct cara_vk_render
     iv_create_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
     iv_create_info.format = VK_FORMAT_R8G8B8A8_UNORM;
     iv_create_info.image = renderer->zbuf_n_cbuf[fif_idx][fb_cbuf];
-    SPALL_BEGIN("vkCreateImageView");
+    TRACE_BEGIN("vkCreateImageView");
     result = vkCreateImageView( renderer->log_dev, &iv_create_info, &vk_alloc_callbacks,
         &renderer->zbuf_n_cbuf_iv[fif_idx][fb_cbuf] );
-    SPALL_END();
+    TRACE_END();
     if ( result != VK_SUCCESS ) {
       fprintf( stderr, "[Carbonara] Error occurred in vkCreateImageView. '%s'\n",
           string_VkResult(result) );
@@ -4106,10 +4106,10 @@ enum err_msg expand_swapchain_and_framebuffer(
     fb_create_info.renderPass = renderer->arr_renderpasses[0];
     fb_atts_create_info.attachmentImageInfoCount = _arr_elem_cnt( fb_att_img_info1 );
     fb_atts_create_info.pAttachmentImageInfos = fb_att_img_info1;
-    SPALL_BEGIN("vkCreateFramebuffer");
+    TRACE_BEGIN("vkCreateFramebuffer");
     result = vkCreateFramebuffer( renderer->log_dev, &fb_create_info, &vk_alloc_callbacks,
         &new_framebuffers[fif_idx][0] );
-    SPALL_END();
+    TRACE_END();
     if ( result != VK_SUCCESS ) {
       fprintf( stderr, "[Carbonara] Error occurred in vkCreateFramebuffer. '%s'\n",
           string_VkResult(result) );
@@ -4120,10 +4120,10 @@ enum err_msg expand_swapchain_and_framebuffer(
     fb_create_info.renderPass = renderer->arr_renderpasses[1];
     fb_atts_create_info.attachmentImageInfoCount = _arr_elem_cnt( fb_att_img_info2 );
     fb_atts_create_info.pAttachmentImageInfos = fb_att_img_info2;
-    SPALL_BEGIN("vkCreateFramebuffer");
+    TRACE_BEGIN("vkCreateFramebuffer");
     result = vkCreateFramebuffer( renderer->log_dev, &fb_create_info, &vk_alloc_callbacks,
         &new_framebuffers[fif_idx][1] );
-    SPALL_END();
+    TRACE_END();
     if ( result != VK_SUCCESS ) {
       fprintf( stderr, "[Carbonara] Error occurred in vkCreateFramebuffer. '%s'\n",
           string_VkResult(result) );
@@ -4156,10 +4156,10 @@ enum err_msg expand_swapchain_and_framebuffer(
   for ( unsigned int fif_idx = 0; fif_idx < cara_max_nr_fif; fif_idx++ ) {
     img_create_info.format = renderer->zbuf_fmt;
     img_create_info.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
-    SPALL_BEGIN("vkCreateImage");
+    TRACE_BEGIN("vkCreateImage");
     result = vkCreateImage( renderer->log_dev,
         &img_create_info, &vk_alloc_callbacks, &arr_new_zbuf_n_cbuf_img[fif_idx][fb_zbuf] );
-    SPALL_END();
+    TRACE_END();
     if ( result != VK_SUCCESS ) {
       fprintf( stderr, "[Carbonara] Error occurred in vkCreateImage. '%s'\n",
           string_VkResult(result) );
@@ -4168,10 +4168,10 @@ enum err_msg expand_swapchain_and_framebuffer(
     img_create_info.format = VK_FORMAT_R8G8B8A8_UNORM;
     img_create_info.usage =
       VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
-    SPALL_BEGIN("vkCreateImage");
+    TRACE_BEGIN("vkCreateImage");
     result = vkCreateImage( renderer->log_dev,
         &img_create_info, &vk_alloc_callbacks, &arr_new_zbuf_n_cbuf_img[fif_idx][fb_cbuf] );
-    SPALL_END();
+    TRACE_END();
     if ( result != VK_SUCCESS ) {
       fprintf( stderr, "[Carbonara] Error occurred in vkCreateImage. '%s'\n",
           string_VkResult(result) );
@@ -4235,10 +4235,10 @@ enum err_msg expand_swapchain_and_framebuffer(
     iv_create_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
     iv_create_info.format = renderer->zbuf_fmt;
     iv_create_info.image = arr_new_zbuf_n_cbuf_img[fif_idx][fb_zbuf];
-    SPALL_BEGIN("vkCreateImageView");
+    TRACE_BEGIN("vkCreateImageView");
     result = vkCreateImageView( renderer->log_dev,
         &iv_create_info, &vk_alloc_callbacks, &arr_new_zbuf_n_cbuf_iv[fif_idx][fb_zbuf] );
-    SPALL_END();
+    TRACE_END();
     if ( result != VK_SUCCESS ) {
       fprintf( stderr, "[Carbonara] Error occurred in vkCreateImageView. '%s'\n",
           string_VkResult(result) );
@@ -4247,10 +4247,10 @@ enum err_msg expand_swapchain_and_framebuffer(
     iv_create_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
     iv_create_info.format = VK_FORMAT_R8G8B8A8_UNORM;
     iv_create_info.image = arr_new_zbuf_n_cbuf_img[fif_idx][fb_cbuf];
-    SPALL_BEGIN("vkCreateImageView");
+    TRACE_BEGIN("vkCreateImageView");
     result = vkCreateImageView( renderer->log_dev,
         &iv_create_info, &vk_alloc_callbacks, &arr_new_zbuf_n_cbuf_iv[fif_idx][fb_cbuf] );
-    SPALL_END();
+    TRACE_END();
     if ( result != VK_SUCCESS ) {
       fprintf( stderr, "[Carbonara] Error occurred in vkCreateImageView. '%s'\n",
           string_VkResult(result) );
@@ -4299,13 +4299,13 @@ enum err_msg expand_swapchain_and_framebuffer(
     .oldSwapchain = old_swapchain,
   };
 
-  SPALL_BEGIN("vkCreateSwapchainKHR");
+  TRACE_BEGIN("vkCreateSwapchainKHR");
   result = vkCreateSwapchainKHR(
       renderer->log_dev,
       &swapchain_create_info,
       &vk_alloc_callbacks,
       &swapchain );
-  SPALL_END();
+  TRACE_END();
   if ( result != VK_SUCCESS || swapchain == VK_NULL_HANDLE ) {
     fprintf( stderr, "[Vulkan] Could not create a swapchain.\n" );
     goto stop_everything_after_failure;
@@ -4339,7 +4339,7 @@ enum err_msg expand_swapchain_and_framebuffer(
     arr_swapchain_img_views[i] = VK_NULL_HANDLE;
   }
 
-  SPALL_BEGIN("vk_create_swapchain_ivs");
+  TRACE_BEGIN("vk_create_swapchain_ivs");
   for ( unsigned int i = 0; i < nr_swapchain_imgs; i++ ) {
     iv_create_info.image = arr_swapchain_images[i];
     result = vkCreateImageView( renderer->log_dev, &iv_create_info, &vk_alloc_callbacks,
@@ -4350,7 +4350,7 @@ enum err_msg expand_swapchain_and_framebuffer(
       goto stop_everything_after_failure;
     }
   }
-  SPALL_END();
+  TRACE_END();
 
 
 

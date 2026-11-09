@@ -376,7 +376,7 @@ enum err_msg ma_bind_img_to_malloc(
     struct vk_mbind_info * p_mbind_info
     )
 {
-  SPALL_BEGIN("bind_img_to_m");
+  TRACE_BEGIN("bind_img_to_m");
 
   // Release every memory allocation
   VkDeviceSize size_to_rqst = _align_to_power_of_two( req_size, p_vmm->buf_granularity );
@@ -403,7 +403,7 @@ enum err_msg ma_bind_img_to_malloc(
             true, 0 );
         if ( err ) {
           fprintf( stderr, "Error occured in infos_multi_al_grow. (%s)\n", arr_emsg_txt[err] );
-          SPALL_END();
+          TRACE_END();
           return err;
         }
         err = infos_multi_al_grow( &p_vmm->page_mgrs, userdata, local_malloc,
@@ -411,7 +411,7 @@ enum err_msg ma_bind_img_to_malloc(
             true, 0 );
         if ( err ) {
           fprintf( stderr, "Error occured in infos_multi_al_grow. (%s)\n", arr_emsg_txt[err] );
-          SPALL_END();
+          TRACE_END();
           return err;
         }
       }
@@ -428,10 +428,10 @@ enum err_msg ma_bind_img_to_malloc(
           buf_malloc_info.pNext = nullptr;
           buf_malloc_info.allocationSize = len_chunk_of_pages;
           buf_malloc_info.memoryTypeIndex = type_idx;
-          SPALL_BEGIN("alloc_mem");
+          TRACE_BEGIN("alloc_mem");
           result = vkAllocateMemory( log_dev,
               &buf_malloc_info, &vk_alloc_callbacks, p_malloc );
-          SPALL_END();
+          TRACE_END();
           if ( result != VK_SUCCESS ) {
             fprintf( stderr, "[Carbonara] vkAllocateMemory failed. "
                 "'%s'\n", string_VkResult(result) );
@@ -439,7 +439,7 @@ enum err_msg ma_bind_img_to_malloc(
               case VK_ERROR_OUT_OF_DEVICE_MEMORY:
                 [[fallthrough]];
               case VK_ERROR_OUT_OF_HOST_MEMORY:
-                SPALL_END();
+                TRACE_END();
                 return emsg_out_of_memory;
 
               case VK_ERROR_INVALID_EXTERNAL_HANDLE:
@@ -447,11 +447,11 @@ enum err_msg ma_bind_img_to_malloc(
               case VK_ERROR_INVALID_OPAQUE_CAPTURE_ADDRESS_KHR:
                 [[fallthrough]];
               case VK_ERROR_VALIDATION_FAILED:
-                SPALL_END();
+                TRACE_END();
                 return emsg_invalid_request;
 
               default:
-                SPALL_END();
+                TRACE_END();
                 return emsg_unknown;
             }
           }  // if ( result != VK_SUCCESS )
@@ -461,7 +461,7 @@ enum err_msg ma_bind_img_to_malloc(
               userdata, local_malloc );
           if ( err ) {
             fprintf( stderr, "Error occured in infos_pm_init_prealloc. (%s)\n", arr_emsg_txt[err] );
-            SPALL_END();
+            TRACE_END();
             return err;
           }
         }  // if ( *p_malloc == 0 )
@@ -472,7 +472,7 @@ enum err_msg ma_bind_img_to_malloc(
               userdata, local_malloc );
           if ( err ) {
             fprintf( stderr, "Error occured in infos_pm_init_prealloc. (%s)\n", arr_emsg_txt[err] );
-            SPALL_END();
+            TRACE_END();
             return err;
           }
         }
@@ -488,9 +488,9 @@ enum err_msg ma_bind_img_to_malloc(
         p_vmm->arr_usages[heap_idx] += _align_to_power_of_two( size_to_rqst, req_alignment );
 
         // Bind the image to *p_malloc
-        SPALL_BEGIN("bind_img_mem");
+        TRACE_BEGIN("bind_img_mem");
         result = vkBindImageMemory( log_dev, vk_img, *p_malloc, new_rent.start );
-        SPALL_END();
+        TRACE_END();
         if( result != VK_SUCCESS ) {
           fprintf( stderr, "[Carbonara] Could not bind image to malloc. "
               "'%s'\n", string_VkResult(result) );
@@ -505,20 +505,20 @@ enum err_msg ma_bind_img_to_malloc(
             case VK_ERROR_OUT_OF_DEVICE_MEMORY:
               [[fallthrough]];
             case VK_ERROR_OUT_OF_HOST_MEMORY:
-              SPALL_END();
+              TRACE_END();
               return emsg_out_of_memory;
             case VK_ERROR_VALIDATION_FAILED:
-              SPALL_END();
+              TRACE_END();
               return emsg_invalid_request;
             default:
-              SPALL_END();
+              TRACE_END();
               return emsg_unknown;
           }
         }  // if( result != VK_SUCCESS )
 
         p_mbind_info->range = new_rent;
         p_mbind_info->malloc = *p_malloc;
-        SPALL_END();
+        TRACE_END();
         return emsg_no_error;
       }  // for ( uint_fast32_t malloc_idx = 0; malloc_idx < nr_elems_in_block; malloc_idx++ )
 
@@ -532,7 +532,7 @@ enum err_msg ma_bind_img_to_malloc(
           true, 0 );
       if ( err ) {
         fprintf( stderr, "Error occured in infos_multi_al_grow. (%s)\n", arr_emsg_txt[err] );
-        SPALL_END();
+        TRACE_END();
         return err;
       }
       err = infos_multi_al_grow( &p_vmm->page_mgrs, userdata, local_malloc,
@@ -540,7 +540,7 @@ enum err_msg ma_bind_img_to_malloc(
           true, 0 );
       if ( err ) {
         fprintf( stderr, "Error occured in infos_multi_al_grow. (%s)\n", arr_emsg_txt[err] );
-        SPALL_END();
+        TRACE_END();
         return err;
       }
     } else if ( !p_node->next ) {
@@ -550,7 +550,7 @@ enum err_msg ma_bind_img_to_malloc(
           true, 0 );
       if ( err ) {
         fprintf( stderr, "Error occured in infos_multi_al_grow. (%s)\n", arr_emsg_txt[err] );
-        SPALL_END();
+        TRACE_END();
         return err;
       }
     }
@@ -574,7 +574,7 @@ enum err_msg ma_bind_buf_to_malloc(
     struct vk_mbind_info * p_mbind_info
     )
 {
-  SPALL_BEGIN("bind_buf_to_m");
+  TRACE_BEGIN("bind_buf_to_m");
 
   // Release every memory allocation
   VkDeviceSize size_to_rqst = _align_to_power_of_two( req_size, p_vmm->buf_granularity );
@@ -601,7 +601,7 @@ enum err_msg ma_bind_buf_to_malloc(
             true, 0 );
         if ( err ) {
           fprintf( stderr, "Error occured in infos_multi_al_grow. (%s)\n", arr_emsg_txt[err] );
-          SPALL_END();
+          TRACE_END();
           return err;
         }
         err = infos_multi_al_grow( &p_vmm->page_mgrs, userdata, local_malloc,
@@ -609,7 +609,7 @@ enum err_msg ma_bind_buf_to_malloc(
             true, 0 );
         if ( err ) {
           fprintf( stderr, "Error occured in infos_multi_al_grow. (%s)\n", arr_emsg_txt[err] );
-          SPALL_END();
+          TRACE_END();
           return err;
         }
       }
@@ -626,10 +626,10 @@ enum err_msg ma_bind_buf_to_malloc(
           buf_malloc_info.pNext = nullptr;
           buf_malloc_info.allocationSize = len_chunk_of_pages;
           buf_malloc_info.memoryTypeIndex = type_idx;
-          SPALL_BEGIN("alloc_mem");
+          TRACE_BEGIN("alloc_mem");
           result = vkAllocateMemory( log_dev,
               &buf_malloc_info, &vk_alloc_callbacks, p_malloc );
-          SPALL_END();
+          TRACE_END();
           if ( result != VK_SUCCESS ) {
             fprintf( stderr, "[Carbonara] vkAllocateMemory failed. "
                 "'%s'\n", string_VkResult(result) );
@@ -637,7 +637,7 @@ enum err_msg ma_bind_buf_to_malloc(
               case VK_ERROR_OUT_OF_DEVICE_MEMORY:
                 [[fallthrough]];
               case VK_ERROR_OUT_OF_HOST_MEMORY:
-                SPALL_END();
+                TRACE_END();
                 return emsg_out_of_memory;
 
               case VK_ERROR_INVALID_EXTERNAL_HANDLE:
@@ -645,11 +645,11 @@ enum err_msg ma_bind_buf_to_malloc(
               case VK_ERROR_INVALID_OPAQUE_CAPTURE_ADDRESS_KHR:
                 [[fallthrough]];
               case VK_ERROR_VALIDATION_FAILED:
-                SPALL_END();
+                TRACE_END();
                 return emsg_invalid_request;
 
               default:
-                SPALL_END();
+                TRACE_END();
                 return emsg_unknown;
             }
           }  // if ( result != VK_SUCCESS )
@@ -659,7 +659,7 @@ enum err_msg ma_bind_buf_to_malloc(
               userdata, local_malloc );
           if ( err ) {
             fprintf( stderr, "Error occured in infos_pm_init_prealloc. (%s)\n", arr_emsg_txt[err] );
-            SPALL_END();
+            TRACE_END();
             return err;
           }
         }  // if ( *p_malloc == 0 )
@@ -670,7 +670,7 @@ enum err_msg ma_bind_buf_to_malloc(
               userdata, local_malloc );
           if ( err ) {
             fprintf( stderr, "Error occured in infos_pm_init_prealloc. (%s)\n", arr_emsg_txt[err] );
-            SPALL_END();
+            TRACE_END();
             return err;
           }
         }
@@ -686,9 +686,9 @@ enum err_msg ma_bind_buf_to_malloc(
         p_vmm->arr_usages[heap_idx] += _align_to_power_of_two( size_to_rqst, req_alignment );
 
         // Bind the buffer to *p_malloc
-        SPALL_BEGIN("bind_buf_mem");
+        TRACE_BEGIN("bind_buf_mem");
         result = vkBindBufferMemory( log_dev, vk_buf, *p_malloc, new_rent.start );
-        SPALL_END();
+        TRACE_END();
         if( result != VK_SUCCESS ) {
           fprintf( stderr, "[Carbonara] Could not bind buffer to malloc. "
               "'%s'\n", string_VkResult(result) );
@@ -703,20 +703,20 @@ enum err_msg ma_bind_buf_to_malloc(
             case VK_ERROR_OUT_OF_DEVICE_MEMORY:
               [[fallthrough]];
             case VK_ERROR_OUT_OF_HOST_MEMORY:
-              SPALL_END();
+              TRACE_END();
               return emsg_out_of_memory;
             case VK_ERROR_VALIDATION_FAILED:
-              SPALL_END();
+              TRACE_END();
               return emsg_invalid_request;
             default:
-              SPALL_END();
+              TRACE_END();
               return emsg_unknown;
           }
         }  // if( result != VK_SUCCESS )
 
         p_mbind_info->range = new_rent;
         p_mbind_info->malloc = *p_malloc;
-        SPALL_END();
+        TRACE_END();
         return emsg_no_error;
       }  // for ( uint_fast32_t malloc_idx = 0; malloc_idx < nr_elems_in_block; malloc_idx++ )
 
@@ -730,7 +730,7 @@ enum err_msg ma_bind_buf_to_malloc(
           true, 0 );
       if ( err ) {
         fprintf( stderr, "Error occured in infos_multi_al_grow. (%s)\n", arr_emsg_txt[err] );
-        SPALL_END();
+        TRACE_END();
         return err;
       }
       err = infos_multi_al_grow( &p_vmm->page_mgrs, userdata, local_malloc,
@@ -738,7 +738,7 @@ enum err_msg ma_bind_buf_to_malloc(
           true, 0 );
       if ( err ) {
         fprintf( stderr, "Error occured in infos_multi_al_grow. (%s)\n", arr_emsg_txt[err] );
-        SPALL_END();
+        TRACE_END();
         return err;
       }
     } else if ( !p_node->next ) {
@@ -748,7 +748,7 @@ enum err_msg ma_bind_buf_to_malloc(
           true, 0 );
       if ( err ) {
         fprintf( stderr, "Error occured in infos_multi_al_grow. (%s)\n", arr_emsg_txt[err] );
-        SPALL_END();
+        TRACE_END();
         return err;
       }
     }
@@ -770,7 +770,7 @@ enum err_msg ma_report_vk_malloc_rel(
     struct vk_mbind_info mbind_info
     )
 {
-  SPALL_BEGIN("report_vk_malloc_rel");
+  TRACE_BEGIN("report_vk_malloc_rel");
 
   // Release every memory allocation
   enum err_msg err;
@@ -789,7 +789,7 @@ enum err_msg ma_report_vk_malloc_rel(
         local_block_idx < nr_blocks_in_node;
         local_block_idx++, block_idx++ ) {
       if ( block_idx >= p_vmm->mallocs.arr_nr_active_blocks[local_block_idx] ) {
-        SPALL_END();
+        TRACE_END();
         return emsg_no_such_entry;
       }
       void * p_block = p_node->arr_blocks[local_block_idx];
@@ -804,7 +804,7 @@ enum err_msg ma_report_vk_malloc_rel(
         //      userdata, local_malloc );
         //  if ( err ) {
         //    fprintf( stderr, "Error occured in infos_pm_init_prealloc. (%s)\n", arr_emsg_txt[err] );
-        //    SPALL_END();
+        //    TRACE_END();
         //    return err;
         //  }
         //}
@@ -829,7 +829,7 @@ enum err_msg ma_report_vk_malloc_rel(
           case emsg_out_of_memory:
             [[fallthrough]];
           default:
-            SPALL_END();
+            TRACE_END();
             return err;
         }
 
@@ -839,14 +839,14 @@ enum err_msg ma_report_vk_malloc_rel(
        //     local_block_idx < nr_blocks_in_node; local_block_idx++, block_idx++ )
 
     if ( !p_node->next ) {
-      SPALL_END();
+      TRACE_END();
       return emsg_no_such_entry;
     }
     m_node = m_node->next;
     p_node = p_node->next;
   } while ( p_node );
 
-  SPALL_END();
+  TRACE_END();
   return emsg_no_such_entry;
 
 }
@@ -861,7 +861,7 @@ uint32_t ma_pick_best_mtype(
     VkMemoryPropertyFlags tolerable_props
     )
 {
-  SPALL_BEGIN("pick_best_type");
+  TRACE_BEGIN("pick_best_type");
   uint_fast32_t type_idx;
   // preferred_props + required_props + !tolerable_props
   for ( type_idx = 0; type_idx < p_vmm->type_cnt; type_idx++ ) {
@@ -871,7 +871,7 @@ uint32_t ma_pick_best_mtype(
           !(p_vmm->arr_mem_property_flags[type_idx] & tolerable_props) ) {
         if ( p_vmm->arr_usages[p_vmm->arr_heap_indices[type_idx]] + req->size <=
             p_vmm->arr_sizes[p_vmm->arr_heap_indices[type_idx]] ) {
-          SPALL_END();
+          TRACE_END();
           return type_idx;
         }
       }
@@ -886,7 +886,7 @@ uint32_t ma_pick_best_mtype(
           !(p_vmm->arr_mem_property_flags[type_idx] & tolerable_props) ) {
         if ( p_vmm->arr_usages[p_vmm->arr_heap_indices[type_idx]] + req->size <=
             p_vmm->arr_sizes[p_vmm->arr_heap_indices[type_idx]] ) {
-          SPALL_END();
+          TRACE_END();
           return type_idx;
         }
       }
@@ -901,7 +901,7 @@ uint32_t ma_pick_best_mtype(
           (p_vmm->arr_mem_property_flags[type_idx] & tolerable_props) ) {
         if ( p_vmm->arr_usages[p_vmm->arr_heap_indices[type_idx]] + req->size <=
             p_vmm->arr_sizes[p_vmm->arr_heap_indices[type_idx]] ) {
-          SPALL_END();
+          TRACE_END();
           return type_idx;
         }
       }
@@ -916,14 +916,14 @@ uint32_t ma_pick_best_mtype(
           (p_vmm->arr_mem_property_flags[type_idx] & tolerable_props) ) {
         if ( p_vmm->arr_usages[p_vmm->arr_heap_indices[type_idx]] + req->size <=
             p_vmm->arr_sizes[p_vmm->arr_heap_indices[type_idx]] ) {
-          SPALL_END();
+          TRACE_END();
           return type_idx;
         }
       }
     }
   }
 
-  SPALL_END();
+  TRACE_END();
   assume( false );
   return 0;
 }

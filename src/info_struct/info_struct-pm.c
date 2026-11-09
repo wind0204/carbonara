@@ -26,7 +26,7 @@ enum err_msg infos_pm_init_prealloc(
     void * (*custom_malloc)(void * userdata, size_t alignment, size_t size)
     )
 {
-  SPALL_BEGIN("pm_init");
+  TRACE_BEGIN("pm_init");
   assume( nr_pages >= 2 );
 
   p_pm->nr_unused_pages = nr_pages;
@@ -43,7 +43,7 @@ enum err_msg infos_pm_init_prealloc(
   void * alloc = local_malloc( userdata, ALIGN_FOR_AVX,
       rental_info_node_size + available_ranges_node_size );
   if ( !alloc ) {
-    SPALL_END();
+    TRACE_END();
     return emsg_out_of_memory;
   }
 
@@ -97,7 +97,7 @@ enum err_msg infos_pm_init_prealloc(
   first_available_range->start = 0;
   first_available_range->stop = nr_pages - 1;
 
-  SPALL_END();
+  TRACE_END();
   return 0;
 }
 
@@ -121,7 +121,7 @@ struct range_u32 infos_pm_rent( struct infos_page_mgr * restrict p_pm,
     bool take_from_left
     )
 {
-  SPALL_BEGIN("pm_rent");
+  TRACE_BEGIN("pm_rent");
 
   if ( p_pm->nr_unused_pages < nr_seq_pages_needed ) {
     errno = ENOBUFS;
@@ -141,7 +141,7 @@ struct range_u32 infos_pm_rent( struct infos_page_mgr * restrict p_pm,
       if ( base_vidx + vacancy_idx == p_pm->nr_vacancy_infos ) {
         // Couldn't find a vacancy
         errno = ENOBUFS;
-        SPALL_END();
+        TRACE_END();
         return invalid_range;
       }
 
@@ -159,7 +159,7 @@ struct range_u32 infos_pm_rent( struct infos_page_mgr * restrict p_pm,
             true, invalid_range32_union.u64, p_pm->nr_rents );
         if ( !p_rent_slot ) {
           errno = ENOMEM;
-          SPALL_END();
+          TRACE_END();
           return invalid_range;
         }
         if ( take_from_left ) {
@@ -187,7 +187,7 @@ struct range_u32 infos_pm_rent( struct infos_page_mgr * restrict p_pm,
         // TODO The compiler should optimize this line and just use nr_seq_pages_needed
         p_pm->nr_unused_pages -= get_range_len(*p_rent_slot);
         p_pm->nr_rents++;
-        SPALL_END();
+        TRACE_END();
         return *p_rent_slot;
       }  // if ( get_range_len(*p_vacancy) >= nr_seq_pages_needed )
     }  // for ( uint_fast32_t vacancy_idx = 0; vacancy_idx < nr_elems_in_vblock; vacancy_idx++ )
@@ -205,7 +205,7 @@ struct range_u32 infos_pm_rent( struct infos_page_mgr * restrict p_pm,
 
   // Couldn't find a vacancy.
   errno = ENOBUFS;
-  SPALL_END();
+  TRACE_END();
   return invalid_range;
 }
 
@@ -220,14 +220,14 @@ struct range_u32 infos_pm_rent_aligned( struct infos_page_mgr * restrict p_pm,
     uint32_t alignment
     )
 {
-  SPALL_BEGIN("pm_rent_aligned");
+  TRACE_BEGIN("pm_rent_aligned");
   assume( alignment > 1 );
   assume( _is_power_of_two(alignment) );
   //assume( _is_aligned_to_power_of_two(length, alignment) );
 
   if ( p_pm->nr_unused_pages < nr_seq_pages_needed ) {
     errno = ENOBUFS;
-    SPALL_END();
+    TRACE_END();
     return invalid_range;
   }
 
@@ -255,7 +255,7 @@ struct range_u32 infos_pm_rent_aligned( struct infos_page_mgr * restrict p_pm,
       if ( base_vidx + vacancy_idx == p_pm->nr_vacancy_infos ) {
         // Couldn't find a vacancy.
         errno = ENOBUFS;
-        SPALL_END();
+        TRACE_END();
         return invalid_range;
       }
 
@@ -311,7 +311,7 @@ register_new_rental_info:
             true, invalid_range32_union.u64, p_pm->nr_rents );
         if ( !p_rent_slot ) {
           errno = ENOMEM;
-          SPALL_END();
+          TRACE_END();
           return invalid_range;
         }
         if ( !take_from_right ) {
@@ -342,7 +342,7 @@ register_new_rental_info:
               p_vacancy->stop = p_vacancy->stop + nr_seq_pages_needed;
 
             errno = ENOMEM;
-            SPALL_END();
+            TRACE_END();
             return invalid_range;
           }
           p_new_slot->start = new_vacancy.start;
@@ -361,7 +361,7 @@ register_new_rental_info:
         // TODO The compiler should optimize this line and just use nr_seq_pages_needed
         p_pm->nr_unused_pages -= get_range_len(*p_rent_slot);
         p_pm->nr_rents++;
-        SPALL_END();
+        TRACE_END();
         return *p_rent_slot;
 
       }  // if ( get_aligned_range_len(*p_vacancy, alignment, lsbs_head_addr) >=
@@ -384,7 +384,7 @@ register_new_rental_info:
     p_vacancy = spacious_range;
     goto come_back_here_with_a_spacious_range;
   }
-  SPALL_END();
+  TRACE_END();
   return invalid_range;
 }
 
@@ -396,7 +396,7 @@ enum err_msg infos_pm_return( struct infos_page_mgr * restrict p_pm,
     struct range_u32 rent
     )
 {
-  SPALL_BEGIN("pm_return");
+  TRACE_BEGIN("pm_return");
 
   uint64_t last_elem_idx = p_pm->nr_rents - 1;
 
@@ -438,10 +438,10 @@ found_the_key_to_remove:
         enum err_msg err = remove_rent_and_update_vacancy( p_pm, userdata, local_malloc,
             p_key+elem_idx, p_last_rent );
         if ( err ) {
-          SPALL_END();
+          TRACE_END();
           return err;
         }
-        SPALL_END();
+        TRACE_END();
         return emsg_no_error;
       }  // if ( mask2 )
 
@@ -459,7 +459,7 @@ found_the_key_to_remove:
     }
   } while ( base_ridx < base_ridx_cap );
 
-  SPALL_END();
+  TRACE_END();
   return emsg_no_such_entry;
 }
 

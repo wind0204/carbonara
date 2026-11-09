@@ -16,15 +16,15 @@
   extern SpallProfile spall_ctx;
   extern thread_local SpallBuffer * p_spall_buf;
 
-  #define SPALL_BEGIN( name_tag ) spall_buffer_begin( &spall_ctx, p_spall_buf,  \
+  #define TRACE_BEGIN( name_tag ) spall_buffer_begin( &spall_ctx, p_spall_buf,  \
       (name_tag),                                                               \
       sizeof((name_tag)) - 1,                                                   \
       _rdtsc()                                                                  \
       );
-  #define SPALL_END() spall_buffer_end( &spall_ctx, p_spall_buf, _rdtsc() );
+  #define TRACE_END() spall_buffer_end( &spall_ctx, p_spall_buf, _rdtsc() );
 #else  // defined(ENABLE_PROFILING)
-  #define SPALL_BEGIN( name_tag )
-  #define SPALL_END()
+  #define TRACE_BEGIN( name_tag )
+  #define TRACE_END()
 #endif  // defined(ENABLE_PROFILING)
 
 
