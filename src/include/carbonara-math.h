@@ -13,7 +13,7 @@
 // Coordinate spaces
 //
 // Mesh space: original mesh + local transformation including the rotation around entity's center
-//   and the rotation around its root point
+//  and the rotation around its root point
 //   + Entity space: a group of meshes with a designated center point
 //   + Group space: a group of entities with a designated center point
 //
@@ -35,15 +35,15 @@ typedef float2 vec2;
 //-------------------------------------------------------------------------------------------------
 // Dot Product
 //
-// a.b = ‖a‖ ‖b‖ cosθ,  Derived formula: θ = acos( a.b/(‖a‖‖b‖) )
-// k(a.b) = ka.b = a.kb  (k is a scalar)
-// a.b = b.a
-// a.(b+c) = a.b + a.c
+// a·b = ‖a‖ ‖b‖ cosθ,  Derived formula: θ = acos( a·b/(‖a‖‖b‖) )
+// k(a·b) = ka·b = a·kb  (k is a scalar)
+// a·b = b·a
+// a·(b+c) = a·b + a·c
 //
-// sift(a, p) = a.p/‖p‖/‖p‖;  // Get the p-coordinate of a, note that when ‖p‖ is 1 (We've got an
+// sift(a, p) = a·p/‖p‖/‖p‖;  // Get the p-coordinate of a, note that when ‖p‖ is 1 (We've got an
 //                            //   orthonormal basis) It becomes just one dot product with no div.
 //                            // WARNING `sift` won't work if the basis vectors are not orthogonal.
-// ‖v‖² = v.v,  ‖v‖ = sqrt(v.v)
+// ‖v‖² = v·v,  ‖v‖ = sqrt(v·v)
 // The result is 0 when one is perpendicular to the other vector or is 0
 
 __attribute__((always_inline))
@@ -74,9 +74,9 @@ static inline float dot_2( vec2 v1, vec2 v2 )
 // ax(b+c) = axb + axc
 //
 // if ( "a ↷(Cw)θ = b" from your PoV when you have placed the tail of b at the head of a )
-//   axb is directed towards you (in a left-handed coordinate system)
+//  axb is directed towards you (in a left-handed coordinate system)
 // if ( "a ↶(CCw)θ = b" from your PoV when you have placed the tail of b at the head of a )
-//   axb is headed away from you (in a left-handed coordinate system)
+//  axb is headed away from you (in a left-handed coordinate system)
 // Examples: x̂ x ŷ = ẑ,  ŷ x x̂ = -ẑ,  ŷ x ẑ = x̂,  ẑ x ŷ = -x̂,  ẑ x x̂ = ŷ,  x̂ x ẑ = -ŷ
 // axb = -(bxa)
 // axb = -ax-b
@@ -97,7 +97,7 @@ static inline vec3 cross_3( vec3 v1, vec3 v2 )
 
 
 //-------------------------------------------------------------------------------------------------
-//The operation a.bxc is known as the triple product
+//The operation a·bxc is known as the triple product
 //
 
 
@@ -107,9 +107,9 @@ static inline vec3 cross_3( vec3 v1, vec3 v2 )
 __attribute__((always_inline))
 static inline vec3 scalar_mul_3( vec3 v, float s )
 {
-  constexpr size_t nr_cols = 3;  // _arr_elem_cnt won't work on ext_vector_type
+  constexpr size_t col_cnt = 3;  // _arr_elem_cnt won't work on ext_vector_type
   typeof(v) ret = v;
-  for ( unsigned int col_idx = 0; col_idx < nr_cols; col_idx++ ) {
+  for ( unsigned int col_idx = 0; col_idx < col_cnt; col_idx++ ) {
     ret[col_idx] *= s;
   }
   return ret;
@@ -118,9 +118,9 @@ static inline vec3 scalar_mul_3( vec3 v, float s )
 __attribute__((always_inline))
 static inline vec2 scalar_mul_2( vec2 v, float s )
 {
-  constexpr size_t nr_cols = _arr_elem_cnt(v);
+  constexpr size_t col_cnt = _arr_elem_cnt(v);
   typeof(v) ret = v;
-  for ( unsigned int col_idx = 0; col_idx < nr_cols; col_idx++ ) {
+  for ( unsigned int col_idx = 0; col_idx < col_cnt; col_idx++ ) {
     ret[col_idx] *= s;
   }
   return ret;
@@ -131,22 +131,24 @@ static inline vec2 scalar_mul_2( vec2 v, float s )
 // Matrices
 //
 // MI = IM = M,  (Mᵀ)ᵀ = M,  Dᵀ=Da (D is a diagonal matrix)
-// MS = Another_matrix_with_same_dimensions (S is a square matrix)
+// MS = Another_matrix_with_same_dimensions (M and S are square matrices)
 // AB != BA
 // (AB)C = A(BC)  // Note that if (AB)C is defined, then A(BC) is always defined
-//   (vA)B = v(AB)  (v is a vector)
+//  (vA)B = v(AB)  (v is a vector)
 // (kA)B = k(AB) = A(kB)  (k is a scalar)
 // (AB)ᵀ = BᵀAᵀ  // This phenomenon of the individual transposed matrices in a reverse order can be
 //                  extended to more than just 2 matrices
 // (v+w)M = vM + wM
 
-//
+// a row-major 2x2 matrix
 struct mat2x2 {
   vec2 rows[2];
 };
+// a row-major 3x3 matrix
 struct mat3x3 {
   vec3 rows[3];
 };
+// a row-major 4x4 matrix
 struct mat4x4 {
   alignas(ALIGN_FOR_AVX)
   vec4 rows[4];
@@ -157,40 +159,46 @@ union u_mat4x4 {
   struct mat4x4 mat;
 };
 
-// Assume the last column of the 4x4 matrix is {0, 0, 0, 1}
+// Assume the last column of the 4x4 matrix is {0, 0, 0, 1}.
 struct mat4x3 {
   vec3 rows[4];
 };
-// Assume the last column of the 4x4 matrix is {0, 0, 0, 1}
+/**
+ * \brief Assume the last column of the 4x4 matrix is {0, 0, 0, 1}.
+ *  I can consider using this struct for serialization
+ */
 struct mat4x3_slim {
   float rows[4][3];
 };
 
 
-//-------------------------------------------------------------------------------------------------
-// Matrix-Matrix Multiplication
-// Consider using matrix_type attribute in clang
 
+// Matrix-Matrix Multiplication
+// Consider using `matrix_type` attribute in clang
+
+/**
+ * \brief returns AB
+ */
 __attribute__((always_inline))
 static inline struct mat4x4 mul_4x4_4x4(
-    struct mat4x4 a, struct mat4x4 b )
+    struct mat4x4 A, struct mat4x4 B )
 {
   struct mat4x4 ret;
-  constexpr size_t nr_rows = _arr_elem_cnt(ret.rows);
+  constexpr size_t row_cnt = _arr_elem_cnt(ret.rows);
 
-  for ( unsigned int row_idx = 0; row_idx < nr_rows; row_idx++ ) {
+  for ( unsigned int row_idx = 0; row_idx < row_cnt; row_idx++ ) {
     ret.rows[row_idx].x =
-      a.rows[row_idx].x * b.rows[0].x +  a.rows[row_idx].y * b.rows[1].x +
-      a.rows[row_idx].z * b.rows[2].x +  a.rows[row_idx].w * b.rows[3].x;
+      A.rows[row_idx].x * B.rows[0].x +  A.rows[row_idx].y * B.rows[1].x +
+      A.rows[row_idx].z * B.rows[2].x +  A.rows[row_idx].w * B.rows[3].x;
     ret.rows[row_idx].y =
-      a.rows[row_idx].x * b.rows[0].y +  a.rows[row_idx].y * b.rows[1].y +
-      a.rows[row_idx].z * b.rows[2].y +  a.rows[row_idx].w * b.rows[3].y;
+      A.rows[row_idx].x * B.rows[0].y +  A.rows[row_idx].y * B.rows[1].y +
+      A.rows[row_idx].z * B.rows[2].y +  A.rows[row_idx].w * B.rows[3].y;
     ret.rows[row_idx].z =
-      a.rows[row_idx].x * b.rows[0].z +  a.rows[row_idx].y * b.rows[1].z +
-      a.rows[row_idx].z * b.rows[2].z +  a.rows[row_idx].w * b.rows[3].z;
+      A.rows[row_idx].x * B.rows[0].z +  A.rows[row_idx].y * B.rows[1].z +
+      A.rows[row_idx].z * B.rows[2].z +  A.rows[row_idx].w * B.rows[3].z;
     ret.rows[row_idx].w =
-      a.rows[row_idx].x * b.rows[0].w +  a.rows[row_idx].y * b.rows[1].w +
-      a.rows[row_idx].z * b.rows[2].w +  a.rows[row_idx].w * b.rows[3].w;
+      A.rows[row_idx].x * B.rows[0].w +  A.rows[row_idx].y * B.rows[1].w +
+      A.rows[row_idx].z * B.rows[2].w +  A.rows[row_idx].w * B.rows[3].w;
   }
 
 #pragma GCC diagnostic push
@@ -280,16 +288,16 @@ static inline float det_2( struct mat2x2 mat )
 __attribute__((always_inline))
 static inline float get_minor( struct mat3x3 mat, unsigned int r, unsigned int c )
 {
-  constexpr size_t nr_rows = _arr_elem_cnt(mat.rows);
-  constexpr size_t nr_cols = 3;  // _arr_elem_cnt won't work on ext_vector_type
-  assume( r < nr_rows );
-  assume( c < nr_cols );
+  constexpr size_t row_cnt = _arr_elem_cnt(mat.rows);
+  constexpr size_t col_cnt = 3;  // _arr_elem_cnt won't work on ext_vector_type
+  assume( r < row_cnt );
+  assume( c < col_cnt );
   struct mat2x2 submat;
-  for ( typeof(r) row_idx = 0, cur_row = 0; row_idx < nr_rows; row_idx++ ) {
+  for ( typeof(r) row_idx = 0, cur_row = 0; row_idx < row_cnt; row_idx++ ) {
     if ( row_idx == r ) {
       continue;
     }
-    for ( typeof(c) col_idx = 0, cur_col = 0; col_idx < nr_cols; col_idx++ ) {
+    for ( typeof(c) col_idx = 0, cur_col = 0; col_idx < row_cnt; col_idx++ ) {
       if ( col_idx == c ) {
         continue;
       }
@@ -310,7 +318,7 @@ static inline float get_minor( struct mat3x3 mat, unsigned int r, unsigned int c
 }
 
 /**
- * \return  An union64 object with its arr_f[0] set to the minor, and arr_f[1] set to the cofactor
+ * \return An union64 object with its arr_f[0] set to the minor and arr_f[1] set to the cofactor
  * \param mat The original matrix
  * \param r The index number of the row to remove, it must be < 3
  * \param c The index number of the column to remove, it must be < 3
@@ -339,7 +347,7 @@ static inline union union64 get_minor_and_cofactor(
   return arr_b32;
 }
 /**
- * \return  An union64 object with its arr_f[0] set to the minor, and arr_f[1] set to the cofactor
+ * \return An union64 object with its arr_f[0] set to the minor and arr_f[1] set to the cofactor
  * \param mat The original matrix
  * \param r The index number of the row to remove, it must be < 3
  * \param c The index number of the column to remove, it must be < 3
@@ -354,10 +362,10 @@ static inline float get_cofactor( struct mat3x3 mat, unsigned int r, unsigned in
 __attribute__((always_inline))
 static inline float det_3_via_row( struct mat3x3 mat, unsigned int r )
 {
-  constexpr size_t nr_cols = 3;  // _arr_elem_cnt won't work on ext_vector_type
+  constexpr size_t col_cnt = 3;  // _arr_elem_cnt won't work on ext_vector_type
 
   float ret = mat.rows[r][0] * get_cofactor( mat, r, 0 );
-  for ( unsigned int col_idx = 0+1; col_idx < nr_cols; col_idx++ ) {
+  for ( unsigned int col_idx = 0+1; col_idx < col_cnt; col_idx++ ) {
     //arr_cofactors[col_idx] = get_cofactor( mat, r, col_idx );
     ret += mat.rows[r][col_idx] * get_cofactor( mat, r, col_idx );
   }
@@ -368,10 +376,10 @@ static inline float det_3_via_row( struct mat3x3 mat, unsigned int r )
 __attribute__((always_inline))
 static inline float det_3_via_col( struct mat3x3 mat, unsigned int c )
 {
-  constexpr size_t nr_rows = _arr_elem_cnt(mat.rows);
+  constexpr size_t row_cnt = _arr_elem_cnt(mat.rows);
 
   float ret = mat.rows[0][c] * get_cofactor( mat, 0, c );
-  for ( unsigned int row_idx = 0+1; row_idx < nr_rows; row_idx++ ) {
+  for ( unsigned int row_idx = 0+1; row_idx < row_cnt; row_idx++ ) {
     //arr_cofactors[row_idx] = get_cofactor( mat, row_idx, c );
     ret += mat.rows[row_idx][c] * get_cofactor( mat, row_idx, c );
   }
@@ -380,20 +388,20 @@ static inline float det_3_via_col( struct mat3x3 mat, unsigned int c )
 }
 
 // If we interpret the rows of a 3x3 matrix as three vectors, then the determinant of the matrix is
-//   equivalent to the so-called “triple product” of the three vectors: |M| = ( r1 x r2 ).r3
-//   ( and since |M| = |Mᵀ|, You can tell this property applies to the column vectors too.
-//   The scalar triple product calculates the signed volume of a parallelepiped defined by three
-//   vectors, so you can infer that the volumes of the two parallelepipeds formed by two different
-//   sets of vectors from a same matrix be the same! although the shapes are not always the same. )
-//   More insights: |M| = ( r1 x r2 ).r3 = r1.( r2 x r3 ) = ( r3 x r1 ).r2 = r2.( r3 x r1 ) ...
+//  equivalent to the so-called “triple product” of the three vectors: |M| = (r1 x r2)·r3
+//  (And since |M| = |Mᵀ|, You can tell this property applies to the column vectors too.
+//  The scalar triple product calculates the signed volume of a parallelepiped defined by three
+//  vectors, so you can infer that the volumes of the two parallelepipeds formed by two different
+//  sets of vectors from a same matrix be the same! although the shapes are not always the same.)
+//  More insights: |M| = (r1 x r2)·r3 = r1·(r2 x r3) = (r3 x r1)·r2 = r2·(r3 x r1) ...
 //
 // The determinant of a singular matrix is zero and the determinant of a nonsingular matrix is
-//   nonzero. Checking the magnitude of the determinant is the most commonly used test for
-//   invertibility because it's the easiest and quickest. In ordinary circumstances, this is OK, but
-//   please note that the method can break down. An example is an extreme shear matrix with basis
-//   vectors that form a very long, thin parallelepiped with unit volume. This ill conditioned
-//   matrix is nearly singular, even though its determinant is 1. The condition number is the proper
-//   tool for detecting such cases.
+//  nonzero. Checking the magnitude of the determinant is the most commonly used test for
+//  invertibility because it's the easiest and quickest. In ordinary circumstances, this is OK, but
+//  please note that the method can break down. An example is an extreme shear matrix with basis
+//  vectors that form a very long, thin parallelepiped with unit volume. This ill conditioned
+//  matrix is nearly singular, even though its determinant is 1. The condition number is the proper
+//  tool for detecting such cases.
 /**
  * \warning You might wanna use det_3_pivoting instead for an optimal performance!
  */
@@ -401,7 +409,7 @@ __attribute__((always_inline))
 static inline float det_3( struct mat3x3 mat )
 {
   // TODO check if it's optimized and reduced down to 6+3 mul, 3 sub and 2 add
-  //   The naive approach is 12 mul, 3 sub and 2 add
+  //  The naive approach is 12 mul, 3 sub and 2 add
   return det_3_via_row( mat, 0 );
 }
 
@@ -427,12 +435,12 @@ static inline float det_3_pivoting( struct mat3x3 mat, bool use_row, unsigned in
 __attribute__((always_inline))
 static inline struct mat3x3 get_adj( struct mat3x3 mat )
 {
-  constexpr size_t nr_rows = _arr_elem_cnt(mat.rows);
-  constexpr size_t nr_cols = 3;  // _arr_elem_cnt won't work on ext_vector_type
+  constexpr size_t row_cnt = _arr_elem_cnt(mat.rows);
+  constexpr size_t col_cnt = 3;  // _arr_elem_cnt won't work on ext_vector_type
 
   struct mat3x3 ret;
-  for ( unsigned int row_idx = 0; row_idx < nr_rows; row_idx++ ) {
-    for ( unsigned int col_idx = 0; col_idx < nr_cols; col_idx++ ) {
+  for ( unsigned int row_idx = 0; row_idx < row_cnt; row_idx++ ) {
+    for ( unsigned int col_idx = 0; col_idx < col_cnt; col_idx++ ) {
       ret.rows[col_idx][row_idx] = get_cofactor( mat, row_idx, col_idx );
     }
   }
@@ -456,20 +464,20 @@ static inline struct mat3x3 get_adj( struct mat3x3 mat )
 // |M⁻¹| = 1/|M|
 //
 // There are several ways to compute the inverse of a matrix. The one we use is based on the
-//   classical adjoint.
+//  classical adjoint.
 // Our method for computing the inverse of a matrix M is based on the classical adjoint. The
-//   classical adjoint of a matrix M, denoted "adj M" is defined as the transpose of the matrix of
-//   cofactors of M.
+//  classical adjoint of a matrix M, denoted "adj M" is defined as the transpose of the matrix of
+//  cofactors of M.
 // There are other techniques that can be used to compute the inverse of a matrix, such as Gaussian
-//   elimination. Many linear algebra textbooks assert that such techniques are better suited for
-//   implementation on a computer because they require fewer arithmetic operations, and this
-//   assertion is true for larger matrices and matrices with a structure that may be exploited.
-//   However, for arbitrary matrices of smaller order, such as the 2x2, 3x3, and 4x4 matrices
-//   encountered most often in geometric applications, the classical adjoint method is generally the
-//   method of choice. The reason is that the classical adjoint method provides for a branchless
-//   implementation, meaning there are no if statements, or loops that cannot be unrolled
-//   statically. On today's superscalar architectures and dedicated vector processors, this is a big
-//   win. 
+//  elimination. Many linear algebra textbooks assert that such techniques are better suited for
+//  implementation on a computer because they require fewer arithmetic operations, and this
+//  assertion is true for larger matrices and matrices with a structure that may be exploited.
+//  However, for arbitrary matrices of smaller order, such as the 2x2, 3x3, and 4x4 matrices
+//  encountered most often in geometric applications, the classical adjoint method is generally the
+//  method of choice. The reason is that the classical adjoint method provides for a branchless
+//  implementation, meaning there are no if statements, or loops that cannot be unrolled
+//  statically. On today's superscalar architectures and dedicated vector processors, this is a big
+//  win. 
 /**
  * \warning If a matrix is orthogonal, its transpose and inverse are equal. Just a transpose is
  *          probably enough. Rotation and reflection matrices are orthogonal. If we know that our
@@ -480,16 +488,16 @@ static inline struct mat3x3 get_adj( struct mat3x3 mat )
 __attribute__((always_inline))
 static inline struct mat3x3 get_inv( struct mat3x3 mat )
 {
-  constexpr size_t nr_rows = _arr_elem_cnt(mat.rows);
-  constexpr size_t nr_cols = 3;  // _arr_elem_cnt won't work on ext_vector_type
+  constexpr size_t row_cnt = _arr_elem_cnt(mat.rows);
+  constexpr size_t col_cnt = 3;  // _arr_elem_cnt won't work on ext_vector_type
 
   struct mat3x3 ret = get_adj( mat );
   float det = det_3( mat );
   assume( !is_close_norel(det, 0) );  // Matrices with a zero determinant are noninvertible.
 
   float divider = 1.0f / det;
-  for ( unsigned int row_idx = 0; row_idx < nr_rows; row_idx++ ) {
-    for ( unsigned int col_idx = 0; col_idx < nr_cols; col_idx++ ) {
+  for ( unsigned int row_idx = 0; row_idx < row_cnt; row_idx++ ) {
+    for ( unsigned int col_idx = 0; col_idx < col_cnt; col_idx++ ) {
       ret.rows[row_idx][col_idx] *= divider;
     }
   }
@@ -499,15 +507,15 @@ static inline struct mat3x3 get_inv( struct mat3x3 mat )
 
 /**
  * \return  true if \a mat is an orthogonal matrix i.e. the set of rows/columns is orthonormal
- *          false otherwise.
- * \warning When computing a matrix inverse, we will usually only take advantage of orthogonality if
- *          we know a priori that a matrix is orthogonal. If we don't know in advance, it's probably
- *          a waste of time to check. In the best case, we check for orthogonality and find that the
- *          matrix is indeed orthogonal, and then we transpose the matrix. But this may take almost
- *          as much time as doing the inversion. In the worst case, the matrix is not orthogonal,
- *          and any time we spent checking was definitely wasted. Finally, even matrices that are
- *          orthogonal in the abstract may not be exactly orthogonal when represented in floating
- *          point, and so we must use tolerances, which have to be tuned.
+ *  false otherwise.
+ * \warning When computing a matrix inverse, we will usually only take advantage of orthogonality
+ *  if we know a priori that a matrix is orthogonal. If we don't know in advance, it's probably
+ *  a waste of time to check. In the best case, we check for orthogonality and find that the
+ *  matrix is indeed orthogonal, and then we transpose the matrix. But this may take almost
+ *  as much time as doing the inversion. In the worst case, the matrix is not orthogonal,
+ *  and any time we spent checking was definitely wasted. Finally, even matrices that are
+ *  orthogonal in the abstract may not be exactly orthogonal when represented in floating
+ *  point, and so we must use tolerances, which have to be tuned.
  */
 __attribute__((always_inline))
 static inline bool is_orthogonal( struct mat3x3 mat )
@@ -523,24 +531,24 @@ static inline bool is_orthogonal( struct mat3x3 mat )
 
 /**
  * \brief The function produces a similar matrix with orthogonal basis vectors. The standard
- *        algorithm for constructing a set of orthogonal basis vectors is Gram-Schmidt
- *        orthogonalization. The basic idea is to go through the basis vectors in order. For each
- *        basis vector, we subtract off the portion of that vector that is parallel to the
- *        proceeding basis vectors, which must result in a perpendicular vector.
+ *  algorithm for constructing a set of orthogonal basis vectors is Gram-Schmidt orthogonalization.
+ *  The basic idea is to go through the basis vectors in order. For each basis vector, we subtract
+ *  off the portion of that vector that is parallel to the proceeding basis vectors, which must
+ *  result in a perpendicular vector.
  * \warning We need an orthonormal basis to form an orthogonal matrix, and so we should probably
- *          normalize the vectors in addition to orthogonalizing. Notice that if we normalize the
- *          vectors as we go, rather than in a second pass, then we can avoid all of the divisions.
- *          Also, a trick that works in 3D (but not in higher dimensions) is to compute the third
- *          basis vector using the cross product (TODO)
- *          The fundtion is biased, the first row will be unchanged and the last row will be changed
- *          the most. We can implement an unbiased version at the cost of a big loop of computation.
+ *  normalize the vectors in addition to orthogonalizing. Notice that if we normalize the vectors
+ *  as we go, rather than in a second pass, then we can avoid all of the divisions.
+ *  Also, a trick that works in 3D (but not in higher dimensions) is to compute the third
+ *  basis vector using the cross product (TODO)
+ *  The fundtion is biased, the first row will be unchanged and the last row will be changed
+ *  the most. We can implement an unbiased version at the cost of a big loop of computation.
  */
 __attribute__((always_inline))
 static inline struct mat3x3 orthogonalize( struct mat3x3 mat )
 {
   struct mat3x3 ret;
-  constexpr size_t nr_rows = _arr_elem_cnt(mat.rows);
-  float arr_self_dp[nr_rows - 1];
+  constexpr size_t row_cnt = _arr_elem_cnt(mat.rows);
+  float arr_self_dp[row_cnt - 1];
   ret.rows[0] = mat.rows[0];
   arr_self_dp[0] = dot_3( ret.rows[0], ret.rows[0] );
   ret.rows[1] = mat.rows[1] - scalar_mul_3( ret.rows[0],
@@ -580,7 +588,10 @@ constexpr struct mat4x4 identity_4x4 = {
   }
 };
 
-//-------------------------------------------------------------------------------------------------
+/**
+ * \brief returns a matrix for translation(a transformation of coordinates in which the new axes
+ *  are parallel to the old ones)
+ */
 __attribute__((always_inline))
 static inline struct mat4x4 translate_4x4( float x, float y, float z )
 {
@@ -595,7 +606,9 @@ static inline struct mat4x4 translate_4x4( float x, float y, float z )
   return ret;
 }
 
-//-------------------------------------------------------------------------------------------------
+/**
+ * \brief returns a matrix for rotation around x axis
+ */
 __attribute__((always_inline))
 static inline struct mat4x4 rot_axa_4x4( float angle )
 {
@@ -610,7 +623,9 @@ static inline struct mat4x4 rot_axa_4x4( float angle )
   return ret;
 }
 
-//-------------------------------------------------------------------------------------------------
+/**
+ * \brief returns a matrix for rotation around y axis
+ */
 __attribute__((always_inline))
 static inline struct mat4x4 rot_aya_4x4( float angle )
 {
@@ -625,7 +640,9 @@ static inline struct mat4x4 rot_aya_4x4( float angle )
   return ret;
 }
 
-//-------------------------------------------------------------------------------------------------
+/**
+ * \brief returns a matrix for rotation around z axis
+ */
 __attribute__((always_inline))
 static inline struct mat4x4 rot_aza_4x4( float angle )
 {
@@ -640,17 +657,16 @@ static inline struct mat4x4 rot_aza_4x4( float angle )
   return ret;
 }
 
-//-------------------------------------------------------------------------------------------------
 /**
- * \brief Get a rotation matrix.
- * \param pivot The pivot vector to rotate things around, it should be normalized
+ * \brief returns a rotation matrix.
+ * \param pivot The pivot vector around which things move, it should be a normalized vector
  */
 void get_rotaion_matrix( const float * restrict pivot, float angle, float * restrict dst );
 void get_rotaion_matrix_ap( const float * restrict pivot, float angle, float * restrict dst );
 //void get_rotaion_matrices(const float * restrict arr_pivots, const float * restrict angles,
-//    float * restrict dst, uint_fast16_t nr_matrices);
+//    float * restrict dst, uint_fast16_t mat_cnt);
 //void get_rotaion_matrices_ap(const float * restrict arr_pivots, const float * restrict angles,
-//    float * restrict dst, uint_fast16_t nr_matrices);
+//    float * restrict dst, uint_fast16_t mat_cnt);
 
 //-------------------------------------------------------------------------------------------------
 __attribute__((always_inline))
@@ -676,11 +692,10 @@ static inline void get_scaling_matrix( float x, float y, float z, float * dst )
   dst[4*3 + 2] = 0;
   dst[4*3 + 3] = 1;
 }
-//void get_scaling_matrices(const float * restrict arr_xyz, float * restrict dst, uint_fast16_t nr_matrices);
-//void get_scaling_matrices_ap(const float * restrict arr_xyz, float * restrict dst, uint_fast16_t nr_matrices);
 
-//-------------------------------------------------------------------------------------------------
 /**
+ * \brief returns the matrix for converting our world volume to Vulkan's canonical viewing volume.
+ *  perspective_projection_matrix = perspective-ortho * ortho-vulkan_cvv
  * \param vfov The angle of the vertical field of view.
  * \param aspect_ratio The width divided by the height of the render target.
  * \param near The distance from the viewer to the near clipping plane.
@@ -700,10 +715,10 @@ static inline struct mat4x4 get_perspective_proj_mat_vk(
     _swap( &near, &far );
   }
   struct mat4x4 ret = {
-    (vec4) { 1 / (aspect_ratio * tan_half_theta), 0,                  0,                        0 },
-    (vec4) { 0,                                   -1/tan_half_theta,  0,                        0 },
-    (vec4) { 0,                                   0,                  far / (far - near),       1 },
-    (vec4) { 0,                                   0,                  -far*near / (far - near), 0 },
+    (vec4) { 1 / (aspect_ratio * tan_half_theta), 0,                 0,                        0 },
+    (vec4) { 0,                                   -1/tan_half_theta, 0,                        0 },
+    (vec4) { 0,                                   0,                 far / (far - near),       1 },
+    (vec4) { 0,                                   0,                 -near*far / (far - near), 0 },
   };
 
   return ret;

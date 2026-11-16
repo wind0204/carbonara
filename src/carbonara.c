@@ -4646,11 +4646,17 @@ acquire_swapchain_image:
   const struct mat4x4 rotate = rot_aya_4x4( (float) ((double)cur_time_in_5us * pi_per_sec * .5) );
   const struct mat4x4 translate = translate_4x4( 0, cara_1m * -1.75f, cara_1m * 4 );
   const struct mat4x4 pp = get_perspective_proj_mat_vk(
-      (float)(M_PI / 3.0), (float)fb_width/(float)fb_height, cara_1m * .25f, powf(2,127), true );
+      (float)(M_PI / 3.0),
+      (float)fb_width/(float)fb_height, cara_1m * .25f,
+      powf(2,127),
+      true
+      );
   const struct mat4x4 consts = mul_4x4_4x4( mul_4x4_4x4( rotate, translate ), pp );
   vkCmdPushConstants( main_cmd_buf, cara_vk.pll_z_only, VK_SHADER_STAGE_VERTEX_BIT,
-      0, 4*4*4, &consts );
-  vkCmdDrawIndexed( main_cmd_buf, 3*6 + 3*2, 1, 0, 0, 0 );
+      0, sizeof(consts), &consts );
+  vkCmdDrawIndexed( main_cmd_buf,
+      3*6 + 3*2,
+      1, 0, 0, 0 );
 
 
   //VkImageMemoryBarrier2KHR img_bar = {
