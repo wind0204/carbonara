@@ -1,5 +1,5 @@
 # Introduction
-It is a WIP RPG game framework being worked on by an amateur hobbyist developer.
+It is a WIP RPG game framework being worked on by *an amateur hobbyist* developer.
 In 2025, I worked on it for a while and rendered a rotating pyramid and a square tile under it with textures on them using Vulkan, and dropped the project.
 And I've recently picked it up again.
 
@@ -15,7 +15,7 @@ And I've recently picked it up again.
 - Start using box3d
 - Implement a multiplayer game mode that is robust enough for action games
 - Utilize CPU instructions that are available only on newer processors
-- Port the Linux version either to a console, or to Mac and Windows 11 after having achieved a decent set of features!
+- Port the Linux version either to a console or to Mac & Windows 11, after having achieved a decent set of features!
 
 ## I'm currently using(can be changed):
 - vulkan
@@ -36,7 +36,7 @@ And I've recently picked it up again.
 # Build Instructions
 ## Prepare SDL3
 - Clone the [git repo](https://github.com/libsdl-org/SDL) and place it in `extern/SDL`
-- You can link to the static library of SDL by setting `LINK_SDL_STATIC_LIB` on at the cmake configuration time, and you also have to comment out the #error statement in `extern/SDL/src/dynapi/SDL_dynapi.h` which is supposed to make you think twice on the decision
+- You can link to the static library of SDL by setting `LINK_SDL_STATIC_LIB` to `ON` at the CMake configuration time, and you also have to comment out the #error statement in `extern/SDL/src/dynapi/SDL_dynapi.h` which is supposed to make you think twice about the decision
 - Install the development headers of liburing (e.g. liburing-dev on Ubuntu)
 
 ## Initialize submodules once after cloning the repo
@@ -45,7 +45,7 @@ git submodule update --init --recursive
 ```
 
 ## Prepare dxc and volk
-- You need dxc for shader compilation and volk library that carbonara utilizes for Vulkan function calls.
+- You need `dxc` for shader compilation and `volk` library header file for Vulkan function calls.
 - [Vulkan SDK](https://vulkan.lunarg.com) continas these; You can set up the relevant environment variables via `$Vulkan_SDK/setup-env.sh`
 
 ## Configure cmake builds for debugging and releasing
@@ -60,11 +60,11 @@ CC=clang-21 cmake -B build-ship_it -DCMAKE_BUILD_TYPE=Release -G Ninja
 time cmake --build build-Debug
 ```
 
-## Prepare 12-mip-level 2048x2048 albedo maps in .dds files
+## Prepare 12-mip-level 2048x2048 albedo maps in `.dds` files
 - assets/textures/stone-01.dds
 - assets/textures/sand-01.dds
 
-## You can get the list of the compile commands and provide it to your LSP
+## You can get the list of the compile commands, and provide it to your LSP
 ```sh
 ln -s build-Debug/compile_commands.json .
 ```
@@ -72,9 +72,9 @@ ln -s build-Debug/compile_commands.json .
 <br>
 
 # How to run
-## When the .dds files mentioned above are ready and a build of `carbonara` has been completed, run the executable.
+## When the `.dds` files mentioned above are ready and a build of `carbonara` has been completed, run the executable.
 ```sh
 build-Debug/Debug/carbonara
 ```
 
-## WARNING: At this stage of development, the `CMakeLists.txt` is coded in such a way that `carbonara` generates a lot of traces for [Spall](https://gravitymoth.com/spall) in /dev/shm/Carb.spall unless `CMAKE_BUILD_TYPE` is set to `Release`
+## WARNING: At this stage of development, the `CMakeLists.txt` is designed in such a way that `carbonara` generates a lot of traces for [Spall](https://gravitymoth.com/spall) in /dev/shm/Carb.spall unless `CMAKE_BUILD_TYPE` is set to `Release`, which causes `ENABLE_PROFILING` to be defined.
