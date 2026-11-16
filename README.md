@@ -1,6 +1,6 @@
 # Introduction
 It is a WIP RPG game framework being worked on by an amateur hobbyist developer.
-I worked on it for a while and rendered a rotating pyramid and a square tile under it with textures on them using Vulkan in 2025, and dropped the project.
+In 2025, I worked on it for a while and rendered a rotating pyramid and a square tile under it with textures on them using Vulkan, and dropped the project.
 And I've recently picked it up again.
 
 ## Goals
@@ -24,6 +24,12 @@ And I've recently picked it up again.
 - hwloc v2.15
 - volk
 - the standard C library
+
+## Conventions
+- 99-letter cap per line of code
+- Left-handed coordinate system with Y-up, X-right, like Direct3D
+- Vectors are row vectors. i.e. Matrix multiplication goes `vABC` instead of `CBAv`
+- `struct mat4x4` is row-major
 
 <br>
 
@@ -70,3 +76,5 @@ ln -s build-Debug/compile_commands.json .
 ```sh
 build-Debug/Debug/carbonara
 ```
+
+## WARNING: At this stage of development, the `CMakeLists.txt` is coded in such a way that `carbonara` generates a lot of traces for [Spall](https://gravitymoth.com/spall) in /dev/shm/Carb.spall unless `CMAKE_BUILD_TYPE` is set to `Release`
