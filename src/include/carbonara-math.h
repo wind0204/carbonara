@@ -40,11 +40,10 @@ typedef float2 vec2;
 // a·b = b·a
 // a·(b+c) = a·b + a·c
 //
-// sift(a, p) = a·p/‖p‖/‖p‖;  // Get the p-coordinate of a, note that when ‖p‖ is 1 (We've got an
-//                            //   orthonormal basis) It becomes just one dot product with no div.
+// sift(a, p) = a·p/‖p‖/‖p‖;  // Get the p-coordinate of a, note that when ‖p‖ is 1(We've got an
+//                            //  orthonormal basis) it becomes just one dot product with no div.
 //                            // WARNING `sift` won't work if the basis vectors are not orthogonal.
 // ‖v‖² = v·v,  ‖v‖ = sqrt(v·v)
-// The result is 0 when one is perpendicular to the other vector or is 0
 
 __attribute__((always_inline))
 static inline float dot_3( vec3 v1, vec3 v2 )
@@ -73,16 +72,15 @@ static inline float dot_2( vec2 v1, vec2 v2 )
 // k(axb) = kaxb = axkb  (k is a scalar)
 // ax(b+c) = axb + axc
 //
-// if ( "a ↷(Cw)θ = b" from your PoV when you have placed the tail of b at the head of a )
-//  axb is directed towards you (in a left-handed coordinate system)
-// if ( "a ↶(CCw)θ = b" from your PoV when you have placed the tail of b at the head of a )
-//  axb is headed away from you (in a left-handed coordinate system)
+// if ( "b turns clockwise by θ from the direction of a" from your PoV when you have placed the
+//  tail of b at the head of a ): axb is directed towards you (in a left-handed coordinate system)
+// if ( "b turns counterclockwise by θ from the direction of a" from your PoV when you have placed
+//  the tail of b at the head of a ): axb is headed away from you (in a left-handed coordinate
+//  system)
 // Examples: x̂ x ŷ = ẑ,  ŷ x x̂ = -ẑ,  ŷ x ẑ = x̂,  ẑ x ŷ = -x̂,  ẑ x x̂ = ŷ,  x̂ x ẑ = -ŷ
 // axb = -(bxa)
 // axb = -ax-b
-//
 // (axb)xc != ax(bxc)
-// The result is 0 when one is parallel to the other vector or is 0
 
 __attribute__((always_inline))
 static inline vec3 cross_3( vec3 v1, vec3 v2 )
@@ -130,12 +128,12 @@ static inline vec2 scalar_mul_2( vec2 v, float s )
 //-------------------------------------------------------------------------------------------------
 // Matrices
 //
-// MI = IM = M,  (Mᵀ)ᵀ = M,  Dᵀ=Da (D is a diagonal matrix)
-// MS = Another_matrix_with_same_dimensions (M and S are square matrices)
+// MI = IM = M,  (Mᵀ)ᵀ = M,  Dᵀ=D (D is a diagonal matrix)
+// MS = Another_matrix_with_same_dimension_count (M and S are square matrices)
 // AB != BA
 // (AB)C = A(BC)  // Note that if (AB)C is defined, then A(BC) is always defined
-//  (vA)B = v(AB)  (v is a vector)
-// (kA)B = k(AB) = A(kB)  (k is a scalar)
+// (vA)B = v(AB)  // v is a vector
+// (kA)B = k(AB) = A(kB)  // k is a scalar
 // (AB)ᵀ = BᵀAᵀ  // This phenomenon of the individual transposed matrices in a reverse order can be
 //                  extended to more than just 2 matrices
 // (v+w)M = vM + wM
@@ -174,7 +172,7 @@ struct mat4x3_slim {
 
 
 // Matrix-Matrix Multiplication
-// Consider using `matrix_type` attribute in clang
+// NOTE Consider using `matrix_type` attribute in clang
 
 /**
  * \brief returns AB
@@ -211,7 +209,7 @@ static inline struct mat4x4 mul_4x4_4x4(
 
 
 //-------------------------------------------------------------------------------------------------
-// Matrix-Vecotr Multiplication (Multiply a single-row matrix by a square matrix)
+// Vecotr-Matrix Multiplication (Multiply a single-row matrix by a square matrix)
 
 __attribute__((always_inline))
 static inline vec4 mul_v_4x4( vec4 row, struct mat4x4 mat )
@@ -264,16 +262,17 @@ static inline void normalize_vec3( const vec3 * restrict src, vec3 * restrict ds
 }
 
 //-------------------------------------------------------------------------------------------------
+// Determinants
 
 // The determinant of an identity matrix of any dimension is 1: |I| = 1
 // The determinant of a matrix product is equal to the product of the determinants: |AB| = |A||B|
-//   (This extends to more than two matrices)
+//  (This extends to more than just two matrices)
 // The determinant of the transpose of a matrix is equal to the original determinant: |Mᵀ| = |M|
 // If any row or column in a matrix contains all 0s, then the determinant of that matrix is 0.
-// Exchanging any pair of rows negates the determinant.
-//   (This same rule applies for exchanging a pair of columns.)
-// Adding any multiple of a row (column) to another row (column) does not change the value of the
-//   determinant!
+// Exchanging any pair of rows negates the determinant—This same rule applies for exchanging a
+//  pair of columns.
+// Adding any multiple of a row(column) to another row(column) does not change the value of the
+//  determinant
 __attribute__((always_inline))
 static inline float det_2( struct mat2x2 mat )
 {
@@ -347,7 +346,7 @@ static inline union union64 get_minor_and_cofactor(
   return arr_b32;
 }
 /**
- * \return An union64 object with its arr_f[0] set to the minor and arr_f[1] set to the cofactor
+ * \return $C_{\a r \a c}$ of \a mat
  * \param mat The original matrix
  * \param r The index number of the row to remove, it must be < 3
  * \param c The index number of the column to remove, it must be < 3
@@ -386,10 +385,10 @@ static inline float det_3_via_col( struct mat3x3 mat, unsigned int c )
 
   return ret;
 }
-
+⁻
 // If we interpret the rows of a 3x3 matrix as three vectors, then the determinant of the matrix is
 //  equivalent to the so-called “triple product” of the three vectors: |M| = (r1 x r2)·r3
-//  (And since |M| = |Mᵀ|, You can tell this property applies to the column vectors too.
+//  (And since |M| = |Mᵀ|, You can tell this property applies to the columns too.
 //  The scalar triple product calculates the signed volume of a parallelepiped defined by three
 //  vectors, so you can infer that the volumes of the two parallelepipeds formed by two different
 //  sets of vectors from a same matrix be the same! although the shapes are not always the same.)
@@ -399,11 +398,11 @@ static inline float det_3_via_col( struct mat3x3 mat, unsigned int c )
 //  nonzero. Checking the magnitude of the determinant is the most commonly used test for
 //  invertibility because it's the easiest and quickest. In ordinary circumstances, this is OK, but
 //  please note that the method can break down. An example is an extreme shear matrix with basis
-//  vectors that form a very long, thin parallelepiped with unit volume. This ill conditioned
+//  vectors that form a very long, thin parallelepiped with unit volume. This ill-conditioned
 //  matrix is nearly singular, even though its determinant is 1. The condition number is the proper
 //  tool for detecting such cases.
 /**
- * \warning You might wanna use det_3_pivoting instead for an optimal performance!
+ * \warning You might wanna use det_3_pivoting instead, for an optimal performance!
  */
 __attribute__((always_inline))
 static inline float det_3( struct mat3x3 mat )
@@ -414,6 +413,7 @@ static inline float det_3( struct mat3x3 mat )
 }
 
 /**
+ * \brief The more 0's the lighter the computation can get
  * \param use_row This parameter decides the meaning of \a idx
  * \param idx The index of the row to use when computing the determinant if \a use_row is true.
  *            The index of the column to use otherwise.
@@ -479,10 +479,10 @@ static inline struct mat3x3 get_adj( struct mat3x3 mat )
 //  statically. On today's superscalar architectures and dedicated vector processors, this is a big
 //  win. 
 /**
- * \warning If a matrix is orthogonal, its transpose and inverse are equal. Just a transpose is
- *          probably enough. Rotation and reflection matrices are orthogonal. If we know that our
- *          matrix is orthogonal, we can essentially avoid computing the inverse, which is a
- *          relatively costly computation.
+ * \warning If a matrix is orthogonal, its transpose and inverse are equal; Just obtaining the
+ *  transpose is probably enough in this case.
+ *  Rotation and reflection matrices are orthogonal. If we know that our matrix is orthogonal, we
+ *  can essentially avoid computing the inverse, which is a relatively costly computation.
  * \return  The inverse of \a mat
  */
 __attribute__((always_inline))
