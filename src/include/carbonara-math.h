@@ -1,5 +1,5 @@
-#if !defined SALAMI_VERTEX_H_
-#define SALAMI_VERTEX_H_
+#if !defined CARBONARA_MATH_H_
+#define CARBONARA_MATH_H_
 
 
 #include <stdint.h>
@@ -102,6 +102,9 @@ static inline vec3 cross_3( vec3 v1, vec3 v2 )
 //-------------------------------------------------------------------------------------------------
 // Scalar Multiplication
 
+/**
+ * \return \a s * \a v
+ */
 __attribute__((always_inline))
 static inline vec3 scalar_mul_3( vec3 v, float s )
 {
@@ -113,6 +116,9 @@ static inline vec3 scalar_mul_3( vec3 v, float s )
   return ret;
 }
 
+/**
+ * \return \a s * \a v
+ */
 __attribute__((always_inline))
 static inline vec2 scalar_mul_2( vec2 v, float s )
 {
@@ -140,6 +146,7 @@ static inline vec2 scalar_mul_2( vec2 v, float s )
 
 // a row-major 2x2 matrix
 struct mat2x2 {
+  alignas(ALIGN_FOR_AVX)
   vec2 rows[2];
 };
 // a row-major 3x3 matrix
@@ -253,12 +260,16 @@ static inline vec3 mul_v_3x3( vec3 row, struct mat3x3 mat )
 
 //-------------------------------------------------------------------------------------------------
 __attribute__((always_inline))
-static inline void normalize_vec3( const vec3 * restrict src, vec3 * restrict dst )
+static inline vec3 normalize_vec3( const vec3 src )
 {
-  float length = sqrtf( src->x * src->x +  src->y * src->y +  src->z * src->z );
-  dst->x = src->x / length;
-  dst->y = src->y / length;
-  dst->z = src->z / length;
+  vec3 ret;
+
+  float length = sqrtf( src.x * src.x +  src.y * src.y +  src.z * src.z );
+  ret.x = src.x / length;
+  ret.y = src.y / length;
+  ret.z = src.z / length;
+
+  return ret;
 }
 
 //-------------------------------------------------------------------------------------------------
@@ -385,7 +396,7 @@ static inline float det_3_via_col( struct mat3x3 mat, unsigned int c )
 
   return ret;
 }
-⁻
+
 // If we interpret the rows of a 3x3 matrix as three vectors, then the determinant of the matrix is
 //  equivalent to the so-called “triple product” of the three vectors: |M| = (r1 x r2)·r3
 //  (And since |M| = |Mᵀ|, You can tell this property applies to the columns too.
@@ -530,16 +541,17 @@ static inline bool is_orthogonal( struct mat3x3 mat )
 
 
 /**
- * \brief The function produces a similar matrix with orthogonal basis vectors. The standard
+ * \brief Gram-Schmidt orthogonalization
+ * \details The function produces a similar matrix with orthogonal basis vectors. The standard
  *  algorithm for constructing a set of orthogonal basis vectors is Gram-Schmidt orthogonalization.
  *  The basic idea is to go through the basis vectors in order. For each basis vector, we subtract
- *  off the portion of that vector that is parallel to the proceeding basis vectors, which must
+ *  off the portion of that vector that is parallel to the preceding basis vectors, which must
  *  result in a perpendicular vector.
- * \warning We need an orthonormal basis to form an orthogonal matrix, and so we should probably
- *  normalize the vectors in addition to orthogonalizing. Notice that if we normalize the vectors
- *  as we go, rather than in a second pass, then we can avoid all of the divisions.
- *  Also, a trick that works in 3D (but not in higher dimensions) is to compute the third
- *  basis vector using the cross product (TODO)
+ * \warning (NOTE) We need an orthonormal basis to form an orthogonal matrix, and so we should
+ *  probably normalize the vectors in addition to orthogonalizing. Notice that if we normalize the
+ *  vectors as we go, rather than in a second pass, then we can avoid all of the divisions.
+ *  (TODO) Also, a trick that works in 3D (but not in higher dimensions) is to compute the third
+ *  basis vector using the cross product.
  *  The fundtion is biased, the first row will be unchanged and the last row will be changed
  *  the most. We can implement an unbiased version at the cost of a big loop of computation.
  */
@@ -549,14 +561,17 @@ static inline struct mat3x3 orthogonalize( struct mat3x3 mat )
   struct mat3x3 ret;
   constexpr size_t row_cnt = _arr_elem_cnt(mat.rows);
   float arr_self_dp[row_cnt - 1];
+
   ret.rows[0] = mat.rows[0];
+
   arr_self_dp[0] = dot_3( ret.rows[0], ret.rows[0] );
-  ret.rows[1] = mat.rows[1] - scalar_mul_3( ret.rows[0],
-      dot_3( mat.rows[1], ret.rows[0] ) / arr_self_dp[0] );
+  ret.rows[1] = mat.rows[1];
+  ret.rows[1] -= scalar_mul_3( ret.rows[0], dot_3(mat.rows[1], ret.rows[0]) / arr_self_dp[0] );
+
   arr_self_dp[1] = dot_3( ret.rows[1], ret.rows[1] );
   ret.rows[2] = mat.rows[2];
-  ret.rows[2] -= scalar_mul_3( ret.rows[0], dot_3( mat.rows[2], ret.rows[0] ) / arr_self_dp[0] );
-  ret.rows[2] -= scalar_mul_3( ret.rows[1], dot_3( mat.rows[2], ret.rows[1] ) / arr_self_dp[1] );
+  ret.rows[2] -= scalar_mul_3( ret.rows[0], dot_3(mat.rows[2], ret.rows[0]) / arr_self_dp[0] );
+  ret.rows[2] -= scalar_mul_3( ret.rows[1], dot_3(mat.rows[2], ret.rows[1]) / arr_self_dp[1] );
 
   return ret;
 }
@@ -564,20 +579,13 @@ static inline struct mat3x3 orthogonalize( struct mat3x3 mat )
 
 
 //-------------------------------------------------------------------------------------------------
-//struct matrix {
-//  float c1[4];
-//  float c2[4];
-//  float c3[4];
-//  float c4[4];
-//};
-
-//   Identity  Translation   Rotation    Scaling   Perspective Orthographic
-// ┌         ┐ ┌         ┐ ┌         ┐ ┌         ┐ ┌         ┐ ┌         ┐
-// │ 1 0 0 0 │ │ 1 0 0 0 │ │ ? ? ? 0 │ │ x 0 0 0 │ │ 1 0 0 0 │ │ ? 0 0 ? │
-// │ 0 1 0 0 │ │ 0 1 0 0 │ │ ? ? ? 0 │ │ 0 y 0 0 │ │ 0 1 0 0 │ │ 0 ? 0 ? │
-// │ 0 0 1 0 │ │ 0 0 1 0 │ │ ? ? ? 0 │ │ 0 0 z 0 │ │ 0 0 1 1 │ │ 0 0 ? ? │
-// │ 0 0 0 1 │ │ x y z 1 │ │ 0 0 0 1 │ │ 0 0 0 1 │ │ 0 0 0 0 │ │ 0 0 0 1 │
-// └         ┘ └         ┘ └         ┘ └         ┘ └ Mv=v'   ┘ └         ┘
+//   Identity  Translation   Rotation    Scaling
+// ┌         ┐ ┌         ┐ ┌         ┐ ┌         ┐
+// │ 1 0 0 0 │ │ 1 0 0 0 │ │ ? ? ? 0 │ │ x 0 0 0 │
+// │ 0 1 0 0 │ │ 0 1 0 0 │ │ ? ? ? 0 │ │ 0 y 0 0 │
+// │ 0 0 1 0 │ │ 0 0 1 0 │ │ ? ? ? 0 │ │ 0 0 z 0 │
+// │ 0 0 0 1 │ │ x y z 1 │ │ 0 0 0 1 │ │ 0 0 0 1 │
+// └         ┘ └         ┘ └         ┘ └         ┘
 
 constexpr struct mat4x4 identity_4x4 = {
   .rows = {
@@ -610,15 +618,15 @@ static inline struct mat4x4 translate_4x4( float x, float y, float z )
  * \brief returns a matrix for rotation around x axis
  */
 __attribute__((always_inline))
-static inline struct mat4x4 rot_axa_4x4( float angle )
+static inline struct mat4x4 rot_axa_4x4( float theta )
 {
-  float sin = sinf(angle);
-  float cos = cosf(angle);
+  float sin = sinf(theta);
+  float cos = cosf(theta);
   struct mat4x4 ret = {
-    (vec4) { 1, 0, 0, 0 },
-    (vec4) { 0, cos, sin, 0 },
+    (vec4) { 1, 0,    0,  0 },
+    (vec4) { 0, cos,  sin, 0 },
     (vec4) { 0, -sin, cos, 0 },
-    (vec4) { 0, 0, 0, 1 },
+    (vec4) { 0, 0,    0,  1 },
   };
   return ret;
 }
@@ -627,15 +635,15 @@ static inline struct mat4x4 rot_axa_4x4( float angle )
  * \brief returns a matrix for rotation around y axis
  */
 __attribute__((always_inline))
-static inline struct mat4x4 rot_aya_4x4( float angle )
+static inline struct mat4x4 rot_aya_4x4( float theta )
 {
-  float sin = sinf(angle);
-  float cos = cosf(angle);
+  float sin = sinf(theta);
+  float cos = cosf(theta);
   struct mat4x4 ret = {
     (vec4) { cos, 0, -sin, 0 },
-    (vec4) { 0, 1, 0, 0 },
+    (vec4) { 0,   1, 0,   0 },
     (vec4) { sin, 0, cos, 0 },
-    (vec4) { 0, 0, 0, 1 },
+    (vec4) { 0,   0, 0,   1 },
   };
   return ret;
 }
@@ -644,15 +652,15 @@ static inline struct mat4x4 rot_aya_4x4( float angle )
  * \brief returns a matrix for rotation around z axis
  */
 __attribute__((always_inline))
-static inline struct mat4x4 rot_aza_4x4( float angle )
+static inline struct mat4x4 rot_aza_4x4( float theta )
 {
-  float sin = sinf(angle);
-  float cos = cosf(angle);
+  float sin = sinf(theta);
+  float cos = cosf(theta);
   struct mat4x4 ret = {
-    (vec4) { cos, sin, 0, 0 },
+    (vec4) { cos,   sin, 0, 0 },
     (vec4) { -sin, cos, 0, 0 },
-    (vec4) { 0, 0, 1, 0 },
-    (vec4) { 0, 0, 0, 1 },
+    (vec4) { 0,     0,  1, 0 },
+    (vec4) { 0,     0,  0, 1 },
   };
   return ret;
 }
@@ -661,41 +669,88 @@ static inline struct mat4x4 rot_aza_4x4( float angle )
  * \brief returns a rotation matrix.
  * \param pivot The pivot vector around which things move, it should be a normalized vector
  */
-void get_rotaion_matrix( const float * restrict pivot, float angle, float * restrict dst );
-void get_rotaion_matrix_ap( const float * restrict pivot, float angle, float * restrict dst );
-//void get_rotaion_matrices(const float * restrict arr_pivots, const float * restrict angles,
-//    float * restrict dst, uint_fast16_t mat_cnt);
-//void get_rotaion_matrices_ap(const float * restrict arr_pivots, const float * restrict angles,
-//    float * restrict dst, uint_fast16_t mat_cnt);
-
-//-------------------------------------------------------------------------------------------------
 __attribute__((always_inline))
-static inline void get_scaling_matrix( float x, float y, float z, float * dst )
+static inline struct mat4x4 get_rot_mat(
+    const vec3 pivot,
+    float angle )
 {
-  dst[4*0 + 0] = x;
-  dst[4*0 + 1] = 0;
-  dst[4*0 + 2] = 0;
-  dst[4*0 + 3] = 0;
+  const float cos = cosf(angle);
+  const float one_minus_cos = 1.0f - cos;
+  const float sin = sinf(angle);
 
-  dst[4*1 + 0] = 0;
-  dst[4*1 + 1] = y;
-  dst[4*1 + 2] = 0;
-  dst[4*1 + 3] = 0;
+  const float x = pivot[0];
+  const float y = pivot[1];
+  const float z = pivot[2];
 
-  dst[4*2 + 0] = 0;
-  dst[4*2 + 1] = 0;
-  dst[4*2 + 2] = z;
-  dst[4*2 + 3] = 0;
+  // # of Mult :  3 +6 +3 = 12
+  // # of Add/Sub :  3 +3*2 = 9
+  // # of Load :  3 float
 
-  dst[4*3 + 0] = 0;
-  dst[4*3 + 1] = 0;
-  dst[4*3 + 2] = 0;
-  dst[4*3 + 3] = 1;
+  // x * x*(1-c) + c
+  // y * y*(1-c) + c
+  // z * z*(1-c) + c
+  // x * y*(1-c) [(-zs)|(+zs)]
+  // x * z*(1-c) [(-ys)|(+ys)]
+  // y * z*(1-c) [(-xs)|(+xs)]
+
+  struct mat4x4 dst;
+  dst.rows[4][0] = x * x * one_minus_cos + cos;
+  dst.rows[4][1] = y * x * one_minus_cos - z * sin;
+  dst.rows[4][2] = z * x * one_minus_cos + y * sin;
+  dst.rows[4][3] = 0.0f;
+
+  dst.rows[4][0] = x * y * one_minus_cos + z * sin;
+  dst.rows[4][1] = y * y * one_minus_cos + cos;
+  dst.rows[4][2] = z * y * one_minus_cos - x * sin;
+  dst.rows[4][3] = 0.0f;
+
+  dst.rows[4][0] =  x * z * one_minus_cos - y * sin;
+  dst.rows[4][1] =  y * z * one_minus_cos + x * sin;
+  dst.rows[4][2] = z * z * one_minus_cos + cos;
+  dst.rows[4][3] = 0.0f;
+
+  dst.rows[4][0] = 0.0f;
+  dst.rows[4][1] = 0.0f;
+  dst.rows[4][2] = 0.0f;
+  dst.rows[4][3] = 1.0f;
+
+  return dst;
+}
+
+/**
+ * \brief returns a scaling matrix.
+ */
+__attribute__((always_inline))
+static inline struct mat4x4 get_sca_mat( float x, float y, float z )
+{
+  struct mat4x4 ret;
+
+  ret.rows[0][0] = x;
+  ret.rows[0][1] = 0;
+  ret.rows[0][2] = 0;
+  ret.rows[0][3] = 0;
+
+  ret.rows[1][0] = 0;
+  ret.rows[1][1] = y;
+  ret.rows[1][2] = 0;
+  ret.rows[1][3] = 0;
+
+  ret.rows[2][0] = 0;
+  ret.rows[2][1] = 0;
+  ret.rows[2][2] = z;
+  ret.rows[2][3] = 0;
+
+  ret.rows[3][0] = 0;
+  ret.rows[3][1] = 0;
+  ret.rows[3][2] = 0;
+  ret.rows[3][3] = 1;
+
+  return ret;
 }
 
 /**
  * \brief returns the matrix for converting our world volume to Vulkan's canonical viewing volume.
- *  perspective_projection_matrix = perspective-ortho * ortho-vulkan_cvv
+ *  perspective_projection_matrix = perspective-to-ortho * ortho-to-vulkan_cvv
  * \param vfov The angle of the vertical field of view.
  * \param aspect_ratio The width divided by the height of the render target.
  * \param near The distance from the viewer to the near clipping plane.
@@ -738,8 +793,8 @@ struct p_c_2 {
 
 // Spherical Coordinates (Polar Coordinates)
 struct p_c_3 {
-  float h;  ///> Heading, When h=p=0 it's at [x=0, z>0], as h gets greater it turns
-            ///>   clockwise(when seen from above i.e. from +y).
+  float h;  ///> Heading, When h=p=0, it's at [x=0, z>0].
+            ///> As h gets greater it turns clockwise(when seen from above i.e. from +y).
   float r;  // Radial distance, the distance from origin.
   float p;  // Pitch i.e. declination starting from y=0
 };
@@ -753,7 +808,6 @@ static inline struct p_c_3 v2pc( vec3 v )
   float magnitude = sqrtf( v.x * v.x +  v.y * v.y +  v.z * v.z );
   if ( magnitude <= 0.0f ) {
     ret = (typeof(ret)) {0};
-    //return (typeof(ret)) {0};
     return ret;
   }
   ret.r = magnitude;
@@ -786,4 +840,4 @@ static inline vec3 pc2v( struct p_c_3 pc )
 
 
 
-#endif  // SALAMI_VERTEX_H_
+#endif  // CARBONARA_MATH_H_

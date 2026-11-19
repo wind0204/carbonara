@@ -77,7 +77,7 @@ union ieee754_binary32_be {
 // NOTE Do we need another set for PDP_ENDIAN?
 
 
-#define DEF_ABS_TOL 0.00000095367431640625
+#define DEF_ABS_TOL 0.00000095367431640625  // 2⁻²⁰
 #define DEF_REL_TOL ((DEF_ABS_TOL) / 256)
 
 //-------------------------------------------------------------------------------------------------
@@ -87,14 +87,12 @@ static inline bool is_close_f( float a, float b, float abs_tol, float rel_tol )
   return fabsf( a - b ) <= max( rel_tol * max(fabsf(a), fabsf(b)), abs_tol );
 }
 
-//-------------------------------------------------------------------------------------------------
 __attribute__((always_inline))
 static inline bool is_close_d( double a, double b, double abs_tol, double rel_tol )
 {
   return fabs( a - b ) <= max( rel_tol * max(fabs(a), fabs(b)), abs_tol );
 }
 
-//-------------------------------------------------------------------------------------------------
 #define is_close( a, b ) _Generic((a),      \
     float :                                 \
         is_close_f,                         \
@@ -109,14 +107,12 @@ static inline bool is_close_norel_f( float a, float b, float abs_tol )
   return fabsf( a - b ) <= abs_tol;
 }
 
-//-------------------------------------------------------------------------------------------------
 __attribute__((always_inline))
 static inline bool is_close_norel_d( double a, double b, double abs_tol )
 {
   return fabs( a - b ) <= abs_tol;
 }
 
-//-------------------------------------------------------------------------------------------------
 #define is_close_norel( a, b ) _Generic((a),  \
     float :                                   \
         is_close_norel_f,                     \
@@ -135,7 +131,6 @@ static inline double min_without_cmp_d( double a, double b )
   return (sum - abs_diff) / 2;
 }
 
-//-------------------------------------------------------------------------------------------------
 __attribute__((always_inline))
 static inline double max_without_cmp_d( double a, double b )
 {
@@ -146,7 +141,6 @@ static inline double max_without_cmp_d( double a, double b )
   return (sum + abs_diff) / 2;
 }
 
-//-------------------------------------------------------------------------------------------------
 __attribute__((always_inline))
 static inline float min_without_cmp_f( float a, float b )
 {
@@ -157,7 +151,6 @@ static inline float min_without_cmp_f( float a, float b )
   return (sum - abs_diff) / 2;
 }
 
-//-------------------------------------------------------------------------------------------------
 __attribute__((always_inline))
 static inline float max_without_cmp_f( float a, float b )
 {
@@ -167,5 +160,6 @@ static inline float max_without_cmp_f( float a, float b )
   const typeof(a) abs_diff = diff.whole;
   return (sum + abs_diff) / 2;
 }
+
 
 #endif  // UTIL_C_LANG_IEEE754_H_
