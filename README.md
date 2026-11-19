@@ -71,4 +71,4 @@ ln -s build-Debug/compile_commands.json .
 build-Debug/Debug/carbonara
 ```
 
-## WARNING: At this stage of development, the `CMakeLists.txt` is designed in such a way that `carbonara` generates a lot of traces for [Spall](https://gravitymoth.com/spall) in /dev/shm/Carb.spall unless `CMAKE_BUILD_TYPE` is set to `Release`, which causes `ENABLE_PROFILING` to be defined.
+## WARNING: At this stage of development, the `CMakeLists.txt` is designed in such a way that `carbonara` generates a lot of traces for [Spall](https://gravitymoth.com/spall) in /dev/shm/Carb.spall unless `CMAKE_BUILD_TYPE` is set to `Release`, I use the definition of `ENABLE_PROFILING` to enable/disable tracing in the codebase.
