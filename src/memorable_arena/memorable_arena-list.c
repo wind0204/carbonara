@@ -144,7 +144,7 @@ static struct ma_sub_arena * create_new_node(
       return nullptr;
     }
   }
-  madvise( p_alloc, cur_len_sub_arena, MADV_HUGEPAGE );
+  madvise( p_alloc, cur_len_sub_arena, MADV_HUGEPAGE | MADV_DONTDUMP );
 
 #ifdef DEBUG_MODE
   if ( sub_arena_len != cur_len_sub_arena ) {
