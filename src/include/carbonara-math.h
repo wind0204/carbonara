@@ -672,11 +672,11 @@ static inline struct mat4x4 rot_aza_4x4( float theta )
 __attribute__((always_inline))
 static inline struct mat4x4 get_rot_mat(
     const vec3 pivot,
-    float angle )
+    float theta )
 {
-  const float cos = cosf(angle);
+  const float cos = cosf(theta);
   const float one_minus_cos = 1.0f - cos;
-  const float sin = sinf(angle);
+  const float sin = sinf(theta);
 
   const float x = pivot[0];
   const float y = pivot[1];
@@ -694,25 +694,25 @@ static inline struct mat4x4 get_rot_mat(
   // y * z*(1-c) [(-xs)|(+xs)]
 
   struct mat4x4 dst;
-  dst.rows[4][0] = x * x * one_minus_cos + cos;
-  dst.rows[4][1] = y * x * one_minus_cos - z * sin;
-  dst.rows[4][2] = z * x * one_minus_cos + y * sin;
-  dst.rows[4][3] = 0.0f;
+  dst.rows[0][0] = x * x * one_minus_cos + cos;
+  dst.rows[0][1] = y * x * one_minus_cos - z * sin;
+  dst.rows[0][2] = z * x * one_minus_cos + y * sin;
+  dst.rows[0][3] = 0.0f;
 
-  dst.rows[4][0] = x * y * one_minus_cos + z * sin;
-  dst.rows[4][1] = y * y * one_minus_cos + cos;
-  dst.rows[4][2] = z * y * one_minus_cos - x * sin;
-  dst.rows[4][3] = 0.0f;
+  dst.rows[1][0] = x * y * one_minus_cos + z * sin;
+  dst.rows[1][1] = y * y * one_minus_cos + cos;
+  dst.rows[1][2] = z * y * one_minus_cos - x * sin;
+  dst.rows[1][3] = 0.0f;
 
-  dst.rows[4][0] =  x * z * one_minus_cos - y * sin;
-  dst.rows[4][1] =  y * z * one_minus_cos + x * sin;
-  dst.rows[4][2] = z * z * one_minus_cos + cos;
-  dst.rows[4][3] = 0.0f;
+  dst.rows[2][0] =  x * z * one_minus_cos - y * sin;
+  dst.rows[2][1] =  y * z * one_minus_cos + x * sin;
+  dst.rows[2][2] = z * z * one_minus_cos + cos;
+  dst.rows[2][3] = 0.0f;
 
-  dst.rows[4][0] = 0.0f;
-  dst.rows[4][1] = 0.0f;
-  dst.rows[4][2] = 0.0f;
-  dst.rows[4][3] = 1.0f;
+  dst.rows[3][0] = 0.0f;
+  dst.rows[3][1] = 0.0f;
+  dst.rows[3][2] = 0.0f;
+  dst.rows[3][3] = 1.0f;
 
   return dst;
 }
