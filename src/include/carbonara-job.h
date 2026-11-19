@@ -1,6 +1,6 @@
-#include "info_struct.h"
 #if !defined CARBONARA_JOB_H_
 # define CARBONARA_JOB_H_
+
 
 #include <stdatomic.h>
 #if ATOMIC_CHAR_LOCK_FREE == 1
@@ -12,6 +12,7 @@
 
 #include <stdint.h>
 
+#include "info_struct.h"
 #include "appdev_support-processor_map.h"
 #include "util-c_lang-basic.h"
 #include "carbonara-asset.h"
@@ -54,7 +55,7 @@ constexpr size_t cara_len_job_func_param = 8;
 //};
 
 /**
- * \brief It describes the properties of the job
+ * \brief It describes the job properties
  */
 enum job_flag : unsigned char {
   job_flag_contact_gpu = 0x01,
@@ -93,12 +94,11 @@ struct cara_job_batch_desc_64 {
                                   ///< ~0 is assigned if the jobs are not for duo.
                                   ///< UINT8_MAX-1 is assigned hen the jobs are for duo and the
                                   ///<  preferred core hasn't been determined.
-  uint8_t job_func_params[6 * cara_len_job_func_param];  ///< The first argument for each
-                                                              ///< function is the biggest and its
-                                                              ///< position should be aligned
-                                                              ///< accordingly.
-  // The first element in this array is the enum job_func_idx of the first job to get done.
-  uint8_t job_func_idx[6];  ///< enum job_func_idx  XXX Just 255 types? FIXME
+  uint8_t job_func_params[6 * cara_len_job_func_param];  ///< The first argument for each function
+                                                         ///< is the biggest and its position
+                                                         ///< should be aligned accordingly.
+  uint8_t job_func_idx[6];  ///< ATM, it contains enum job_func_idx  FIXME Just 255 types?
+        ///< The first element in this array is the enum job_func_idx of the first job to get done.
   uint8_t job_flags[6];  ///< enum job_flag;
   //uint8_t pattern_len[6];
   /*
@@ -130,29 +130,6 @@ struct cara_job_batch_desc_64 * cara_get_job( const struct ms_worker_info * work
 //-------------------------------------------------------------------------------------------------
 struct cara_job_batch_desc_64 * cara_get_unoccupied_job_batch_desc(void);
 //struct cara_job_batch_desc_64 * cara_get_unoccupied_job_batch_desc_colored(uint32_t cacheline_sets);
-
-
-
-/**
- * This struct contains the arguments that will be fed to the job_functions in a job_batch
- */
-/*
-struct cara_job_func_args_64 {
-  uint8_t data[64-1];
-  atomic_uint_least8_t occupied;  ///< 1 when it's linked to a job batch descriptor, 0 when it's not linked to any.
-};
-*/
-
-//void cara_init_job_arg_pool_node(void * data);
-/*
- * @return UINT16_MAX when it couldn't find any argument group index to return
- */
-//uint16_t cara_get_unoccupied_job_func_args(void);
-/*
- * @return UINT16_MAX when it couldn't find any argument group index to return
- */
-//uint16_t cara_get_unoccupied_job_func_args_colored(uint32_t cacheline_sets);
-
 
 
 #endif  // CARBONARA_JOB_H_
