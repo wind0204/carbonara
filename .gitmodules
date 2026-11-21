@@ -4,3 +4,12 @@
 [submodule "extern/simde"]
 	path = extern/simde
 	url = https://github.com/simd-everywhere/simde.git
+[submodule "extern/lz4"]
+	path = extern/lz4
+	url = https://github.com/lz4/lz4.git
+[submodule "extern/snappy-c"]
+	path = extern/snappy-c
+	url = https://github.com/andikleen/snappy-c.git
+[submodule "extern/zstd"]
+	path = extern/zstd
+	url = https://github.com/meta/zstd.git

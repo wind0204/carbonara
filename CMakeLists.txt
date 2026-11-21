@@ -257,6 +257,8 @@ string(REGEX REPLACE "^ +" "" CMAKE_C_FLAGS ${CMAKE_C_FLAGS})
 #   CMAKE_C_FLAGS_RELWITHDEBINFO is -O2 -g -DNDEBUG
 #   CMAKE_C_FLAGS_MINSIZEREL is -Os -DNDEBUG
 
+set( C_FLAGS_FOR_WEVERYTHING -Weverything -Werror -Wno-c++98-compat -Wno-pre-c11-compat -Wno-unused-macros -Wno-gnu-alignof-expression -Wno-error=unused-function -Wno-double-promotion -Wno-logical-op-parentheses -Wno-unsafe-buffer-usage -Wno-extra-semi-stmt -Wno-shorten-64-to-32 -Wno-sign-conversion -Wno-vla -Wno-switch-enum -Wno-cast-qual -Wno-implicit-int-enum-cast -Wno-implicit-void-ptr-cast -Wno-implicit-int-conversion -Wno-declaration-after-statement -Wno-gnu-pointer-arith -Wno-keyword-macro -Wno-padded -Wno-pre-c23-compat -Wno-switch-default -Wno-jump-misses-init -Wno-disabled-macro-expansion $<$<CONFIG:Release>:-Wno-error=unused-variable -Wno-error=unused-but-set-variable -Wno-error=unused-parameter> )
+
 
 
 add_definitions( -DTEXTURE_BILINEAR_FILTERING )
@@ -275,11 +277,10 @@ configure_file(
 #endif()
 
 
-
 add_executable( packer EXCLUDE_FROM_ALL
   src/asspacker/packer.c
   )
-  target_compile_options( packer PRIVATE -Weverything -Werror -Wno-c++98-compat -Wno-pre-c11-compat -Wno-unused-macros -Wno-gnu-alignof-expression -Wno-error=unused-function -Wno-double-promotion -Wno-logical-op-parentheses -Wno-unsafe-buffer-usage -Wno-extra-semi-stmt -Wno-shorten-64-to-32 -Wno-sign-conversion -Wno-vla -Wno-switch-enum -Wno-cast-qual -Wno-implicit-int-enum-cast -Wno-implicit-void-ptr-cast -Wno-implicit-int-conversion -Wno-declaration-after-statement -Wno-gnu-pointer-arith -Wno-keyword-macro -Wno-padded -Wno-pre-c23-compat -Wno-switch-default -Wno-jump-misses-init -Wno-disabled-macro-expansion $<$<CONFIG:Release>:-Wno-error=unused-variable -Wno-error=unused-but-set-variable -Wno-error=unused-parameter> ${C_FLAGS_IN_HOUSE} )
+target_compile_options( packer PRIVATE ${C_FLAGS_FOR_WEVERYTHING} ${C_FLAGS_IN_HOUSE} )
 set_property( TARGET packer PROPERTY C_STANDARD 23 )
 if( NOT CMAKE_BUILD_TYPE MATCHES Debug )
   set_property( TARGET packer PROPERTY INTERPROCEDURAL_OPTIMIZATION TRUE )
@@ -296,7 +297,7 @@ add_executable( carbonara
   #src/vulkan/vulkan_functions.c  # Just use volk
   src/util/util-spall.c
   )
-  target_compile_options( carbonara PRIVATE -Weverything -Werror -Wno-c++98-compat -Wno-pre-c11-compat -Wno-unused-macros -Wno-gnu-alignof-expression -Wno-error=unused-function -Wno-double-promotion -Wno-logical-op-parentheses -Wno-unsafe-buffer-usage -Wno-extra-semi-stmt -Wno-shorten-64-to-32 -Wno-sign-conversion -Wno-vla -Wno-switch-enum -Wno-cast-qual -Wno-implicit-int-enum-cast -Wno-implicit-void-ptr-cast -Wno-implicit-int-conversion -Wno-declaration-after-statement -Wno-gnu-pointer-arith -Wno-keyword-macro -Wno-padded -Wno-pre-c23-compat -Wno-switch-default -Wno-jump-misses-init -Wno-disabled-macro-expansion $<$<CONFIG:Release>:-Wno-error=unused-variable -Wno-error=unused-but-set-variable -Wno-error=unused-parameter> ${C_FLAGS_IN_HOUSE} )
+target_compile_options( carbonara PRIVATE ${C_FLAGS_FOR_WEVERYTHING} ${C_FLAGS_IN_HOUSE} )
 set_property( TARGET carbonara PROPERTY C_STANDARD 23 )
 if( NOT CMAKE_BUILD_TYPE MATCHES Debug )
   set_property( TARGET carbonara PROPERTY INTERPROCEDURAL_OPTIMIZATION TRUE )
@@ -310,7 +311,7 @@ endif()
 add_executable( tester EXCLUDE_FROM_ALL
   src/tester.c
   )
-  target_compile_options( tester PRIVATE -Weverything -Werror -Wno-c++98-compat -Wno-pre-c11-compat -Wno-unused-macros -Wno-gnu-alignof-expression -Wno-error=unused-function -Wno-double-promotion -Wno-logical-op-parentheses -Wno-unsafe-buffer-usage -Wno-extra-semi-stmt -Wno-shorten-64-to-32 -Wno-sign-conversion -Wno-vla -Wno-switch-enum -Wno-cast-qual -Wno-implicit-int-enum-cast -Wno-implicit-void-ptr-cast -Wno-implicit-int-conversion -Wno-declaration-after-statement -Wno-gnu-pointer-arith -Wno-keyword-macro -Wno-padded -Wno-pre-c23-compat -Wno-switch-default -Wno-jump-misses-init -Wno-disabled-macro-expansion $<$<CONFIG:Release>:-Wno-error=unused-variable -Wno-error=unused-but-set-variable -Wno-error=unused-parameter> ${C_FLAGS_IN_HOUSE} )
+target_compile_options( tester PRIVATE ${C_FLAGS_FOR_WEVERYTHING} ${C_FLAGS_IN_HOUSE} )
 set_property( TARGET tester PROPERTY C_STANDARD 23 )
 if( NOT CMAKE_BUILD_TYPE MATCHES Debug )
   set_property( TARGET tester PROPERTY INTERPROCEDURAL_OPTIMIZATION TRUE )
@@ -334,8 +335,8 @@ add_library( App-dev_support STATIC
   #src/appdev_support/appdev_support-window.c  # Use SDL3
   src/appdev_support/appdev_support-file.c  # TODO ditch it and just use SDL3
   )
-  target_compile_options( App-dev_support PRIVATE -Weverything -Werror -Wno-c++98-compat -Wno-pre-c11-compat -Wno-unused-macros -Wno-gnu-alignof-expression -Wno-error=unused-function -Wno-double-promotion -Wno-logical-op-parentheses -Wno-unsafe-buffer-usage -Wno-extra-semi-stmt -Wno-shorten-64-to-32 -Wno-sign-conversion -Wno-vla -Wno-switch-enum -Wno-cast-qual -Wno-implicit-int-enum-cast -Wno-implicit-void-ptr-cast -Wno-implicit-int-conversion -Wno-declaration-after-statement -Wno-gnu-pointer-arith -Wno-keyword-macro -Wno-padded -Wno-pre-c23-compat -Wno-switch-default -Wno-jump-misses-init -Wno-disabled-macro-expansion $<$<CONFIG:Release>:-Wno-error=unused-variable -Wno-error=unused-but-set-variable -Wno-error=unused-parameter> ${C_FLAGS_IN_HOUSE} )
-  set_property( TARGET App-dev_support PROPERTY C_STANDARD 23 )
+target_compile_options( App-dev_support PRIVATE ${C_FLAGS_FOR_WEVERYTHING} ${C_FLAGS_IN_HOUSE} )
+set_property( TARGET App-dev_support PROPERTY C_STANDARD 23 )
 if( NOT CMAKE_BUILD_TYPE MATCHES Debug )
   set_property( TARGET App-dev_support PROPERTY INTERPROCEDURAL_OPTIMIZATION TRUE )
 endif()
@@ -344,7 +345,7 @@ add_library( Memorable_arena STATIC
   src/memorable_arena/memorable_arena-vulkan.c
   src/memorable_arena/memorable_arena-list.c
   src/memorable_arena/memorable_arena-dynamic.c )
-target_compile_options( Memorable_arena PRIVATE -Weverything -Werror -Wno-c++98-compat -Wno-pre-c11-compat -Wno-unused-macros -Wno-gnu-alignof-expression -Wno-error=unused-function -Wno-double-promotion -Wno-logical-op-parentheses -Wno-unsafe-buffer-usage -Wno-extra-semi-stmt -Wno-shorten-64-to-32 -Wno-sign-conversion -Wno-vla -Wno-switch-enum -Wno-cast-qual -Wno-implicit-int-enum-cast -Wno-implicit-void-ptr-cast -Wno-implicit-int-conversion -Wno-declaration-after-statement -Wno-gnu-pointer-arith -Wno-keyword-macro -Wno-padded -Wno-pre-c23-compat -Wno-switch-default -Wno-jump-misses-init -Wno-disabled-macro-expansion $<$<CONFIG:Release>:-Wno-error=unused-variable -Wno-error=unused-but-set-variable -Wno-error=unused-parameter> ${C_FLAGS_IN_HOUSE} )
+target_compile_options( Memorable_arena PRIVATE ${C_FLAGS_FOR_WEVERYTHING} ${C_FLAGS_IN_HOUSE} )
 set_property( TARGET Memorable_arena PROPERTY C_STANDARD 23 )
 if( NOT CMAKE_BUILD_TYPE MATCHES Debug )
   set_property( TARGET Memorable_arena PROPERTY INTERPROCEDURAL_OPTIMIZATION TRUE )
@@ -354,7 +355,7 @@ target_link_libraries( Memorable_arena PUBLIC hwloc::hwloc )
 
 add_library( Err_msg STATIC
   src/err_msg/err_msg.c )
-target_compile_options( Err_msg PRIVATE -Weverything -Werror -Wno-c++98-compat -Wno-pre-c11-compat -Wno-unused-macros -Wno-gnu-alignof-expression -Wno-error=unused-function -Wno-double-promotion -Wno-logical-op-parentheses -Wno-unsafe-buffer-usage -Wno-extra-semi-stmt -Wno-shorten-64-to-32 -Wno-sign-conversion -Wno-vla -Wno-switch-enum -Wno-cast-qual -Wno-implicit-int-enum-cast -Wno-implicit-void-ptr-cast -Wno-implicit-int-conversion -Wno-declaration-after-statement -Wno-gnu-pointer-arith -Wno-keyword-macro -Wno-padded -Wno-pre-c23-compat -Wno-switch-default -Wno-jump-misses-init -Wno-disabled-macro-expansion $<$<CONFIG:Release>:-Wno-error=unused-variable -Wno-error=unused-but-set-variable -Wno-error=unused-parameter> ${C_FLAGS_IN_HOUSE} )
+target_compile_options( Err_msg PRIVATE ${C_FLAGS_FOR_WEVERYTHING} ${C_FLAGS_IN_HOUSE} )
 set_property( TARGET Err_msg PROPERTY C_STANDARD 23 )
 
 #file( GLOB INFO_STURUCT_SRC CONFIGURE_DEPENDS "src/info_struct/*.c" )
@@ -369,7 +370,7 @@ add_library( Info_struct STATIC
   src/info_struct/info_struct-hashtable.c
   src/info_struct/info_struct-tree.c
   )
-  target_compile_options( Info_struct PRIVATE -Weverything -Werror -Wno-c++98-compat -Wno-pre-c11-compat -Wno-unused-macros -Wno-gnu-alignof-expression -Wno-error=unused-function -Wno-double-promotion -Wno-logical-op-parentheses -Wno-unsafe-buffer-usage -Wno-extra-semi-stmt -Wno-shorten-64-to-32 -Wno-sign-conversion -Wno-vla -Wno-switch-enum -Wno-cast-qual -Wno-implicit-int-enum-cast -Wno-implicit-void-ptr-cast -Wno-implicit-int-conversion -Wno-declaration-after-statement -Wno-gnu-pointer-arith -Wno-keyword-macro -Wno-padded -Wno-pre-c23-compat -Wno-switch-default -Wno-jump-misses-init -Wno-disabled-macro-expansion $<$<CONFIG:Release>:-Wno-error=unused-variable -Wno-error=unused-but-set-variable -Wno-error=unused-parameter> ${C_FLAGS_IN_HOUSE} )
+target_compile_options( Info_struct PRIVATE ${C_FLAGS_FOR_WEVERYTHING} ${C_FLAGS_IN_HOUSE} )
 set_property( TARGET Info_struct PROPERTY C_STANDARD 23 )
 if( NOT CMAKE_BUILD_TYPE MATCHES Debug )
   set_property(TARGET Info_struct PROPERTY INTERPROCEDURAL_OPTIMIZATION TRUE)
@@ -377,7 +378,7 @@ endif()
 
 add_library( Util-c_lang STATIC
   src/util/util-c_lang.c )
-target_compile_options( Util-c_lang PRIVATE -Weverything -Werror -Wno-c++98-compat -Wno-pre-c11-compat -Wno-unused-macros -Wno-gnu-alignof-expression -Wno-error=unused-function -Wno-double-promotion -Wno-logical-op-parentheses -Wno-unsafe-buffer-usage -Wno-extra-semi-stmt -Wno-shorten-64-to-32 -Wno-sign-conversion -Wno-vla -Wno-switch-enum -Wno-cast-qual -Wno-implicit-int-enum-cast -Wno-implicit-void-ptr-cast -Wno-implicit-int-conversion -Wno-declaration-after-statement -Wno-gnu-pointer-arith -Wno-keyword-macro -Wno-padded -Wno-pre-c23-compat -Wno-switch-default -Wno-jump-misses-init -Wno-disabled-macro-expansion $<$<CONFIG:Release>:-Wno-error=unused-variable -Wno-error=unused-but-set-variable -Wno-error=unused-parameter> ${C_FLAGS_IN_HOUSE} )
+target_compile_options( Util-c_lang PRIVATE ${C_FLAGS_FOR_WEVERYTHING} ${C_FLAGS_IN_HOUSE} )
 set_property( TARGET Util-c_lang PROPERTY C_STANDARD 23 )
 if( NOT CMAKE_BUILD_TYPE MATCHES Debug )
   set_property(TARGET Util-c_lang PROPERTY INTERPROCEDURAL_OPTIMIZATION TRUE)
@@ -385,13 +386,13 @@ endif()
 
 add_library( Util-hwloc STATIC
   extern/util/util-hwloc.c )
-target_compile_options( Util-hwloc PRIVATE -Weverything -Werror -Wno-c++98-compat -Wno-pre-c11-compat -Wno-unused-macros -Wno-gnu-alignof-expression -Wno-error=unused-function -Wno-double-promotion -Wno-logical-op-parentheses -Wno-unsafe-buffer-usage -Wno-extra-semi-stmt -Wno-shorten-64-to-32 -Wno-sign-conversion -Wno-vla -Wno-switch-enum -Wno-cast-qual -Wno-implicit-int-enum-cast -Wno-implicit-void-ptr-cast -Wno-implicit-int-conversion -Wno-declaration-after-statement -Wno-gnu-pointer-arith -Wno-keyword-macro -Wno-padded -Wno-pre-c23-compat -Wno-switch-default -Wno-jump-misses-init -Wno-disabled-macro-expansion $<$<CONFIG:Release>:-Wno-error=unused-variable -Wno-error=unused-but-set-variable -Wno-error=unused-parameter> ${C_FLAGS_IN_HOUSE} )
+target_compile_options( Util-hwloc PRIVATE ${C_FLAGS_FOR_WEVERYTHING} ${C_FLAGS_IN_HOUSE} )
 set_property( TARGET Util-hwloc PROPERTY C_STANDARD 23 )
 target_link_libraries( Util-hwloc PUBLIC hwloc::hwloc )
 
 add_library( Sorter STATIC
   src/sorter/sorter-array.c )
-target_compile_options( Sorter PRIVATE -Weverything -Werror -Wno-c++98-compat -Wno-pre-c11-compat -Wno-unused-macros -Wno-gnu-alignof-expression -Wno-error=unused-function -Wno-double-promotion -Wno-logical-op-parentheses -Wno-unsafe-buffer-usage -Wno-extra-semi-stmt -Wno-shorten-64-to-32 -Wno-sign-conversion -Wno-vla -Wno-switch-enum -Wno-cast-qual -Wno-implicit-int-enum-cast -Wno-implicit-void-ptr-cast -Wno-implicit-int-conversion -Wno-declaration-after-statement -Wno-gnu-pointer-arith -Wno-keyword-macro -Wno-padded -Wno-pre-c23-compat -Wno-switch-default -Wno-jump-misses-init -Wno-disabled-macro-expansion $<$<CONFIG:Release>:-Wno-error=unused-variable -Wno-error=unused-but-set-variable -Wno-error=unused-parameter> ${C_FLAGS_IN_HOUSE} )
+target_compile_options( Sorter PRIVATE ${C_FLAGS_FOR_WEVERYTHING} ${C_FLAGS_IN_HOUSE} )
 set_property( TARGET Sorter PROPERTY C_STANDARD 23 )
 if( NOT CMAKE_BUILD_TYPE MATCHES Debug )
   set_property(TARGET Sorter PROPERTY INTERPROCEDURAL_OPTIMIZATION TRUE)
@@ -406,30 +407,7 @@ endif()
 #add_dependencies( Netloc OurHwloc )
 
 
-# NOTE There is actually no code that uses snappy at the moment
-# Snappy is fetched at build time when packer is actually built.
-# Build snappy-c as a static library using add_custom_command for proper output tracking
-set(SNAPPY_C_DIR "${DEPS_DIR}/snappy-c")
-add_custom_command(
-  OUTPUT "${SNAPPY_C_DIR}/libsnappy-c.a"
-  COMMAND ${CMAKE_COMMAND} -E make_directory "${DEPS_DIR}"
-  COMMAND ${CMAKE_COMMAND} -E env sh -c \"ls "${SNAPPY_C_DIR}/snappy.c"\" || ${CMAKE_COMMAND} -E rm -r "${SNAPPY_C_DIR}" && ${CMAKE_COMMAND} -E env git clone --depth 1 --branch master https://github.com/andikleen/snappy-c.git "${SNAPPY_C_DIR}"
-  COMMAND ${CMAKE_C_COMPILER} -c "${SNAPPY_C_DIR}/snappy.c" -o "${SNAPPY_C_DIR}/snappy.c.o"
-  COMMAND ${CMAKE_AR} rcs "${SNAPPY_C_DIR}/libsnappy-c.a" "${SNAPPY_C_DIR}/snappy.c.o"
-  WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"
-  COMMENT "Fetching and building snappy-c static library"
-)
-
-# Create a target that depends on the custom command output
-add_custom_target(build_snappy_c DEPENDS "${SNAPPY_C_DIR}/libsnappy-c.a")
-
-add_library(Snappy STATIC IMPORTED GLOBAL)
-set_target_properties(Snappy PROPERTIES
-  IMPORTED_LOCATION "${SNAPPY_C_DIR}/libsnappy-c.a"
-)
-
-# Set snappy include directory on packer target at build time
-target_include_directories(packer PRIVATE "${SNAPPY_C_DIR}")
+target_include_directories(packer SYSTEM PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/extern/snappy-c" )
 
 # You can find carbonara-config.h here
 include_directories( "${PROJECT_BINARY_DIR}/src" )
