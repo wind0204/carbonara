@@ -90,7 +90,8 @@ enum err_msg init_appdev_support_timer(
  * \a val The pointer to the variable to be written upon.
  * \return 0 if the file was not found, -1 if you couldn't read /dev/cpu/0/msr
  */
-static int rdmsr(int reg_addr, uint64_t *val) {
+static int rdmsr(int reg_addr, uint64_t *val)
+{
   const int fd = open("/dev/cpu/0/msr", O_RDONLY);
 
   // You need access to /dev/cpu/0/msr to determine this. (lsmod | grep msr)

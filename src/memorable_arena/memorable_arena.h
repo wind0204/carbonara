@@ -239,12 +239,12 @@ void * ma_aligned_alloc(
     );
 
 //-------------------------------------------------------------------------------------------------
-/*
+/**
  * \brief Not implemented yet.
  */
 void ma_free_simple_ofs_a( memorable_arena_t * restrict arena, uint8_t idx_user,
       uint32_t offset, struct ma_sub_arena * restrict sub_arena );
-/*
+/**
  * \brief Not implemented yet.
  */
 void ma_free_simple_ofs_b( memorable_arena_t * restrict arena, uint8_t idx_user,

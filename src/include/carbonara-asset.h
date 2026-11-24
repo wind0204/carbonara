@@ -1,5 +1,3 @@
-#include "util-c_lang-basic.h"
-#include <assert.h>
 #if !defined CARBONARA_ASSET_H
 #define CARBONARA_ASSET_H
 
@@ -7,10 +5,12 @@
  * NOTE For function declaration include "carbonara-asset-func.h"
  */
 
+#include <assert.h>
 #include <stdatomic.h>
 #include <stdint.h>
 #include <SDL3/SDL_asyncio.h>
 
+#include "util-c_lang-basic.h"
 #include "info_struct.h"
 
 //-------------------------------------------------------------------------------------------------

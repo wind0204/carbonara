@@ -40,16 +40,14 @@ uint32_t util_strlen_u8( const uint8_t * string )
   to_another_byte_order(0, util_endian_big_endian, &mask_third_byte, unit_len);
   uint32_t mask_fourth_byte = 0xffUL << 8*(unit_len-4);
   to_another_byte_order(0, util_endian_big_endian, &mask_fourth_byte, unit_len);
-  /*
-  uint64_t mask_fifth_byte = 0xffUL << 8*(unit_len-5);
-  to_another_byte_order(0, util_endian_BIG_ENDIAN, &mask_fifth_byte, sizeof(mask_first_byte));
-  uint64_t mask_sixth_byte = 0xffUL << 8*(unit_len-6);
-  to_another_byte_order(0, util_endian_BIG_ENDIAN, &mask_sixth_byte, sizeof(mask_first_byte));
-  uint64_t mask_seventh_byte = 0xffUL << 8*(unit_len-7);
-  to_another_byte_order(0, util_endian_BIG_ENDIAN, &mask_seventh_byte, sizeof(mask_first_byte));
-  uint64_t mask_eighth_byte = 0xffUL << 8*(unit_len-8);
-  to_another_byte_order(0, util_endian_BIG_ENDIAN, &mask_eighth_byte, sizeof(mask_first_byte));
-  */
+  //uint64_t mask_fifth_byte = 0xffUL << 8*(unit_len-5);
+  //to_another_byte_order(0, util_endian_BIG_ENDIAN, &mask_fifth_byte, sizeof(mask_first_byte));
+  //uint64_t mask_sixth_byte = 0xffUL << 8*(unit_len-6);
+  //to_another_byte_order(0, util_endian_BIG_ENDIAN, &mask_sixth_byte, sizeof(mask_first_byte));
+  //uint64_t mask_seventh_byte = 0xffUL << 8*(unit_len-7);
+  //to_another_byte_order(0, util_endian_BIG_ENDIAN, &mask_seventh_byte, sizeof(mask_first_byte));
+  //uint64_t mask_eighth_byte = 0xffUL << 8*(unit_len-8);
+  //to_another_byte_order(0, util_endian_BIG_ENDIAN, &mask_eighth_byte, sizeof(mask_first_byte));
   unsigned int idx = 0;
 #ifdef UTILIZE_AVX2
   while( !_is_aligned_to_power_of_two((uintptr_t)string + idx, ALIGN_FOR_AVX) ) {
@@ -60,6 +58,7 @@ uint32_t util_strlen_u8( const uint8_t * string )
       return idx;
     idx++;
   }
+//}
   unsigned int b4_align = idx;
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wcast-align"
@@ -80,16 +79,14 @@ uint32_t util_strlen_u8( const uint8_t * string )
       return idx * sizeof(*string2) + 2 + b4_align;
     if ( 0 == (mask_fourth_byte & string2[idx]) )
       return idx * sizeof(*string2) + 3 + b4_align;
-    /*
-    if ( 0 == (mask_fifth_byte & string2[idx]) )
-      return idx * sizeof(*string2) + 4;
-    if ( 0 == (mask_sixth_byte & string2[idx]) )
-      return idx * sizeof(*string2) + 5;
-    if ( 0 == (mask_seventh_byte & string2[idx]) )
-      return idx * sizeof(*string2) + 6;
-    if ( 0 == (mask_eighth_byte & string2[idx]) )
-      return idx * sizeof(*string2) + 7;
-    */
+    //if ( 0 == (mask_fifth_byte & string2[idx]) )
+    //  return idx * sizeof(*string2) + 4;
+    //if ( 0 == (mask_sixth_byte & string2[idx]) )
+    //  return idx * sizeof(*string2) + 5;
+    //if ( 0 == (mask_seventh_byte & string2[idx]) )
+    //  return idx * sizeof(*string2) + 6;
+    //if ( 0 == (mask_eighth_byte & string2[idx]) )
+    //  return idx * sizeof(*string2) + 7;
     idx++;
   }
 }
@@ -117,6 +114,7 @@ uint32_t util_strlen_u16( const uint16_t * string )
       return idx;
     idx++;
   }
+//}
   unsigned int b4_align = idx;
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wcast-align"
@@ -206,6 +204,7 @@ uint32_t get_idx_of_char( const char * string, char c )
 
     idx++;
   }
+//}
   unsigned int b4_align = idx;
 
 #pragma GCC diagnostic push
@@ -347,6 +346,7 @@ static unsigned int count_1bits_POPCNT( unsigned int length, const uint8_t strin
 }
 
 /*
+ * I guess I wrote some useless code in the past?
 __attribute__((always_inline))
 static inline void rotate_bits_left_1byte(
     unsigned int string_len, uint8_t string[static string_len], uint8_t nr_bits_to_rotate) {

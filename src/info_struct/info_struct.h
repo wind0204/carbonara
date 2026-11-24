@@ -377,21 +377,26 @@ struct range_u32 {
 };
 
 constexpr struct range_u32 invalid_range = { .start = UINT32_MAX, .stop = 0 };
-constexpr union range32_union { struct range_u32 range; uint64_t u64; } invalid_range32_union = {
-  .range = invalid_range };
+constexpr union range32_union { struct range_u32 range; uint64_t u64; } invalid_range32_union =
+{
+  .range = invalid_range
+};
 
 __attribute__((always_inline)) [[maybe_unused]]
-static inline uint64_t range32_to_u64( struct range_u32 range ) {
+static inline uint64_t range32_to_u64( struct range_u32 range )
+{
   union range32_union uni = { .range = range };
   return uni.u64;
 }
 
 __attribute__((always_inline)) [[maybe_unused]]
-static inline bool is_range_u32_invalid( struct range_u32 range ) {
+static inline bool is_range_u32_invalid( struct range_u32 range )
+{
   return ( range.start > range.stop );
 }
 __attribute__((always_inline)) [[maybe_unused]]
-static inline bool is_range_u32_valid( struct range_u32 range ) {
+static inline bool is_range_u32_valid( struct range_u32 range )
+{
   return ( range.start <= range.stop );
 }
 
@@ -401,7 +406,8 @@ static inline bool is_range_u32_valid( struct range_u32 range ) {
  */
 //#define _length_of_range(ptr_range) ( (ptr_range)->stop - (ptr_range)->start + 1 )
 __attribute__((always_inline)) [[maybe_unused]]
-static inline uint32_t get_range_len( struct range_u32 range ) {
+static inline uint32_t get_range_len( struct range_u32 range )
+{
   return range.stop - range.start + 1;
 }
 
@@ -431,7 +437,8 @@ static inline uint32_t get_range_len( struct range_u32 range ) {
 //  )
 __attribute__((always_inline)) [[maybe_unused]]
 static inline uint32_t get_aligned_range_len( struct range_u32 range,
-    uint64_t nr_units_to_align_to, uint64_t lsbs_head_address ) {
+    uint64_t nr_units_to_align_to, uint64_t lsbs_head_address )
+{
   return range.stop - ( _align_to_power_of_two(range.start + (lsbs_head_address),
           (nr_units_to_align_to)) - (lsbs_head_address) ) + 1;
 }

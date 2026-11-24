@@ -1,6 +1,6 @@
 
 //
-//  NOTE This code is deprecated.
+//  NOTE This code has been deprecated.
 //
 
 #include <stdio.h>
@@ -83,13 +83,15 @@ shared_lib library = 0;
   // Not implemented
 #elif defined CARBONARA_TARGET_PLATFORM_WAYLAND_OR_XCB
 
-static void xdg_wm_base_ping(void *data, struct xdg_wm_base *xdg_wm_base, uint32_t serial) {
+static void xdg_wm_base_ping(void *data, struct xdg_wm_base *xdg_wm_base, uint32_t serial)
+{
   xdg_wm_base_pong(xdg_wm_base, serial);
 }
 
 
 /*
-static void xdg_surface_configure(void *data, struct xdg_surface *xdg_surface, uint32_t serial) {
+static void xdg_surface_configure(void *data, struct xdg_surface *xdg_surface, uint32_t serial)
+{
   // struct client_state *state = data;
   xdg_surface_ack_configure(xdg_surface, serial);
 
@@ -98,7 +100,8 @@ static void xdg_surface_configure(void *data, struct xdg_surface *xdg_surface, u
   wl_surface_commit(state->wl_surface);
 }
 */
-static void xdg_surface_configure(void *data, struct xdg_surface *xdg_surface, uint32_t serial) {
+static void xdg_surface_configure(void *data, struct xdg_surface *xdg_surface, uint32_t serial)
+{
   struct ms_window *state = data;
   xdg_surface_ack_configure(xdg_surface, serial);
   if (state->unix_window.wayland.xdg_surface_has_been_configured) {
@@ -106,16 +109,19 @@ static void xdg_surface_configure(void *data, struct xdg_surface *xdg_surface, u
   }
   state->unix_window.wayland.xdg_surface_has_been_configured = 1;
 }
-static constexpr struct xdg_surface_listener xdg_surface_listener = {
+static constexpr struct xdg_surface_listener xdg_surface_listener =
+{
   .configure = xdg_surface_configure,
 };
 
-static constexpr struct xdg_wm_base_listener xdg_wm_base_listener = {
+static constexpr struct xdg_wm_base_listener xdg_wm_base_listener =
+{
     .ping = xdg_wm_base_ping,
 };
 
 static void global_registry_handler(void *data, struct wl_registry *registry, uint32_t id,
-    const char *interface, uint32_t version) {
+    const char *interface, uint32_t version)
+{
   struct ms_window *state = data;
   if (strcmp(interface, "wl_compositor") == 0) {
     state->unix_window.wayland.compositor = wl_registry_bind(registry, id, &wl_compositor_interface, 1);
@@ -131,11 +137,13 @@ static void global_registry_handler(void *data, struct wl_registry *registry, ui
 //   _zxdg_shell_v6 = wl_registry_bind(registry, id, &zxdg_shell_v6_interface, 1);
 }
 
-static void global_registry_remover(void *data, struct wl_registry *registry, uint32_t id) {
+static void global_registry_remover(void *data, struct wl_registry *registry, uint32_t id)
+{
   fprintf(stdout, "Got a registry losing event for %d\n", id);
 }
 
-static constexpr struct wl_registry_listener registry_listener = {
+static constexpr struct wl_registry_listener registry_listener =
+{
   global_registry_handler,
   global_registry_remover
 };
@@ -189,7 +197,8 @@ xcb_void_cookie_t (*fp_xcb_change_property_checked) (
 
 
 
-uint8_t create_window(struct ms_window * window) {
+uint8_t create_window(struct ms_window * window)
+{
   uint8_t ret = 0;
 #ifdef CARBONARA_TARGET_PLATFORM_WIN32
   // TODO implement it
@@ -559,7 +568,8 @@ destroy_and_return:
 
 
 VkResult create_presentation_surface(VkInstance vk_instance,
-    struct ms_window * window, VkSurfaceKHR * vk_surface) {
+    struct ms_window * window, VkSurfaceKHR * vk_surface)
+{
   VkResult vk_result;
 
 #ifdef CARBONARA_TARGET_PLATFORM_WIN32
@@ -624,7 +634,8 @@ VkResult create_presentation_surface(VkInstance vk_instance,
 
 
 
-uint8_t destroy_window(struct ms_window * window) {
+uint8_t destroy_window(struct ms_window * window)
+{
 #ifdef CARBONARA_TARGET_PLATFORM_WIN32
   return 1;
 #elif defined CARBONARA_TARGET_PLATFORM_WAYLAND_OR_XCB

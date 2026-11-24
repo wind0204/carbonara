@@ -26,7 +26,8 @@ constexpr size_t ALIGN_FOR_NEON = 16;
 
 
 //-------------------------------------------------------------------------------------------------
-constexpr size_t page_sizes[] = {
+constexpr size_t page_sizes[] =
+{
   // 0:7
   0,
   UINT64_C(1024) * 4,
@@ -52,6 +53,7 @@ constexpr size_t page_sizes[] = {
 //-------------------------------------------------------------------------------------------------
 static_assert( sizeof(void*) == sizeof(uintptr_t),
     "sizeof(void*) must be equal to sizeof(uintptr_t)" );
+
 union union64 {
   uint64_t u;
   int64_t i;
@@ -68,6 +70,7 @@ union union64 {
   int16_t arr_i16[4];
   int8_t arr_i8[8];
 };
+
 union union32 {
   uint32_t u;
   int32_t i;
@@ -81,6 +84,7 @@ union union32 {
   int16_t arr_i16[2];
   int8_t arr_i8[4];
 };
+
 union union16 {
   uint16_t u;
   int16_t i;
@@ -91,10 +95,12 @@ union union16 {
   uint8_t arr_u8[2];
   int8_t arr_i8[2];
 };
+
 union union8 {
   uint8_t u;
   int8_t i;
 };
+
 #if UINTPTR_WIDTH/8 == 2
 typedef union union16 union_ptr;
 #elif UINTPTR_WIDTH/8 == 4
@@ -431,7 +437,8 @@ uint64_t init_util_c_lang(void);
 /**
  * \brief https://graphics.stanford.edu/~seander/bithacks.html#IntegerLogDeBruijn
  */
-static constexpr uint8_t piece_of_a_de_Bruijn_sequence[32] = {
+static constexpr uint8_t piece_of_a_de_Bruijn_sequence[32] =
+{
   0, 9, 1, 10, 13, 21, 2, 29, 11, 14, 16, 18, 22, 25, 3, 30,
   8, 12, 20, 28, 15, 17, 24, 7, 19, 27, 23, 6, 26, 5, 4, 31
 };

@@ -5,7 +5,8 @@
 #include "err_msg.h"
 #include "util-hwloc.h"
 
-uint8_t u_hwloc_bitmap_init(struct u_hwloc_bitmap_s * set) {
+uint8_t u_hwloc_bitmap_init(struct u_hwloc_bitmap_s * set)
+{
   //set = malloc(sizeof(struct hwloc_bitmap_s));
 
   set->ulongs_count = HWLOC_BITMAP_PREALLOC_ULONGS;
@@ -28,7 +29,8 @@ uint8_t u_hwloc_bitmap_init(struct u_hwloc_bitmap_s * set) {
   return 0;
 }
 
-void u_hwloc_bitmap_free(struct u_hwloc_bitmap_s * set) {
+void u_hwloc_bitmap_free(struct u_hwloc_bitmap_s * set)
+{
   //set->ulongs_count = 1;
   free( set->ulongs );
   set->ulongs = 0;

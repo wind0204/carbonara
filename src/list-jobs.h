@@ -1,9 +1,9 @@
-#include "util-c_lang-basic.h"
 #if !defined LIST_JOBS_H
 # define LIST_JOBS_H
 
 #include <stdint.h>
 
+#include "util-c_lang-basic.h"  // _typeof_member
 #include "carbonara-job.h"
 
 

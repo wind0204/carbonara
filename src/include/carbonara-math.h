@@ -587,7 +587,8 @@ static inline struct mat3x3 orthogonalize( struct mat3x3 mat )
 // │ 0 0 0 1 │ │ x y z 1 │ │ 0 0 0 1 │ │ 0 0 0 1 │
 // └         ┘ └         ┘ └         ┘ └         ┘
 
-constexpr struct mat4x4 identity_4x4 = {
+constexpr struct mat4x4 identity_4x4 =
+{
   .rows = {
     {1, 0, 0, 0},
     {0, 1, 0, 0},

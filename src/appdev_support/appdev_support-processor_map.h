@@ -101,7 +101,8 @@ struct processor_map {
 
 
 //-------------------------------------------------------------------------------------------------
-constexpr struct ms_worker_info dummy_worker_info = {
+constexpr struct ms_worker_info dummy_worker_info =
+{
   .cpuset = (hwloc_bitmap_t){0},
   .idx_one_sibling = 1,
 };

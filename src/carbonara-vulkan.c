@@ -42,7 +42,8 @@
 //-------------------------------------------------------------------------------------------------
 #if !defined( ARE_WE_SHIPPING_IT )
   [[maybe_unused]]  // Just use vkconfig-gui
-  static const char * enabled_layer_names[] = {
+  static const char * enabled_layer_names[] =
+  {
     "VK_LAYER_KHRONOS_validation",
 #if defined( DEBUG_MODE )
     "VK_LAYER_LUNARG_api_dump",
@@ -52,14 +53,16 @@
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wzero-length-array"
-static const char * const names_instance_extensions_required[] = {
+static const char * const names_instance_extensions_required[] =
+{
 #if !defined( ARE_WE_SHIPPING_IT )
   //VK_EXT_LAYER_SETTINGS_EXTENSION_NAME,
 #endif
 };
 #pragma GCC diagnostic pop
 
-static const char * const names_device_extensions_required[] = {
+static const char * const names_device_extensions_required[] =
+{
   VK_KHR_SWAPCHAIN_EXTENSION_NAME,  // To draw image on screen
   VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME,  // VkPhysicalDeviceVulkan13Features::synchronization2
   //VK_KHR_MAINTENANCE3_EXTENSION_NAME,   // Required for descriptor indexing; it has been promoted

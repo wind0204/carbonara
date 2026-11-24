@@ -81,7 +81,8 @@ unsigned int get_nr_lines_in_csv(FILE * csv_file);
 
 
 
-int main(int argc, char * argv[]) {
+int main( int argc, char * argv[] )
+{
   char * path_csv = 0;
   char * path_output = 0;
 
@@ -775,7 +776,8 @@ out_of_nested_loop:
 
 
 
-unsigned int get_nr_lines_in_csv(FILE * csv_file) {
+unsigned int get_nr_lines_in_csv( FILE * csv_file )
+{
   uint_fast32_t nr_lines = 0;
   char * buffer = malloc(8192);
   if ( !buffer ) {

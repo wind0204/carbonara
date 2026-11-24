@@ -14,7 +14,8 @@ void jf_maint_memo_maps(struct cara_worker_state * p_ws);
 
 
 
-void jf_maint_job_list(struct cara_worker_state * p_ws) {
+void jf_maint_job_list(struct cara_worker_state * p_ws)
+{
   const uint_fast8_t nr_arrays = cara_single.job_list->active_block_cnt;
   uint64_t nr_elems = nr_arrays << cara_single.job_list->log2_elem_cnt;
 
@@ -44,8 +45,6 @@ void jf_maint_job_list(struct cara_worker_state * p_ws) {
 }
 
 /*
- *
- *
  * Just pack them in the job batch description together.
  *
 void jf_maint_job_arg_pool(struct cara_worker_state * p_ws) {
@@ -68,7 +67,8 @@ void jf_maint_job_arg_pool(struct cara_worker_state * p_ws) {
 }
 */
 
-void jf_maint_memo_maps( [[maybe_unused]] struct cara_worker_state * p_ws ) {
+void jf_maint_memo_maps( [[maybe_unused]] struct cara_worker_state * p_ws )
+{
   struct ma_sub_arena * sub_arena = cara_single.mem_arena->head;
   uint_fast64_t nr_mem_chunks_unallocated = 0;
   uint_fast64_t threshold_nr_mem_chunks_unallocated = 0;

@@ -132,7 +132,8 @@ enum err_msg create_thread_( const struct create_thread_params params[static 1] 
   return 0;
 }
 
-enum err_msg join_thread(thread thread, void ** retval) {
+enum err_msg join_thread(thread thread, void ** retval)
+{
 #if defined(__linux)
   // POSIX thread library
   int err;

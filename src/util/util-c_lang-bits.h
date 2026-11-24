@@ -341,11 +341,11 @@ uint_fast8_t count_nr_consec_0bits(
 
 //-------------------------------------------------------------------------------------------------
 /**
- *
+ * \brief
  */
 #define get_log2( number )                                                        \
   ( is_signed((number)) ? 1/(true^is_signed((number))) :                          \
-    ( (sizeof(typeof((number))) > 4) ?                                                    \
+    ( (sizeof(typeof((number))) > 4) ?                                            \
       UINT64_C(63) - _lzcnt_u64((number)) : UINT32_C(31) - _lzcnt_u32((number)) ) \
   )
 static_assert( true == is_signed(-7) );
@@ -747,14 +747,14 @@ static inline uint8_t get_bits_unaligned_u8( const void * arr_bits,
   const uint64_t head_bit_idx = item_idx * item_len_in_bits;
   const uint32_t byte_idx = head_bit_idx / 8;
   const uint32_t pos_head_bit_in_head_byte = head_bit_idx % 8;
-        _uintlen_t_item(8)
+  _uintlen_t_item(8)
 
-        item = *(typeof(&item))(arr_bits + byte_idx);
+  item = *(typeof(&item))(arr_bits + byte_idx);
 
-        item = item << pos_head_bit_in_head_byte;
-        item = item >> (sizeof(item)*8 - item_len_in_bits);
+  item = item << pos_head_bit_in_head_byte;
+  item = item >> (sizeof(item)*8 - item_len_in_bits);
 
-        return item;
+  return item;
 }
 
 #undef _uintlen_t_item
@@ -847,17 +847,17 @@ static inline int8_t get_bits_unaligned_i8( const void * arr_bits,
   const uint64_t head_bit_idx = item_idx * item_len_in_bits;
   const uint32_t byte_idx = head_bit_idx / 8;
   const uint32_t pos_head_bit_in_head_byte = head_bit_idx % 8;
-        _for_get_bits_unaligned_signed_template(8)
+  _for_get_bits_unaligned_signed_template(8)
 
-        item = *(typeof(&item))(arr_bits + byte_idx);
+  item = *(typeof(&item))(arr_bits + byte_idx);
 
-        item = item << pos_head_bit_in_head_byte;
-        item = item >> (sizeof(item)*8 - item_len_in_bits);
+  item = item << pos_head_bit_in_head_byte;
+  item = item >> (sizeof(item)*8 - item_len_in_bits);
 
-        item_s = ~0 << item_len_in_bits;
-        item_s |= item;
+  item_s = ~0 << item_len_in_bits;
+  item_s |= item;
 
-        return item_s;
+  return item_s;
 }
 #undef _for_get_bits_unaligned_signed_template
 #undef _get_bits_unaligned_signed_template

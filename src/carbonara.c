@@ -90,7 +90,8 @@ static char * asset_buf5;
 static char * asset_buf6;
 static char * asset_buf7;
 static char * asset_buf8;
-static constexpr struct v_pos arr_vert_pos[] = {
+static constexpr struct v_pos arr_vert_pos[] =
+{
   {-cara_1m/2, .y=0, cara_1m/2},  // 0
   {cara_1m/2, .y=0, cara_1m/2},
   {0, .y=(two_m), 0},
@@ -102,7 +103,8 @@ static constexpr struct v_pos arr_vert_pos[] = {
   {two_m, .y=0, -two_m},
   {two_m, .y=0, two_m},  // 8
 };
-static constexpr struct uv_coords arr_uv_coords[] = {
+static constexpr struct uv_coords arr_uv_coords[] =
+{
   {.u=.25f, 0},  // 0
   {.u=.75f, 0},
   {.u=.5f, .5f},
@@ -114,7 +116,8 @@ static constexpr struct uv_coords arr_uv_coords[] = {
   {.u=fourm/2, fourm/2},
   {.u=fourm/2, 0},  // 8
 };
-static constexpr struct v_idx arr_v_indices[] = {
+static constexpr struct v_idx arr_v_indices[] =
+{
   {0, 2, 1},
   {3, 2, 4},
   {4, 2, 0},

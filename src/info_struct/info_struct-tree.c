@@ -740,8 +740,8 @@ bst_node_idx_t infos_bst_search_u64( const struct infos_bst * tree, uint64_t key
 
 }
 
-//-------------------------------------------------------------------------------------------------
-bst_node_idx_t infos_bst_search_u32( const struct infos_bst * tree, uint32_t key ) {
+bst_node_idx_t infos_bst_search_u32( const struct infos_bst * tree, uint32_t key )
+{
 #define infos_bst_search_template                                                           \
   const uint_fast8_t height = tree->max_active_depth < 1 ? 1 : tree->max_active_depth;      \
   bst_node_idx_t cur_idx = infos_bst_locate_root( height );                                 \
@@ -769,34 +769,35 @@ bst_node_idx_t infos_bst_search_u32( const struct infos_bst * tree, uint32_t key
   infos_bst_search_template
 }
 
-//-------------------------------------------------------------------------------------------------
 bst_node_idx_t infos_bst_search_u16( const struct infos_bst * tree, uint16_t key )
 {
   infos_bst_search_template
 }
 
-//-------------------------------------------------------------------------------------------------
-bst_node_idx_t infos_bst_search_u8( const struct infos_bst * tree, uint8_t key ) {
+bst_node_idx_t infos_bst_search_u8( const struct infos_bst * tree, uint8_t key )
+{
   infos_bst_search_template
 }
 
 //-------------------------------------------------------------------------------------------------
-bst_node_idx_t infos_bst_search_i64( const struct infos_bst * tree, int64_t key ) {
+bst_node_idx_t infos_bst_search_i64( const struct infos_bst * tree, int64_t key )
+{
   infos_bst_search_template
 }
 
 //-------------------------------------------------------------------------------------------------
-bst_node_idx_t infos_bst_search_i32( const struct infos_bst * tree, int32_t key ) {
+bst_node_idx_t infos_bst_search_i32( const struct infos_bst * tree, int32_t key )
+{
   infos_bst_search_template
 }
 
-//-------------------------------------------------------------------------------------------------
-bst_node_idx_t infos_bst_search_i16( const struct infos_bst * tree, int16_t key ) {
+bst_node_idx_t infos_bst_search_i16( const struct infos_bst * tree, int16_t key )
+{
   infos_bst_search_template
 }
 
-//-------------------------------------------------------------------------------------------------
-bst_node_idx_t infos_bst_search_i8( const struct infos_bst * tree, int8_t key ) {
+bst_node_idx_t infos_bst_search_i8( const struct infos_bst * tree, int8_t key )
+{
   infos_bst_search_template
 }
 #undef infos_bst_search_template
@@ -831,8 +832,8 @@ bst_node_idx_t infos_bst_search_for_node_idx_u64( const struct infos_bst * tree,
 
 }
 
-//-------------------------------------------------------------------------------------------------
-bst_node_idx_t infos_bst_search_for_node_idx_u32( const struct infos_bst * tree, uint32_t key ) {
+bst_node_idx_t infos_bst_search_for_node_idx_u32( const struct infos_bst * tree, uint32_t key )
+{
 #define infos_bst_search_for_node_idx_template                                              \
   uint_fast8_t height = tree->max_active_depth < 1 ? 1 : tree->max_active_depth;            \
   bst_node_idx_t cur_idx = infos_bst_locate_root( height );                                 \
@@ -858,33 +859,34 @@ bst_node_idx_t infos_bst_search_for_node_idx_u32( const struct infos_bst * tree,
   infos_bst_search_for_node_idx_template
 }
 
-//-------------------------------------------------------------------------------------------------
-bst_node_idx_t infos_bst_search_for_node_idx_u16( const struct infos_bst * tree, uint16_t key ) {
+bst_node_idx_t infos_bst_search_for_node_idx_u16( const struct infos_bst * tree, uint16_t key )
+{
+  infos_bst_search_for_node_idx_template
+}
+
+bst_node_idx_t infos_bst_search_for_node_idx_u8( const struct infos_bst * tree, uint8_t key )
+{
   infos_bst_search_for_node_idx_template
 }
 
 //-------------------------------------------------------------------------------------------------
-bst_node_idx_t infos_bst_search_for_node_idx_u8( const struct infos_bst * tree, uint8_t key ) {
+bst_node_idx_t infos_bst_search_for_node_idx_i64( const struct infos_bst * tree, int64_t key )
+{
   infos_bst_search_for_node_idx_template
 }
 
-//-------------------------------------------------------------------------------------------------
-bst_node_idx_t infos_bst_search_for_node_idx_i64( const struct infos_bst * tree, int64_t key ) {
+bst_node_idx_t infos_bst_search_for_node_idx_i32( const struct infos_bst * tree, int32_t key )
+{
   infos_bst_search_for_node_idx_template
 }
 
-//-------------------------------------------------------------------------------------------------
-bst_node_idx_t infos_bst_search_for_node_idx_i32( const struct infos_bst * tree, int32_t key ) {
+bst_node_idx_t infos_bst_search_for_node_idx_i16( const struct infos_bst * tree, int16_t key )
+{
   infos_bst_search_for_node_idx_template
 }
 
-//-------------------------------------------------------------------------------------------------
-bst_node_idx_t infos_bst_search_for_node_idx_i16( const struct infos_bst * tree, int16_t key ) {
-  infos_bst_search_for_node_idx_template
-}
-
-//-------------------------------------------------------------------------------------------------
-bst_node_idx_t infos_bst_search_for_node_idx_i8( const struct infos_bst * tree, int8_t key ) {
+bst_node_idx_t infos_bst_search_for_node_idx_i8( const struct infos_bst * tree, int8_t key )
+{
   infos_bst_search_for_node_idx_template
 }
 #undef infos_bst_search_for_node_idx_template
@@ -1022,7 +1024,6 @@ a_slot_for_the_new_key_is_ready:
 
 }
 
-//-------------------------------------------------------------------------------------------------
 bst_node_idx_t infos_bst_insert_u32( struct infos_bst * tree,
     uint32_t new_key, bst_node_idx_t sepd )
 {
@@ -1154,7 +1155,6 @@ a_slot_for_the_new_key_is_ready:
 
 }
 
-//-------------------------------------------------------------------------------------------------
 bst_node_idx_t infos_bst_insert_u16( struct infos_bst * tree,
     uint16_t new_key, bst_node_idx_t sepd )
 {
@@ -1286,7 +1286,6 @@ a_slot_for_the_new_key_is_ready:
 
 }
 
-//-------------------------------------------------------------------------------------------------
 bst_node_idx_t infos_bst_insert_u8( struct infos_bst * tree,
     uint8_t new_key, bst_node_idx_t sepd )
 {
@@ -1924,7 +1923,8 @@ __attribute__ ((minsize))
 #elif defined(__GNUC__) || defined(__GNUG__)
 __attribute__ ((optimize("s")))
 #endif
-void init_infos_tree(uint64_t proc_info) {
+void init_infos_tree(uint64_t proc_info)
+{
   union ucl_x86_proc_info x86_proc_info;
   x86_proc_info.whole = proc_info;
 

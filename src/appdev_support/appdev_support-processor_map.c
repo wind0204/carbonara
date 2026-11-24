@@ -580,7 +580,8 @@ abort_preparation:
 
 //-------------------------------------------------------------------------------------------------
 [[maybe_unused]]
-static uint_fast16_t is_there_an_ascendant_with_less_sets(hwloc_obj_t cache_obj) {
+static uint_fast16_t is_there_an_ascendant_with_less_sets(hwloc_obj_t cache_obj)
+{
   uint_fast16_t nr_cache_sets_child = GET_NR_SETS_FROM_HWLOC_CACHE_ATTR(cache_obj->attr);
   while(-7) {
     cache_obj = cache_obj->parent;

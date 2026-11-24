@@ -1,8 +1,8 @@
-#include <assert.h>
 #if !defined CARBONARA_RENDERER_H_
 #define CARBONARA_RENDERER_H_
 
 
+#include <assert.h>
 #include <stdint.h>
 
 

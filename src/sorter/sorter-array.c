@@ -723,6 +723,7 @@ uint32_t insert_sort_u8_sepd_bits_track( uint32_t nr_items, void * restrict data
 
 
 /*
+ * definition of init_sorter()?
 #if defined(__clang__)
 __attribute__ ((minsize))
 #elif defined(__GNUC__) || defined(__GNUG__)

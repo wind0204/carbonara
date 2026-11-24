@@ -21,7 +21,8 @@
 #include "list-vulkan_functions.inl"
 
 //-------------------------------------------------------------------------------------------------
-int vf_load_func_exported_from_vulkan_loader_library(shared_lib * vulkan_library) {
+int vf_load_func_exported_from_vulkan_loader_library( shared_lib * vulkan_library )
+{
 #define EXPORTED_VULKAN_FUNCTION( name )                                      \
   name = (PFN_##name)get_func_sym_from_shared_lib( vulkan_library, #name );   \
   if( (name) == 0 ) {                                                         \
@@ -43,7 +44,8 @@ int vf_load_func_exported_from_vulkan_loader_library(shared_lib * vulkan_library
 //  creation, image creation, or data copying. Instance-level functions allow us to create logical
 //  devices. To do all this, and to load device and instance-level functions, we need to create an
 //  Instance. This operation is performed with global-level functions, which we need to load first.
-int vf_load_global_level_functions() {
+int vf_load_global_level_functions()
+{
 #define GLOBAL_LEVEL_VULKAN_FUNCTION( name )                                  \
   name = (PFN_##name)vkGetInstanceProcAddr( 0, #name );                       \
   if( name == 0 ) {                                                           \
@@ -66,9 +68,10 @@ int vf_load_global_level_functions() {
 // How can we tell if a function is instance- or device-level? All device-level functions have
 //  their first parameter of type VkDevice, VkQueue, or VkCommandBuffer. So, if a function doesn't
 //  have such a parameter and is not from the global level, it is from an instance level.
-int vf_load_instance_level_functions(VkInstance vk_instance,
+int vf_load_instance_level_functions( VkInstance vk_instance,
     const char * const * enabled_extensions,
-    uint_fast8_t nr_enabled_extensions) {
+    uint_fast8_t nr_enabled_extensions )
+{
   // Load core Vulkan API instance-level functions
 #define INSTANCE_LEVEL_VULKAN_FUNCTION( name )                                \
   name = (PFN_##name)vkGetInstanceProcAddr( vk_instance, #name );             \
@@ -115,9 +118,10 @@ int vf_load_instance_level_functions(VkInstance vk_instance,
 //  of function pointers for each logical device. We can't use functions acquired from one device
 //  to perform operations on a different device. But using C language's preprocessor, it is quite
 //  easy to acquire function pointers specific to a given device.
-int vf_load_device_level_functions(VkDevice vk_device,
+int vf_load_device_level_functions( VkDevice vk_device,
     const char * const * enabled_extensions,
-    uint_fast8_t nr_enabled_extensions) {
+    uint_fast8_t nr_enabled_extensions )
+{
   // Load core Vulkan API device-level functions
 #define DEVICE_LEVEL_VULKAN_FUNCTION( name )                                  \
   name = (PFN_##name)vkGetDeviceProcAddr( vk_device, #name );                 \

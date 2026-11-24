@@ -20,7 +20,8 @@
 static_assert(true);
 // Each element of this array is a job functiona and the index of each element is
 // an enum job_func_indices declared in list-jobs.h
-void (* const known_jobs[])( struct cara_worker_state * p_ws ) = {
+void (* const known_jobs[])( struct cara_worker_state * p_ws ) =
+{
   0,  // #0
   jf_maint_job_list,
   jf_maint_memo_maps,
