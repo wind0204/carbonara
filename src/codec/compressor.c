@@ -442,7 +442,8 @@ static int snappy_compress_file( FILE * restrict src_file, const char *out_path,
     BOOLEAN_ARG(lz412, "-l12", "LZ4 Lv.12") \
     BOOLEAN_ARG(snappy, "-s", "Snappy") \
     BOOLEAN_ARG(minimalist, "-m", "Minimalist: " \
-        "strip headers assuming the end user knows the data format(.dds files are affected)") \
+        "strip DDS headers assuming the end user knows the albedo map format" \
+        " (2048x2048 and 12 mip levels)") \
     BOOLEAN_ARG(all, "-a", "all")
 #include "easyargs.h"
 
@@ -496,9 +497,13 @@ int main(int argc, char * argv[])
   }
 
   if ( args.minimalist ) {
-    if ( integrity_check_bc7_2048(src_file) ) {
-      fclose(src_file);
-      return 1;
+    size_t src_len = strlen(src_path);
+    bool is_dds = (src_len >= 4) && (strcmp(src_path + src_len - 4, ".dds") == 0);
+    if ( is_dds ) {
+      if ( integrity_check_bc7_2048(src_file) ) {
+        fclose(src_file);
+        return 1;
+      }
     }
   }
 
