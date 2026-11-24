@@ -3,7 +3,8 @@
 
 //-------------------------------------------------------------------------------------------------
 const char * const arr_emsg_txt[] = {
-  "",
+  "There wasn't any error.",
+
   "A deadlock was detected.",  // 1
   "The system is not supported by this application.",
   "Corrupted data was detected.",
@@ -11,6 +12,7 @@ const char * const arr_emsg_txt[] = {
   "Please get rid of the old data first.",
   "The request is invalid.",
   "It seems like a wrong name was given.",
+
   "Unknown error.",  // 8
   "It's run out of memory.",
   "The index number was out of range.",
@@ -19,6 +21,7 @@ const char * const arr_emsg_txt[] = {
   "It's too long.",
   "The extension is not supported.",
   "Connection is refused.",
+
   "Failed to load the shared library.",  // 16
   "Connection is aborted.",
   "The connection has been reset by the peer.",
@@ -27,4 +30,8 @@ const char * const arr_emsg_txt[] = {
   "Couldn't find it.",
   "No such entry.",
   "It has already been done.",
+
+  "Could not read the file.",  // 24
+  "Could not write on the file.",
+  "Data doesn't meet the standard requirements.",
 };

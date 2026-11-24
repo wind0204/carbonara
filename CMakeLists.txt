@@ -98,6 +98,47 @@ endif()
 
 
 ##-------------------------------------------------------------------------------------------------
+# LZ4
+##-------------------------------------------------------------------------------------------------
+set( LZ4_STATIC_MULTITHREAD  ON CACHE BOOL "" FORCE )
+add_subdirectory( extern/lz4/build/cmake EXCLUDE_FROM_ALL SYSTEM )
+
+
+
+##-------------------------------------------------------------------------------------------------
+# zstd
+##-------------------------------------------------------------------------------------------------
+set( ZSTD_PROGRAMS_LINK_SHARED OFF CACHE INTERNAL "" )
+set( ZSTD_BUILD_SHARED OFF CACHE BOOL "" FORCE )
+set( ZSTD_BUILD_STATIC ON CACHE BOOL "" FORCE )
+set( ZSTD_BUILD_PROGRAMS OFF CACHE INTERNAL "" )
+set( ZSTD_MULTITHREAD_SUPPORT ON CACHE INTERNAL "" )
+add_subdirectory( extern/zstd/build/cmake EXCLUDE_FROM_ALL SYSTEM )
+
+
+
+##-------------------------------------------------------------------------------------------------
+# snappy-c
+##-------------------------------------------------------------------------------------------------
+set(SNAPPY_C_DIR "${DEPS_DIR}/snappy-c")
+add_custom_command(
+  OUTPUT "${SNAPPY_C_DIR}/libsnappy-c.a"
+  COMMAND ${CMAKE_COMMAND} -E make_directory "${SNAPPY_C_DIR}"
+  COMMAND ${CMAKE_C_COMPILER} -c "${CMAKE_CURRENT_SOURCE_DIR}/extern/snappy-c/snappy.c" -o "${SNAPPY_C_DIR}/snappy.c.o"
+  COMMAND ${CMAKE_AR} rcs "${SNAPPY_C_DIR}/libsnappy-c.a" "${SNAPPY_C_DIR}/snappy.c.o"
+  WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"
+  COMMENT "Building snappy-c static library"
+)
+
+# Create a target that depends on the custom command output
+add_custom_target(build_snappy_c DEPENDS "${SNAPPY_C_DIR}/libsnappy-c.a")
+
+add_library( Snappy STATIC IMPORTED GLOBAL )
+set_target_properties( Snappy PROPERTIES IMPORTED_LOCATION "${SNAPPY_C_DIR}/libsnappy-c.a" )
+
+
+
+##-------------------------------------------------------------------------------------------------
 # Carbonara
 ##-------------------------------------------------------------------------------------------------
 set( CMAKE_C_STANDARD_REQUIRED TRUE )
@@ -276,6 +317,18 @@ configure_file(
 #set( CMAKE_INTERPROCEDURAL_OPTIMIZATION TRUE )
 #endif()
 
+add_executable( compressor EXCLUDE_FROM_ALL
+  src/codec/compressor.c
+  )
+target_compile_options( compressor PRIVATE ${C_FLAGS_FOR_WEVERYTHING} ${C_FLAGS_IN_HOUSE} )
+set_property( TARGET compressor PROPERTY C_STANDARD 23 )
+if( NOT CMAKE_BUILD_TYPE MATCHES Debug )
+  set_property( TARGET compressor PROPERTY INTERPROCEDURAL_OPTIMIZATION TRUE )
+endif()
+target_link_libraries( compressor PRIVATE libzstd_static )
+target_link_libraries( compressor PRIVATE lz4_static )
+target_link_libraries( compressor PRIVATE Snappy )
+target_include_directories(compressor SYSTEM PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/extern/snappy-c")
 
 add_executable( packer EXCLUDE_FROM_ALL
   src/asspacker/packer.c
@@ -285,6 +338,12 @@ set_property( TARGET packer PROPERTY C_STANDARD 23 )
 if( NOT CMAKE_BUILD_TYPE MATCHES Debug )
   set_property( TARGET packer PROPERTY INTERPROCEDURAL_OPTIMIZATION TRUE )
 endif()
+target_link_libraries( packer PRIVATE Sorter )
+target_link_libraries( packer PRIVATE Util-c_lang )
+target_link_libraries( packer PRIVATE App-dev_support )
+target_link_libraries( packer PRIVATE Info_struct )
+target_link_libraries( packer PRIVATE Snappy )
+target_link_libraries( packer PRIVATE m )
 
 #add_library( carbonara ${CARBONARA_SRC} )
 add_executable( carbonara
@@ -307,6 +366,15 @@ if( CMAKE_BUILD_TYPE MATCHES Debug AND CARA_ASAN_DEBUG_BUILD )
   target_link_options( carbonara PRIVATE -fsanitize=address )
   add_definitions( -DLLVM_ENABLE_PROJECTS="clang" -DLLVM_ENABLE_RUNTIMES="compiler-rt" )
 endif()
+target_link_libraries( carbonara PRIVATE App-dev_support )
+target_link_libraries( carbonara PRIVATE Memorable_arena )
+target_link_libraries( carbonara PRIVATE Err_msg )
+target_link_libraries( carbonara PRIVATE Info_struct )
+target_link_libraries( carbonara PRIVATE Util-c_lang )
+target_link_libraries( carbonara PRIVATE ${CMAKE_DL_LIBS} )  # The libraries linked this way = {volk}
+
+target_link_libraries( carbonara PUBLIC SDL3::SDL3-static )  # NOTE Link to SDL3::SDL3 regardless
+                  # of whether it's static or dynamic, This should map it to the right one for you
 
 add_executable( tester EXCLUDE_FROM_ALL
   src/tester.c
@@ -320,6 +388,11 @@ if( CMAKE_BUILD_TYPE MATCHES Debug AND CARA_ASAN_DEBUG_BUILD )
   target_compile_options( tester PRIVATE -fsanitize=address -fno-omit-frame-pointer )
   target_link_options( tester PRIVATE -fsanitize=address )
 endif()
+target_link_libraries( tester PRIVATE App-dev_support )
+target_link_libraries( tester PRIVATE Sorter )
+target_link_libraries( tester PRIVATE Info_struct )
+target_link_libraries( tester PRIVATE Err_msg )
+target_link_libraries( tester PRIVATE Util-c_lang )
 
 #target_compile_options(carbonara PRIVATE
 #  $<$<CONFIG:Release>:-ffast-math>)
@@ -340,6 +413,26 @@ set_property( TARGET App-dev_support PROPERTY C_STANDARD 23 )
 if( NOT CMAKE_BUILD_TYPE MATCHES Debug )
   set_property( TARGET App-dev_support PROPERTY INTERPROCEDURAL_OPTIMIZATION TRUE )
 endif()
+target_link_libraries( App-dev_support PRIVATE ${CMAKE_DL_LIBS} )
+target_link_libraries( App-dev_support PRIVATE Util-hwloc )
+#target_link_libraries( App-dev_support PRIVATE Hwloc )
+target_link_libraries( App-dev_support PUBLIC hwloc::hwloc )
+target_link_libraries( App-dev_support PRIVATE SDL3::SDL3-static )
+if ( WIN32 )
+else ( UNIX )
+  target_link_libraries( App-dev_support PRIVATE pthread)
+endif()
+
+#if( CARBONARA_TARGET_PLATFORM STREQUAL "WIN32" )  # win32 support is not implemented
+##elseif( CARBONARA_TARGET_PLATFORM STREQUAL "XCB" )
+##  target_link_libraries( App-dev_support PRIVATE ${XCB_LIBRARIES} )
+#elseif( CARBONARA_TARGET_PLATFORM STREQUAL "WAYLAND_OR_XCB_OR_XLIB" )
+#  # appdev_support-window is obsolete.
+#  #target_link_libraries( App-dev_support PRIVATE ${Wayland_LIBRARIES} )
+#  #target_link_libraries( App-dev_support PRIVATE ${XCB_LIBRARIES} )
+##elseif( CARBONARA_TARGET_PLATFORM STREQUAL "XLIB" )  # xlib support is not implemented
+##elseif( CARBONARA_TARGET_PLATFORM STREQUAL "ANDROID" )  # Android support is not implemented
+#endif()
 
 add_library( Memorable_arena STATIC
   src/memorable_arena/memorable_arena-vulkan.c
@@ -352,6 +445,7 @@ if( NOT CMAKE_BUILD_TYPE MATCHES Debug )
 endif()
 # Link to hwloc to get include directories (for hwloc.h in appdev_support-processor_map.h)
 target_link_libraries( Memorable_arena PUBLIC hwloc::hwloc )
+target_link_libraries( Memorable_arena PRIVATE Err_msg )
 
 add_library( Err_msg STATIC
   src/err_msg/err_msg.c )
@@ -375,6 +469,7 @@ set_property( TARGET Info_struct PROPERTY C_STANDARD 23 )
 if( NOT CMAKE_BUILD_TYPE MATCHES Debug )
   set_property(TARGET Info_struct PROPERTY INTERPROCEDURAL_OPTIMIZATION TRUE)
 endif()
+target_link_libraries( Info_struct PRIVATE Sorter )
 
 add_library( Util-c_lang STATIC
   src/util/util-c_lang.c )
@@ -397,6 +492,7 @@ set_property( TARGET Sorter PROPERTY C_STANDARD 23 )
 if( NOT CMAKE_BUILD_TYPE MATCHES Debug )
   set_property(TARGET Sorter PROPERTY INTERPROCEDURAL_OPTIMIZATION TRUE)
 endif()
+target_link_libraries( Sorter PRIVATE m )
 
 #add_library( Netloc STATIC IMPORTED )
 #set_target_properties( Netloc PROPERTIES
@@ -407,7 +503,9 @@ endif()
 #add_dependencies( Netloc OurHwloc )
 
 
-target_include_directories(packer SYSTEM PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/extern/snappy-c" )
+target_include_directories(compressor SYSTEM PRIVATE
+  "${CMAKE_CURRENT_SOURCE_DIR}/extern/easy-args")
+target_include_directories(packer SYSTEM PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/extern/snappy-c")
 
 # You can find carbonara-config.h here
 include_directories( "${PROJECT_BINARY_DIR}/src" )
@@ -420,12 +518,12 @@ include_directories( "${CMAKE_CURRENT_SOURCE_DIR}/src/util" )
 
 include_directories( SYSTEM "${CMAKE_CURRENT_SOURCE_DIR}/extern/tclib" )
 include_directories( SYSTEM "$ENV{VULKAN_SDK}/include" )
-# hwloc includes are now provided via hwloc::hwloc target
 
 target_include_directories( Err_msg PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src/err_msg" )
 target_include_directories( Info_struct PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src/err_msg" )
 target_include_directories( App-dev_support PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src/err_msg" )
 target_include_directories( Util-hwloc PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src/err_msg" )
+target_include_directories( compressor PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src/err_msg" )
 
 target_include_directories( carbonara PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src" )
 
@@ -457,7 +555,6 @@ target_include_directories( carbonara PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/exter
 target_include_directories( Info_struct PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/extern/util" )
 target_include_directories( Memorable_arena PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/extern/util" )
 
-# hwloc includes are now provided via hwloc::hwloc target
 
 #if( CARBONARA_TARGET_PLATFORM STREQUAL "WIN32" )  # win32 support is not implemented
 ##elseif( CARBONARA_TARGET_PLATFORM STREQUAL "XCB" )
@@ -472,55 +569,11 @@ target_include_directories( Memorable_arena PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}
 #endif()
 
 
-target_link_libraries( App-dev_support PRIVATE ${CMAKE_DL_LIBS} )
-target_link_libraries( App-dev_support PRIVATE Util-hwloc )
-#target_link_libraries( App-dev_support PRIVATE Hwloc )
-target_link_libraries( App-dev_support PUBLIC hwloc::hwloc )
-target_link_libraries( App-dev_support PRIVATE SDL3::SDL3-static )
-if ( WIN32 )
-else ( UNIX )
-  target_link_libraries( App-dev_support PRIVATE pthread)
-endif()
 
-#if( CARBONARA_TARGET_PLATFORM STREQUAL "WIN32" )  # win32 support is not implemented
-##elseif( CARBONARA_TARGET_PLATFORM STREQUAL "XCB" )
-##  target_link_libraries( App-dev_support PRIVATE ${XCB_LIBRARIES} )
-#elseif( CARBONARA_TARGET_PLATFORM STREQUAL "WAYLAND_OR_XCB_OR_XLIB" )
-#  # appdev_support-window is obsolete.
-#  #target_link_libraries( App-dev_support PRIVATE ${Wayland_LIBRARIES} )
-#  #target_link_libraries( App-dev_support PRIVATE ${XCB_LIBRARIES} )
-##elseif( CARBONARA_TARGET_PLATFORM STREQUAL "XLIB" )  # xlib support is not implemented
-##elseif( CARBONARA_TARGET_PLATFORM STREQUAL "ANDROID" )  # Android support is not implemented
-#endif()
 
-target_link_libraries( Memorable_arena PRIVATE Err_msg )
 
-target_link_libraries( Sorter PRIVATE m )
 
-target_link_libraries( carbonara PRIVATE App-dev_support )
-target_link_libraries( carbonara PRIVATE Memorable_arena )
-target_link_libraries( carbonara PRIVATE Err_msg )
-target_link_libraries( carbonara PRIVATE Info_struct )
-target_link_libraries( carbonara PRIVATE Util-c_lang )
-target_link_libraries( carbonara PRIVATE ${CMAKE_DL_LIBS} )  # The libraries linked this way = {volk}
 
-target_link_libraries( carbonara PUBLIC SDL3::SDL3-static )  # NOTE Link to SDL3::SDL3 regardless
-                  # of whether it's static or dynamic, This should map it to the right one for you
-
-target_link_libraries( tester PRIVATE App-dev_support )
-target_link_libraries( tester PRIVATE Sorter )
-target_link_libraries( tester PRIVATE Info_struct )
-target_link_libraries( tester PRIVATE Err_msg )
-target_link_libraries( tester PRIVATE Util-c_lang )
-
-target_link_libraries( packer PRIVATE Sorter )
-target_link_libraries( packer PRIVATE Util-c_lang )
-target_link_libraries( packer PRIVATE App-dev_support )
-target_link_libraries( packer PRIVATE Info_struct )
-target_link_libraries( packer PRIVATE Snappy )
-target_link_libraries( packer PRIVATE m )
-
-target_link_libraries( Info_struct PRIVATE Sorter )
 
 
 

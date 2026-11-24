@@ -5,6 +5,7 @@
 //-------------------------------------------------------------------------------------------------
 enum [[nodiscard("You should check the err_msg")]] err_msg : unsigned int {
   emsg_no_error = 0,
+
   emsg_deadlock_detected,
   emsg_system_not_supported,
   emsg_corrupted_data_detected,
@@ -30,6 +31,10 @@ enum [[nodiscard("You should check the err_msg")]] err_msg : unsigned int {
   emsg_not_found,
   emsg_no_such_entry,
   emsg_already_done,
+
+  emsg_could_not_read_file = 24,
+  emsg_could_not_write_file,
+  emsg_data_does_not_meet_std_req,
 };
 
 extern const char * const arr_emsg_txt[];
