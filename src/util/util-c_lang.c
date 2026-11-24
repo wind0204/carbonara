@@ -33,13 +33,13 @@ uint32_t util_strlen_u8( const uint8_t * string )
 {
   uint32_t mask_first_byte = 0xffUL << 8*(sizeof(mask_first_byte)-1);
   uint8_t unit_len = sizeof(mask_first_byte);
-  to_another_byte_order(0, util_endian_BIG_ENDIAN, &mask_first_byte, unit_len);
+  to_another_byte_order(0, util_endian_big_endian, &mask_first_byte, unit_len);
   uint32_t mask_second_byte = 0xffUL << 8*(unit_len-2);
-  to_another_byte_order(0, util_endian_BIG_ENDIAN, &mask_second_byte, unit_len);
+  to_another_byte_order(0, util_endian_big_endian, &mask_second_byte, unit_len);
   uint32_t mask_third_byte = 0xffUL << 8*(unit_len-3);
-  to_another_byte_order(0, util_endian_BIG_ENDIAN, &mask_third_byte, unit_len);
+  to_another_byte_order(0, util_endian_big_endian, &mask_third_byte, unit_len);
   uint32_t mask_fourth_byte = 0xffUL << 8*(unit_len-4);
-  to_another_byte_order(0, util_endian_BIG_ENDIAN, &mask_fourth_byte, unit_len);
+  to_another_byte_order(0, util_endian_big_endian, &mask_fourth_byte, unit_len);
   /*
   uint64_t mask_fifth_byte = 0xffUL << 8*(unit_len-5);
   to_another_byte_order(0, util_endian_BIG_ENDIAN, &mask_fifth_byte, sizeof(mask_first_byte));
@@ -99,13 +99,13 @@ uint32_t util_strlen_u16( const uint16_t * string )
 {
   uint64_t mask_first_byte = 0xffffUL << 8*(sizeof(mask_first_byte)-1*2);
   uint8_t unit_len = sizeof(mask_first_byte);
-  to_another_byte_order(0, util_endian_BIG_ENDIAN, &mask_first_byte, unit_len);
+  to_another_byte_order(0, util_endian_big_endian, &mask_first_byte, unit_len);
   uint64_t mask_second_byte = 0xffffUL << 8*(unit_len-2*2);
-  to_another_byte_order(0, util_endian_BIG_ENDIAN, &mask_second_byte, unit_len);
+  to_another_byte_order(0, util_endian_big_endian, &mask_second_byte, unit_len);
   uint64_t mask_third_byte = 0xffffUL << 8*(unit_len-3*2);
-  to_another_byte_order(0, util_endian_BIG_ENDIAN, &mask_third_byte, unit_len);
+  to_another_byte_order(0, util_endian_big_endian, &mask_third_byte, unit_len);
   uint64_t mask_fourth_byte = 0xffffUL << 8*(unit_len-4*2);
-  to_another_byte_order(0, util_endian_BIG_ENDIAN, &mask_fourth_byte, unit_len);
+  to_another_byte_order(0, util_endian_big_endian, &mask_fourth_byte, unit_len);
 
   unsigned int idx = 0;
 #ifdef UTILIZE_AVX2
@@ -184,13 +184,13 @@ uint32_t get_idx_of_char( const char * string, char c )
 {
   uint32_t mask_first_byte = 0xffUL << 8*(sizeof(mask_first_byte)-1);
   uint8_t unit_len = sizeof(mask_first_byte);
-  to_another_byte_order(0, util_endian_BIG_ENDIAN, &mask_first_byte, unit_len);
+  to_another_byte_order(0, util_endian_big_endian, &mask_first_byte, unit_len);
   uint32_t mask_second_byte = 0xffUL << 8*(unit_len-2);
-  to_another_byte_order(0, util_endian_BIG_ENDIAN, &mask_second_byte, unit_len);
+  to_another_byte_order(0, util_endian_big_endian, &mask_second_byte, unit_len);
   uint32_t mask_third_byte = 0xffUL << 8*(unit_len-3);
-  to_another_byte_order(0, util_endian_BIG_ENDIAN, &mask_third_byte, unit_len);
+  to_another_byte_order(0, util_endian_big_endian, &mask_third_byte, unit_len);
   uint32_t mask_fourth_byte = 0xffUL << 8*(unit_len-4);
-  to_another_byte_order(0, util_endian_BIG_ENDIAN, &mask_fourth_byte, unit_len);
+  to_another_byte_order(0, util_endian_big_endian, &mask_fourth_byte, unit_len);
 
   uint32_t idx_null = UINT32_MAX;
   unsigned int idx = 0;
@@ -303,7 +303,7 @@ void itoa( int n, char * s )
   }
   s[i] = 0;
 
-  to_another_byte_order(util_endian_BIG_ENDIAN, util_endian_LITTLE_ENDIAN, s, i);
+  to_another_byte_order(util_endian_big_endian, util_endian_little_endian, s, i);
 }
 
 //-------------------------------------------------------------------------------------------------
@@ -335,7 +335,7 @@ static unsigned int count_1bits_POPCNT( unsigned int length, const uint8_t strin
 
   const unsigned int * ptr = (void*) string + idx_byte;
   unsigned int dword = *ptr;
-  to_another_byte_order( util_endian_BIG_ENDIAN, util_endian_LOCAL_ENDIAN,
+  to_another_byte_order( util_endian_big_endian, util_endian_local_endian,
       &dword, sizeof(typeof(dword)) );
 
   typeof(dword) mask = ~0;

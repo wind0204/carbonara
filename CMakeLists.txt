@@ -231,7 +231,6 @@ endif()
 
 
 
-add_definitions( -DTARGET_ENDIANNESS=1 )  # 1: Little Endian, 2: Big Endian, 3: PDP Endian
 add_definitions( -DCACHELINE_LEN=64 )
 add_definitions( -DLOG2_CACHELINE_LEN=6 )
 

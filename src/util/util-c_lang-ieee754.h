@@ -6,24 +6,22 @@
 #include <math.h>
 
 #include "util-c_lang-basic.h"
+#include "util-c_lang-bits.h"
 
 
 //-------------------------------------------------------------------------------------------------
 #if !defined( __clang__ ) && !defined( __GNUC__ )
   #error I am not sure about the bit-field packing order of other compilers.
 #endif
-#if !defined( TARGET_ENDIANNESS )
-  #error Define TARGET_ENDIANNESS! 1: Little Endian, 2: Big Endian, 3: PDP Endian
-#endif
 
-#if TARGET_ENDIANNESS == 1
+#if UTIL_ENDIAN_LOCAL_ENDIAN == UTIL_ENDIAN_LITTLE_ENDIAN
   typedef union ieee754_binary32_le union_ieee754_binary32;
   typedef union ieee754_binary64_le union_ieee754_binary64;
-#elif TARGET_ENDIANNESS == 2
+#elif UTIL_ENDIAN_LOCAL_ENDIAN == UTIL_ENDIAN_BIG_ENDIAN
   typedef union ieee754_binary32_be union_ieee754_binary32;
   typedef union ieee754_binary64_be union_ieee754_binary64;
 #else
-  #error TARGET_ENDIANNESS PDP Endian is not supported by __FILE__.
+  #error PDP endian systems are not supported by __FILE__.
 #endif
 
 /*

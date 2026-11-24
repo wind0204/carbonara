@@ -68,19 +68,28 @@ static inline uint16_t bswap_16( uint16_t field )
 
 //-------------------------------------------------------------------------------------------------
 enum util_endian_byte_order : unsigned int {
-  util_endian_byte_order_LOCAL,  // used when passing 0 to function to_another_byte_order
-  util_endian_LITTLE_ENDIAN, // 1 out of 0x03020100u
-  util_endian_BIG_ENDIAN,  // 2 out of 0x00010203u
-  util_endian_PDP_ENDIAN,  // 3 out of 0x01000302u (16-bit little-endian)
+  util_endian_local_byte_order,  // used when passing 0 to function to_another_byte_order
+  util_endian_little_endian, // 1 out of 0x03020100u
+  util_endian_big_endian,  // 2 out of 0x00010203u
+  util_endian_pdp_endian,  // 3 out of 0x01000302u (16-bit little-endian)
 	util_endian_byte_order_cap
 };
-//#define util_endian_LITTLE_ENDIAN 1
-//#define util_endian_BIG_ENDIAN 2
-//#define util_endian_PDP_ENDIAN 3
+#define UTIL_ENDIAN_LITTLE_ENDIAN 1
+#define UTIL_ENDIAN_BIG_ENDIAN 2
+#define UTIL_ENDIAN_PDP_ENDIAN 3
 
 static const uint32_t ENDIAN_TEST_VALUE = 0x00010203u;
-//static uint32_t util_endian_LOCAL_ENDIAN = *(((uint8_t*)&ENDIAN_TEST_VALUE)+2);
-#define util_endian_LOCAL_ENDIAN ( *(((uint8_t*)&ENDIAN_TEST_VALUE)+2) )
+//#define util_endian_LOCAL_ENDIAN ( *(((uint8_t*)&ENDIAN_TEST_VALUE)+2) )
+#if defined(__BYTE_ORDER__) && defined(__ORDER_LITTLE_ENDIAN__) && (__BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__)
+  #define UTIL_ENDIAN_LOCAL_ENDIAN UTIL_ENDIAN_LITTLE_ENDIAN
+#elif defined(__BYTE_ORDER__) && defined(__ORDER_BIG_ENDIAN__) && (__BYTE_ORDER__ == __ORDER_BIG_ENDIAN__)
+  #define UTIL_ENDIAN_LOCAL_ENDIAN UTIL_ENDIAN_BIG_ENDIAN
+#elif defined(__amd64) || defined(_M_X64) || defined(__i386) || defined(_M_IX86)
+  #define UTIL_ENDIAN_LOCAL_ENDIAN UTIL_ENDIAN_LITTLE_ENDIAN
+#elif defined(__s390x__) || defined(__zarch__)
+  #define UTIL_ENDIAN_LOCAL_ENDIAN UTIL_ENDIAN_BIG_ENDIAN
+#endif
+constexpr enum util_endian_byte_order util_endian_local_endian = UTIL_ENDIAN_LOCAL_ENDIAN;
 
 
 //-------------------------------------------------------------------------------------------------
@@ -102,10 +111,10 @@ static inline void to_another_byte_order(
   //__ct_assert(((new_order)<=util_endian_byte_order_cap&& (new_order)>=1), util_c_lang_bits);
   //__ct_assert(!(length&1), util_c_lang_bits);
   if ( orig_order == 0 ) {
-    orig_order = util_endian_LOCAL_ENDIAN;
+    orig_order = util_endian_local_endian;
   }
   if ( new_order == 0 ) {
-    new_order = util_endian_LOCAL_ENDIAN;
+    new_order = util_endian_local_endian;
   }
 
   if ( orig_order != new_order ) {
@@ -113,8 +122,8 @@ static inline void to_another_byte_order(
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wswitch"
     switch ( new_order ) {
-      case util_endian_LITTLE_ENDIAN:
-        if (orig_order == util_endian_BIG_ENDIAN) {
+      case util_endian_little_endian:
+        if (orig_order == util_endian_big_endian) {
 reverse_order:
           switch ( length ) {
             case 8:
@@ -138,8 +147,8 @@ reverse_order:
           }
         }
         break;
-      case util_endian_BIG_ENDIAN:
-        if (orig_order == util_endian_LITTLE_ENDIAN) {
+      case util_endian_big_endian:
+        if (orig_order == util_endian_little_endian) {
           goto reverse_order;
         } else {
           for (i=0, j=1; j<(length); i=++j, j++) {
@@ -147,8 +156,8 @@ reverse_order:
           }
         }
         break;
-      case util_endian_PDP_ENDIAN:
-        if (orig_order == util_endian_BIG_ENDIAN) {
+      case util_endian_pdp_endian:
+        if (orig_order == util_endian_big_endian) {
           for (i=0, j=1; j<(length); i=++j, j++) {
             _swap((uint8_t*)(ptr)+i, (uint8_t*)(ptr)+j)
           }
@@ -171,8 +180,8 @@ reverse_order:
 //  if ( from != to ) {\
 //    int _i, _j;\
 //    switch (to) {\
-//      case util_endian_LITTLE_ENDIAN:\
-//        if (from == util_endian_BIG_ENDIAN) {\
+//      case util_endian_little_endian:\
+//        if (from == util_endian_big_endian) {\
 //          for (_i=0, _j=(length)-1; _i<_j; _i++, _j--) {\
 //            _swap((uint8_t*)(ptr)+_i, (uint8_t*)(ptr)+_j)\
 //          }\
@@ -182,8 +191,8 @@ reverse_order:
 //          }\
 //        }\
 //        break;\
-//      case util_endian_BIG_ENDIAN:\
-//        if (from == util_endian_LITTLE_ENDIAN) {\
+//      case util_endian_big_endian:\
+//        if (from == util_endian_little_endian) {\
 //          for (_i=0, _j=(length)-1; _i<_j; _i++, _j--) {\
 //            _swap((uint8_t*)(ptr)+_i, (uint8_t*)(ptr)+_j)\
 //          }\
@@ -193,8 +202,8 @@ reverse_order:
 //          }\
 //        }\
 //        break;\
-//      case util_endian_PDP_ENDIAN:\
-//        if (from == util_endian_BIG_ENDIAN) {\
+//      case util_endian_pdp_endian:\
+//        if (from == util_endian_big_endian) {\
 //          for (_i=0, _j=1; _j<(length); _i=++_j, _j++) {\
 //            _swap((uint8_t*)(ptr)+_i, (uint8_t*)(ptr)+_j)\
 //          }\
@@ -212,13 +221,13 @@ reverse_order:
 // *
 // * Oparam from,to An enum util_endian_byte_order, if you set 'from' or 'to'
 // *    to 0 (i.e. util_endian_byte_order_LOCAL),
-// *    it will be replaced with util_endian_LOCAL_ENDIAN
+// *    it will be replaced with util_endian_local_endian
 // * Oparam ptr The pointer to the storage at which you want to rearrange the data.
 // * Oparam length The number of bytes you want to rearrange. I must not be an odd number.
 // */
 //#define __to_another_byte_order(from, to, ptr, length)\
-//  __impl_to_another_byte_order((from?from:util_endian_LOCAL_ENDIAN),\
-//      to?to:util_endian_LOCAL_ENDIAN, ptr, length)
+//  __impl_to_another_byte_order((from?from:util_endian_local_endian),\
+//      to?to:util_endian_local_endian, ptr, length)
 
 
 extern uint8_t lut_byte_flip[16];
@@ -368,8 +377,8 @@ uint16_t get_idx_of_nth_1( unsigned int string_len, const uint8_t string[static 
 ////        item = value << (sizeof(item)*8 - item_len_in_bits);\
 ////        item = item  >> pos_head_bit_in_head_byte;\
 ////\
-////        to_another_byte_order(0, util_endian_BIG_ENDIAN, &mask, sizeof(mask));\
-////        to_another_byte_order(0, util_endian_BIG_ENDIAN, &item, sizeof(item));\
+////        to_another_byte_order(0, util_endian_big_endian, &mask, sizeof(mask));\
+////        to_another_byte_order(0, util_endian_big_endian, &item, sizeof(item));\
 ////        typeof(&item) ptr = (typeof(&item))(arr_bits + byte_idx);\
 ////        *ptr &= mask;\
 ////        *ptr |= item;\
@@ -387,8 +396,8 @@ uint16_t get_idx_of_nth_1( unsigned int string_len, const uint8_t string[static 
 ////        item = value << (sizeof(item)*8 - item_len_in_bits);\
 ////        item = item  >> pos_head_bit_in_head_byte;\
 ////\
-////        to_another_byte_order(0, util_endian_BIG_ENDIAN, &mask, sizeof(mask));\
-////        to_another_byte_order(0, util_endian_BIG_ENDIAN, &item, sizeof(item));\
+////        to_another_byte_order(0, util_endian_big_endian, &mask, sizeof(mask));\
+////        to_another_byte_order(0, util_endian_big_endian, &item, sizeof(item));\
 ////        typeof(&item) ptr = (typeof(&item))(arr_bits + byte_idx);\
 ////        *ptr &= mask;\
 ////        *ptr |= item;\
@@ -408,8 +417,8 @@ uint16_t get_idx_of_nth_1( unsigned int string_len, const uint8_t string[static 
 ////        item = value << (sizeof(item)*8 - item_len_in_bits);\
 ////        item = item  >> pos_head_bit_in_head_byte;\
 ////\
-////        to_another_byte_order(0, util_endian_BIG_ENDIAN, &mask, sizeof(mask));\
-////        to_another_byte_order(0, util_endian_BIG_ENDIAN, &item, sizeof(item));\
+////        to_another_byte_order(0, util_endian_big_endian, &mask, sizeof(mask));\
+////        to_another_byte_order(0, util_endian_big_endian, &item, sizeof(item));\
 ////        typeof(&item) ptr = (typeof(&item))(arr_bits + byte_idx);\
 ////        *ptr &= mask;\
 ////        *ptr |= item;\
@@ -447,10 +456,10 @@ static inline void set_bits_sp_u64( void * arr_bits,
   item_next_qword = value << (sizeof(item)*8 - item_len_in_bits);
   item_next_qword = item_next_qword  << (sizeof(item)*8 - (pos_msb_in_qword?pos_msb_in_qword:1));
 
-  //to_another_byte_order(0, util_endian_BIG_ENDIAN, &mask, sizeof(mask));
-  //to_another_byte_order(0, util_endian_BIG_ENDIAN, &item, sizeof(item));
-  //to_another_byte_order(0, util_endian_BIG_ENDIAN, &mask_next_qword, sizeof(mask_next_qword));
-  //to_another_byte_order(0, util_endian_BIG_ENDIAN, &item_next_qword, sizeof(item_next_qword));
+  //to_another_byte_order(0, util_endian_big_endian, &mask, sizeof(mask));
+  //to_another_byte_order(0, util_endian_big_endian, &item, sizeof(item));
+  //to_another_byte_order(0, util_endian_big_endian, &mask_next_qword, sizeof(mask_next_qword));
+  //to_another_byte_order(0, util_endian_big_endian, &item_next_qword, sizeof(item_next_qword));
 
   const typeof(&item) ptr = (typeof(ptr))arr_bits + qword_idx;
   const typeof(ptr) ptr_next = (typeof(ptr))arr_bits + qword_idx + 1;
@@ -488,10 +497,10 @@ static inline void set_bits_sp_u64( void * arr_bits,
 //  item_next_qword = value << (sizeof(item)*8 - item_len_in_bits);\
 //  item_next_qword = item_next_qword  << (sizeof(item)*8 - pos_msb_in_qword);\
 //\
-//  to_another_byte_order(0, util_endian_BIG_ENDIAN, &mask, sizeof(mask));\
-//  to_another_byte_order(0, util_endian_BIG_ENDIAN, &item, sizeof(item));\
-//  to_another_byte_order(0, util_endian_BIG_ENDIAN, &mask_next_qword, sizeof(mask_next_qword));\
-//  to_another_byte_order(0, util_endian_BIG_ENDIAN, &item_next_qword, sizeof(item_next_qword));\
+//  to_another_byte_order(0, util_endian_big_endian, &mask, sizeof(mask));\
+//  to_another_byte_order(0, util_endian_big_endian, &item, sizeof(item));\
+//  to_another_byte_order(0, util_endian_big_endian, &mask_next_qword, sizeof(mask_next_qword));\
+//  to_another_byte_order(0, util_endian_big_endian, &item_next_qword, sizeof(item_next_qword));\
 //  typeof(&item) ptr = (typeof(&item))(arr_bits + qword_idx*64/8);\
 //  *ptr &= mask;\
 //  *ptr |= item;\
@@ -529,10 +538,10 @@ static inline void set_bits_sp_u32( void * arr_bits,
   item_next_dword = value << (sizeof(item)*8 - item_len_in_bits);
   item_next_dword = item_next_dword  << (sizeof(item)*8 - (pos_msb_in_dword?pos_msb_in_dword:1));
 
-  //to_another_byte_order(0, util_endian_BIG_ENDIAN, &mask, sizeof(mask));
-  //to_another_byte_order(0, util_endian_BIG_ENDIAN, &item, sizeof(item));
-  //to_another_byte_order(0, util_endian_BIG_ENDIAN, &mask_next_dword, sizeof(mask_next_dword));
-  //to_another_byte_order(0, util_endian_BIG_ENDIAN, &item_next_dword, sizeof(item_next_dword));
+  //to_another_byte_order(0, util_endian_big_endian, &mask, sizeof(mask));
+  //to_another_byte_order(0, util_endian_big_endian, &item, sizeof(item));
+  //to_another_byte_order(0, util_endian_big_endian, &mask_next_dword, sizeof(mask_next_dword));
+  //to_another_byte_order(0, util_endian_big_endian, &item_next_dword, sizeof(item_next_dword));
 
   const typeof(&item) ptr = (typeof(ptr))arr_bits + dword_idx;
   const typeof(ptr) ptr_next = (typeof(ptr))arr_bits + dword_idx + 1;
@@ -676,7 +685,7 @@ static inline void set_bits_sp_i8( void * arr_bits,
         _uintlen_t_item(16)                                                     \
                                                                                 \
         item = *(typeof(&item))(arr_bits + byte_idx);                           \
-        to_another_byte_order(util_endian_BIG_ENDIAN, 0, &item, sizeof(item));  \
+        to_another_byte_order(util_endian_big_endian, 0, &item, sizeof(item));  \
                                                                                 \
         item = item << pos_head_bit_in_head_byte;                               \
         item = item >> (sizeof(item)*8 - item_len_in_bits);                     \
@@ -689,7 +698,7 @@ static inline void set_bits_sp_i8( void * arr_bits,
         _uintlen_t_item(32)                                                     \
                                                                                 \
         item = *(typeof(&item))(arr_bits + byte_idx);                           \
-        to_another_byte_order(util_endian_BIG_ENDIAN, 0, &item, sizeof(item));  \
+        to_another_byte_order(util_endian_big_endian, 0, &item, sizeof(item));  \
                                                                                 \
         item = item << pos_head_bit_in_head_byte;                               \
         item = item >> (sizeof(item)*8 - item_len_in_bits);                     \
@@ -705,7 +714,7 @@ static inline void set_bits_sp_i8( void * arr_bits,
         _uintlen_t_item(64)                                                     \
                                                                                 \
         item = *(typeof(&item))(arr_bits + byte_idx);                           \
-        to_another_byte_order(util_endian_BIG_ENDIAN, 0, &item, sizeof(item));  \
+        to_another_byte_order(util_endian_big_endian, 0, &item, sizeof(item));  \
                                                                                 \
         item = item << pos_head_bit_in_head_byte;                               \
         item = item >> (sizeof(item)*8 - item_len_in_bits);                     \
@@ -763,7 +772,7 @@ static inline uint8_t get_bits_unaligned_u8( const void * arr_bits,
         _for_get_bits_unaligned_signed_template(16)                             \
                                                                                 \
         item = *(typeof(&item))(arr_bits + byte_idx);                           \
-        to_another_byte_order(util_endian_BIG_ENDIAN, 0, &item, sizeof(item));  \
+        to_another_byte_order(util_endian_big_endian, 0, &item, sizeof(item));  \
                                                                                 \
         item = item << pos_head_bit_in_head_byte;                               \
         item = item >> (sizeof(item)*8 - item_len_in_bits);                     \
@@ -779,7 +788,7 @@ static inline uint8_t get_bits_unaligned_u8( const void * arr_bits,
         _for_get_bits_unaligned_signed_template(32)                             \
                                                                                 \
         item = *(typeof(&item))(arr_bits + byte_idx);                           \
-        to_another_byte_order(util_endian_BIG_ENDIAN, 0, &item, sizeof(item));  \
+        to_another_byte_order(util_endian_big_endian, 0, &item, sizeof(item));  \
                                                                                 \
         item = item << pos_head_bit_in_head_byte;                               \
         item = item >> (sizeof(item)*8 - item_len_in_bits);                     \
@@ -798,7 +807,7 @@ static inline uint8_t get_bits_unaligned_u8( const void * arr_bits,
         _for_get_bits_unaligned_signed_template(64)                             \
                                                                                 \
         item = *(typeof(&item))(arr_bits + byte_idx);                           \
-        to_another_byte_order(util_endian_BIG_ENDIAN, 0, &item, sizeof(item));  \
+        to_another_byte_order(util_endian_big_endian, 0, &item, sizeof(item));  \
                                                                                 \
         item = item << pos_head_bit_in_head_byte;                               \
         item = item >> (sizeof(item)*8 - item_len_in_bits);                     \
@@ -883,8 +892,8 @@ static inline uint64_t get_bits_sp_u64( const void * arr_bits,
   const uint64_t first_qword = *((uint64_t*)arr_bits + qword_idx);
   const uint64_t second_qword = *((uint64_t*)arr_bits + qword_idx + 1);
   // MOVBE on little-endian systems
-  //to_another_byte_order(util_endian_BIG_ENDIAN, 0, &first_qword, sizeof(uint64_t));
-  //to_another_byte_order(util_endian_BIG_ENDIAN, 0, &second_qword, sizeof(uint64_t));
+  //to_another_byte_order(util_endian_big_endian, 0, &first_qword, sizeof(uint64_t));
+  //to_another_byte_order(util_endian_big_endian, 0, &second_qword, sizeof(uint64_t));
 #if defined DEBUG_MODE
 //fprintf( stdout, "[DEBUG] first_qword = [%#018lx]\n", first_qword );
 //fprintf( stdout, "[DEBUG] second_qword = [%#018lx]\n", second_qword );
@@ -942,8 +951,8 @@ static inline uint32_t get_bits_sp_u32( const void * arr_bits,
   const uint32_t first_dword = *((uint32_t*)arr_bits + dword_idx);
   const uint32_t second_dword = *((uint32_t*)arr_bits + dword_idx + 1);
   // MOVBE on little-endian systems
-  //to_another_byte_order(util_endian_BIG_ENDIAN, 0, &first_dword, sizeof(uint32_t));
-  //to_another_byte_order(util_endian_BIG_ENDIAN, 0, &second_dword, sizeof(uint32_t));
+  //to_another_byte_order(util_endian_big_endian, 0, &first_dword, sizeof(uint32_t));
+  //to_another_byte_order(util_endian_big_endian, 0, &second_dword, sizeof(uint32_t));
 
   // Prepare the primary dword
   //uint_fast8_t nr_bits_extracted_from_first = item_len_in_bits - nr_bits_extracted_from_next_dword;
