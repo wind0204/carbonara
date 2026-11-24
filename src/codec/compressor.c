@@ -2,7 +2,10 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <sys/stat.h>
+#include <unistd.h>
+#include <errno.h>  // EEXIST
 
 #include "util-c_lang-basic.h"
 #include "zstd.h"
@@ -17,6 +20,36 @@
 
 constexpr unsigned int dds_header_size =
   4 + sizeof(TCTex_DDS_HEADER) + sizeof(TCTex_DDS_HEADER_DXT10);
+
+/**
+ * \brief Resolve a possibly-relative path against the current working directory.
+ * \return a heap-allocated absolute path (caller must free()), or NULL on error.
+ */
+static char * resolve_path( const char * path )
+{
+  if ( !path ) return NULL;
+  if ( path[0] == '/' ) {
+    return strdup(path);
+  }
+
+  char * cwd = getcwd(NULL, 0);
+  if ( !cwd ) {
+    fprintf(stderr, "Error: failed to get current working directory\n");
+    return NULL;
+  }
+
+  size_t needed = strlen(cwd) + 1 + strlen(path) + 1;
+  char * abs_path = malloc(needed);
+  if ( !abs_path ) {
+    free(cwd);
+    fprintf(stderr, "Error: failed to allocate memory for path resolution\n");
+    return NULL;
+  }
+
+  snprintf(abs_path, needed, "%s/%s", cwd, path);
+  free(cwd);
+  return abs_path;
+}
 
 static enum err_msg integrity_check_bc7_2048( FILE * restrict dds_file )
 {
@@ -121,8 +154,6 @@ static int zstd_compress_file( FILE * restrict src_file, const char *out_path, i
   }
   //fclose(src_file);
 
-  mkdir("/dev/shm/compressor", 0755);
-
   if ( !cctx ) {
     cctx = ZSTD_createCCtx();
     if (!cctx) {
@@ -208,8 +239,6 @@ static int lz4_compress_file( FILE * restrict src_file, const char *out_path, in
     bool verbose, size_t data_size )
 {
   assume( src_file );
-
-  mkdir("/dev/shm/compressor", 0755);
 
   FILE *dst_file = fopen(out_path, "wb");
   if ( !dst_file ) {
@@ -330,8 +359,6 @@ static int snappy_compress_file( FILE * restrict src_file, const char *out_path,
   }
   //fclose(src_file);
 
-  mkdir("/dev/shm/compressor", 0755);
-
   if ( !snappy_env_has_been_init ) {
     int ret = snappy_init_env(&snappy_env);
     if ( ret ) {
@@ -387,13 +414,14 @@ static int snappy_compress_file( FILE * restrict src_file, const char *out_path,
 
 
 #define REQUIRED_ARGS \
-  REQUIRED_STRING_ARG(src, "SRC_FILE", "The source file with original data; " \
-      "The compressed file(s) will be placed in /dev/shm/compressor")
+  REQUIRED_STRING_ARG(src, "SRC_FILE", "The source file that contains the original data")
 #define OPTIONAL_ARGS \
     OPTIONAL_UINT_ARG(threads, 0, "-t", "zstd worker thread count", \
         "Number of threads to use; The default value 0 means single-threaded work; " \
         "At higher zstd compression levels you need bigger SRC_FILE to actually use extra threads"\
-        "; the size ratio gets a tiny bit higher when jobs are distributed among multiple threads")
+        "; the size gets a tiny bit bigger when jobs are distributed among multiple threads") \
+    OPTIONAL_STRING_ARG(output_dir, "/dev/shm/compressor", "-C", "output directory", \
+        "The directory where compressed data will be saved")
 #define BOOLEAN_ARGS \
     BOOLEAN_ARG(verbose, "-v", "verbose mode") \
     BOOLEAN_ARG(z1, "-z1", "zstd Lv.1") \
@@ -476,6 +504,18 @@ int main(int argc, char * argv[])
 
   size_t src_size = (size_t) src_size_long - (args.minimalist ? dds_header_size : 0);
 
+  char * abs_output_dir = resolve_path(args.output_dir);
+  if ( !abs_output_dir ) {
+    ret = 1;
+    goto exit_program;
+  }
+
+  ret = mkdir(abs_output_dir, 0755);
+  if ( ret && errno != EEXIST) {
+    fprintf(stderr, "Error: failed to create directory '%s'. (%d)\n", abs_output_dir, errno);
+    ret = 1;
+    goto exit_program;
+  }
   char out_path[512];
   for ( enum compress_task i = 0; i < compress_task_cnt; i++ ) {
     fseek(src_file, args.minimalist ? dds_header_size : 0, SEEK_SET);
@@ -485,10 +525,11 @@ int main(int argc, char * argv[])
           break;
         }
         int c_lv = 1;
-        snprintf(out_path, sizeof(out_path), "/dev/shm/compressor/%s.zstd%d", fname, c_lv);
+        snprintf(out_path, sizeof(out_path), "%s/%s.zstd%d", abs_output_dir, fname, c_lv);
         if ( zstd_compress_file(src_file, out_path, c_lv, args.verbose, src_size, args.threads) ) {
-          fclose(src_file);
-          return 1;
+          free(abs_output_dir);
+          ret = 1;
+          goto exit_program;
         }
         break; }
       case zstd2: {
@@ -496,10 +537,10 @@ int main(int argc, char * argv[])
           break;
         }
         int c_lv = 2;
-        snprintf(out_path, sizeof(out_path), "/dev/shm/compressor/%s.zstd%d", fname, c_lv);
+        snprintf(out_path, sizeof(out_path), "%s/%s.zstd%d", abs_output_dir, fname, c_lv);
         if ( zstd_compress_file(src_file, out_path, c_lv, args.verbose, src_size, args.threads) ) {
-          fclose(src_file);
-          return 1;
+          ret = 1;
+          goto exit_program;
         }
         break; }
       case zstd3: {
@@ -507,10 +548,10 @@ int main(int argc, char * argv[])
           break;
         }
         int c_lv = 3;
-        snprintf(out_path, sizeof(out_path), "/dev/shm/compressor/%s.zstd%d", fname, c_lv);
+        snprintf(out_path, sizeof(out_path), "%s/%s.zstd%d", abs_output_dir, fname, c_lv);
         if ( zstd_compress_file(src_file, out_path, c_lv, args.verbose, src_size, args.threads) ) {
-          fclose(src_file);
-          return 1;
+          ret = 1;
+          goto exit_program;
         }
         break; }
       case zstd4: {
@@ -518,10 +559,10 @@ int main(int argc, char * argv[])
           break;
         }
         int c_lv = 4;
-        snprintf(out_path, sizeof(out_path), "/dev/shm/compressor/%s.zstd%d", fname, c_lv);
+        snprintf(out_path, sizeof(out_path), "%s/%s.zstd%d", abs_output_dir, fname, c_lv);
         if ( zstd_compress_file(src_file, out_path, c_lv, args.verbose, src_size, args.threads) ) {
-          fclose(src_file);
-          return 1;
+          ret = 1;
+          goto exit_program;
         }
         break; }
       case zstd18: {
@@ -529,10 +570,10 @@ int main(int argc, char * argv[])
           break;
         }
         int c_lv = 18;
-        snprintf(out_path, sizeof(out_path), "/dev/shm/compressor/%s.zstd%d", fname, c_lv);
+        snprintf(out_path, sizeof(out_path), "%s/%s.zstd%d", abs_output_dir, fname, c_lv);
         if ( zstd_compress_file(src_file, out_path, c_lv, args.verbose, src_size, args.threads) ) {
-          fclose(src_file);
-          return 1;
+          ret = 1;
+          goto exit_program;
         }
         break; }
       case zstd19: {
@@ -540,10 +581,10 @@ int main(int argc, char * argv[])
           break;
         }
         int c_lv = 19;
-        snprintf(out_path, sizeof(out_path), "/dev/shm/compressor/%s.zstd%d", fname, c_lv);
+        snprintf(out_path, sizeof(out_path), "%s/%s.zstd%d", abs_output_dir, fname, c_lv);
         if ( zstd_compress_file(src_file, out_path, c_lv, args.verbose, src_size, args.threads) ) {
-          fclose(src_file);
-          return 1;
+          ret = 1;
+          goto exit_program;
         }
         break; }
       case zstd20: {
@@ -551,10 +592,10 @@ int main(int argc, char * argv[])
           break;
         }
         int c_lv = 20;
-        snprintf(out_path, sizeof(out_path), "/dev/shm/compressor/%s.zstd%d", fname, c_lv);
+        snprintf(out_path, sizeof(out_path), "%s/%s.zstd%d", abs_output_dir, fname, c_lv);
         if ( zstd_compress_file(src_file, out_path, c_lv, args.verbose, src_size, args.threads) ) {
-          fclose(src_file);
-          return 1;
+          ret = 1;
+          goto exit_program;
         }
         break; }
       case zstd21: {
@@ -562,10 +603,10 @@ int main(int argc, char * argv[])
           break;
         }
         int c_lv = 21;
-        snprintf(out_path, sizeof(out_path), "/dev/shm/compressor/%s.zstd%d", fname, c_lv);
+        snprintf(out_path, sizeof(out_path), "%s/%s.zstd%d", abs_output_dir, fname, c_lv);
         if ( zstd_compress_file(src_file, out_path, c_lv, args.verbose, src_size, args.threads) ) {
-          fclose(src_file);
-          return 1;
+          ret = 1;
+          goto exit_program;
         }
         break; }
       case lz41: {
@@ -573,10 +614,10 @@ int main(int argc, char * argv[])
           break;
         }
         int c_lv = 1;
-        snprintf(out_path, sizeof(out_path), "/dev/shm/compressor/%s.lz4%d", fname, c_lv);
+        snprintf(out_path, sizeof(out_path), "%s/%s.lz4%d", abs_output_dir, fname, c_lv);
         if ( lz4_compress_file(src_file, out_path, c_lv, args.verbose, src_size) ) {
-          fclose(src_file);
-          return 1;
+          ret = 1;
+          goto exit_program;
         }
         break; }
       case lz42: {
@@ -584,10 +625,10 @@ int main(int argc, char * argv[])
           break;
         }
         int c_lv = 2;
-        snprintf(out_path, sizeof(out_path), "/dev/shm/compressor/%s.lz4%d", fname, c_lv);
+        snprintf(out_path, sizeof(out_path), "%s/%s.lz4%d", abs_output_dir, fname, c_lv);
         if ( lz4_compress_file(src_file, out_path, c_lv, args.verbose, src_size) ) {
-          fclose(src_file);
-          return 1;
+          ret = 1;
+          goto exit_program;
         }
         break; }
       case lz43: {
@@ -595,10 +636,10 @@ int main(int argc, char * argv[])
           break;
         }
         int c_lv = 3;
-        snprintf(out_path, sizeof(out_path), "/dev/shm/compressor/%s.lz4%d", fname, c_lv);
+        snprintf(out_path, sizeof(out_path), "%s/%s.lz4%d", abs_output_dir, fname, c_lv);
         if ( lz4_compress_file(src_file, out_path, c_lv, args.verbose, src_size) ) {
-          fclose(src_file);
-          return 1;
+          ret = 1;
+          goto exit_program;
         }
         break; }
       case lz44: {
@@ -606,10 +647,10 @@ int main(int argc, char * argv[])
           break;
         }
         int c_lv = 4;
-        snprintf(out_path, sizeof(out_path), "/dev/shm/compressor/%s.lz4%d", fname, c_lv);
+        snprintf(out_path, sizeof(out_path), "%s/%s.lz4%d", abs_output_dir, fname, c_lv);
         if ( lz4_compress_file(src_file, out_path, c_lv, args.verbose, src_size) ) {
-          fclose(src_file);
-          return 1;
+          ret = 1;
+          goto exit_program;
         }
         break; }
       case lz49: {
@@ -617,10 +658,10 @@ int main(int argc, char * argv[])
           break;
         }
         int c_lv = 9;
-        snprintf(out_path, sizeof(out_path), "/dev/shm/compressor/%s.lz4%d", fname, c_lv);
+        snprintf(out_path, sizeof(out_path), "%s/%s.lz4%d", abs_output_dir, fname, c_lv);
         if ( lz4_compress_file(src_file, out_path, c_lv, args.verbose, src_size) ) {
-          fclose(src_file);
-          return 1;
+          ret = 1;
+          goto exit_program;
         }
         break; }
       case lz410: {
@@ -628,10 +669,10 @@ int main(int argc, char * argv[])
           break;
         }
         int c_lv = 10;
-        snprintf(out_path, sizeof(out_path), "/dev/shm/compressor/%s.lz4%d", fname, c_lv);
+        snprintf(out_path, sizeof(out_path), "%s/%s.lz4%d", abs_output_dir, fname, c_lv);
         if ( lz4_compress_file(src_file, out_path, c_lv, args.verbose, src_size) ) {
-          fclose(src_file);
-          return 1;
+          ret = 1;
+          goto exit_program;
         }
         break; }
       case lz411: {
@@ -639,10 +680,10 @@ int main(int argc, char * argv[])
           break;
         }
         int c_lv = 11;
-        snprintf(out_path, sizeof(out_path), "/dev/shm/compressor/%s.lz4%d", fname, c_lv);
+        snprintf(out_path, sizeof(out_path), "%s/%s.lz4%d", abs_output_dir, fname, c_lv);
         if ( lz4_compress_file(src_file, out_path, c_lv, args.verbose, src_size) ) {
-          fclose(src_file);
-          return 1;
+          ret = 1;
+          goto exit_program;
         }
         break; }
       case lz412: {
@@ -650,20 +691,20 @@ int main(int argc, char * argv[])
           break;
         }
         int c_lv = 12;
-        snprintf(out_path, sizeof(out_path), "/dev/shm/compressor/%s.lz4%d", fname, c_lv);
+        snprintf(out_path, sizeof(out_path), "%s/%s.lz4%d", abs_output_dir, fname, c_lv);
         if ( lz4_compress_file(src_file, out_path, c_lv, args.verbose, src_size) ) {
-          fclose(src_file);
-          return 1;
+          ret = 1;
+          goto exit_program;
         }
         break; }
       case snappy:
         if ( args.snappy == false && args.all == false ) {
           break;
         }
-        snprintf(out_path, sizeof(out_path), "/dev/shm/compressor/%s.snp", fname);
+        snprintf(out_path, sizeof(out_path), "%s/%s.snp", abs_output_dir, fname);
         if ( snappy_compress_file(src_file, out_path, args.verbose, src_size) ) {
-          fclose(src_file);
-          return 1;
+          ret = 1;
+          goto exit_program;
         }
         break;
       default:
@@ -671,6 +712,8 @@ int main(int argc, char * argv[])
     }
   }
 
+  ret = 0;
+exit_program:
   if ( cctx ) {
     ZSTD_freeCCtx(cctx);
   }
@@ -680,6 +723,7 @@ int main(int argc, char * argv[])
   if ( snappy_env_has_been_init ) {
     snappy_free_env(&snappy_env);
   }
+  free(abs_output_dir);
   fclose(src_file);
-  return 0;
+  return ret;
 }
