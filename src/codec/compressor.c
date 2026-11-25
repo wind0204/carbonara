@@ -484,7 +484,7 @@ int main(int argc, char * argv[])
   FILE *src_file = fopen(src_path, "rb");
   if ( !src_file ) {
     fprintf(stderr, "Error: cannot open '%s'\n", src_path);
-    return 1;
+    return emsg_could_not_read_file;
   }
 
   fseek(src_file, 0, SEEK_END);
@@ -493,7 +493,7 @@ int main(int argc, char * argv[])
   if ( src_size_long < 0 ) {
     fprintf(stderr, "Error: cannot determine size of '%s'\n", src_path);
     fclose(src_file);
-    return 1;
+    return emsg_could_not_read_file;
   }
 
   if ( args.minimalist ) {
@@ -502,7 +502,7 @@ int main(int argc, char * argv[])
     if ( is_dds ) {
       if ( integrity_check_bc7_2048(src_file) ) {
         fclose(src_file);
-        return 1;
+        return emsg_data_does_not_meet_std_req;
       }
     }
   }
@@ -511,14 +511,14 @@ int main(int argc, char * argv[])
 
   char * abs_output_dir = resolve_path(args.output_dir);
   if ( !abs_output_dir ) {
-    ret = 1;
+    ret = emsg_could_not_read_file;
     goto exit_program;
   }
 
   ret = mkdir(abs_output_dir, 0755);
   if ( ret && errno != EEXIST) {
     fprintf(stderr, "Error: failed to create directory '%s'. (%d)\n", abs_output_dir, errno);
-    ret = 1;
+    ret = emsg_could_not_write_file;
     goto exit_program;
   }
   char out_path[512];
@@ -531,9 +531,8 @@ int main(int argc, char * argv[])
         }
         int c_lv = 1;
         snprintf(out_path, sizeof(out_path), "%s/%s.zstd%d", abs_output_dir, fname, c_lv);
-        if ( zstd_compress_file(src_file, out_path, c_lv, args.verbose, src_size, args.threads) ) {
-          free(abs_output_dir);
-          ret = 1;
+        ret = zstd_compress_file(src_file, out_path, c_lv, args.verbose, src_size, args.threads);
+        if ( ret ) {
           goto exit_program;
         }
         break; }
@@ -543,8 +542,8 @@ int main(int argc, char * argv[])
         }
         int c_lv = 2;
         snprintf(out_path, sizeof(out_path), "%s/%s.zstd%d", abs_output_dir, fname, c_lv);
-        if ( zstd_compress_file(src_file, out_path, c_lv, args.verbose, src_size, args.threads) ) {
-          ret = 1;
+        ret = zstd_compress_file(src_file, out_path, c_lv, args.verbose, src_size, args.threads);
+        if ( ret ) {
           goto exit_program;
         }
         break; }
@@ -554,8 +553,8 @@ int main(int argc, char * argv[])
         }
         int c_lv = 3;
         snprintf(out_path, sizeof(out_path), "%s/%s.zstd%d", abs_output_dir, fname, c_lv);
-        if ( zstd_compress_file(src_file, out_path, c_lv, args.verbose, src_size, args.threads) ) {
-          ret = 1;
+        ret = zstd_compress_file(src_file, out_path, c_lv, args.verbose, src_size, args.threads);
+        if ( ret ) {
           goto exit_program;
         }
         break; }
@@ -565,8 +564,8 @@ int main(int argc, char * argv[])
         }
         int c_lv = 4;
         snprintf(out_path, sizeof(out_path), "%s/%s.zstd%d", abs_output_dir, fname, c_lv);
-        if ( zstd_compress_file(src_file, out_path, c_lv, args.verbose, src_size, args.threads) ) {
-          ret = 1;
+        ret = zstd_compress_file(src_file, out_path, c_lv, args.verbose, src_size, args.threads);
+        if ( ret ) {
           goto exit_program;
         }
         break; }
@@ -576,8 +575,8 @@ int main(int argc, char * argv[])
         }
         int c_lv = 18;
         snprintf(out_path, sizeof(out_path), "%s/%s.zstd%d", abs_output_dir, fname, c_lv);
-        if ( zstd_compress_file(src_file, out_path, c_lv, args.verbose, src_size, args.threads) ) {
-          ret = 1;
+        ret = zstd_compress_file(src_file, out_path, c_lv, args.verbose, src_size, args.threads);
+        if ( ret ) {
           goto exit_program;
         }
         break; }
@@ -587,8 +586,8 @@ int main(int argc, char * argv[])
         }
         int c_lv = 19;
         snprintf(out_path, sizeof(out_path), "%s/%s.zstd%d", abs_output_dir, fname, c_lv);
-        if ( zstd_compress_file(src_file, out_path, c_lv, args.verbose, src_size, args.threads) ) {
-          ret = 1;
+        ret = zstd_compress_file(src_file, out_path, c_lv, args.verbose, src_size, args.threads);
+        if ( ret ) {
           goto exit_program;
         }
         break; }
@@ -598,8 +597,8 @@ int main(int argc, char * argv[])
         }
         int c_lv = 20;
         snprintf(out_path, sizeof(out_path), "%s/%s.zstd%d", abs_output_dir, fname, c_lv);
-        if ( zstd_compress_file(src_file, out_path, c_lv, args.verbose, src_size, args.threads) ) {
-          ret = 1;
+        ret = zstd_compress_file(src_file, out_path, c_lv, args.verbose, src_size, args.threads);
+        if ( ret ) {
           goto exit_program;
         }
         break; }
@@ -609,8 +608,8 @@ int main(int argc, char * argv[])
         }
         int c_lv = 21;
         snprintf(out_path, sizeof(out_path), "%s/%s.zstd%d", abs_output_dir, fname, c_lv);
-        if ( zstd_compress_file(src_file, out_path, c_lv, args.verbose, src_size, args.threads) ) {
-          ret = 1;
+        ret = zstd_compress_file(src_file, out_path, c_lv, args.verbose, src_size, args.threads);
+        if ( ret ) {
           goto exit_program;
         }
         break; }
@@ -620,8 +619,8 @@ int main(int argc, char * argv[])
         }
         int c_lv = 1;
         snprintf(out_path, sizeof(out_path), "%s/%s.lz4%d", abs_output_dir, fname, c_lv);
-        if ( lz4_compress_file(src_file, out_path, c_lv, args.verbose, src_size) ) {
-          ret = 1;
+        ret = lz4_compress_file(src_file, out_path, c_lv, args.verbose, src_size);
+        if ( ret ) {
           goto exit_program;
         }
         break; }
@@ -631,8 +630,8 @@ int main(int argc, char * argv[])
         }
         int c_lv = 2;
         snprintf(out_path, sizeof(out_path), "%s/%s.lz4%d", abs_output_dir, fname, c_lv);
-        if ( lz4_compress_file(src_file, out_path, c_lv, args.verbose, src_size) ) {
-          ret = 1;
+        ret = lz4_compress_file(src_file, out_path, c_lv, args.verbose, src_size);
+        if ( ret ) {
           goto exit_program;
         }
         break; }
@@ -642,8 +641,8 @@ int main(int argc, char * argv[])
         }
         int c_lv = 3;
         snprintf(out_path, sizeof(out_path), "%s/%s.lz4%d", abs_output_dir, fname, c_lv);
-        if ( lz4_compress_file(src_file, out_path, c_lv, args.verbose, src_size) ) {
-          ret = 1;
+        ret = lz4_compress_file(src_file, out_path, c_lv, args.verbose, src_size);
+        if ( ret ) {
           goto exit_program;
         }
         break; }
@@ -653,8 +652,8 @@ int main(int argc, char * argv[])
         }
         int c_lv = 4;
         snprintf(out_path, sizeof(out_path), "%s/%s.lz4%d", abs_output_dir, fname, c_lv);
-        if ( lz4_compress_file(src_file, out_path, c_lv, args.verbose, src_size) ) {
-          ret = 1;
+        ret = lz4_compress_file(src_file, out_path, c_lv, args.verbose, src_size);
+        if ( ret ) {
           goto exit_program;
         }
         break; }
@@ -664,8 +663,8 @@ int main(int argc, char * argv[])
         }
         int c_lv = 9;
         snprintf(out_path, sizeof(out_path), "%s/%s.lz4%d", abs_output_dir, fname, c_lv);
-        if ( lz4_compress_file(src_file, out_path, c_lv, args.verbose, src_size) ) {
-          ret = 1;
+        ret = lz4_compress_file(src_file, out_path, c_lv, args.verbose, src_size);
+        if ( ret ) {
           goto exit_program;
         }
         break; }
@@ -675,8 +674,8 @@ int main(int argc, char * argv[])
         }
         int c_lv = 10;
         snprintf(out_path, sizeof(out_path), "%s/%s.lz4%d", abs_output_dir, fname, c_lv);
-        if ( lz4_compress_file(src_file, out_path, c_lv, args.verbose, src_size) ) {
-          ret = 1;
+        ret = lz4_compress_file(src_file, out_path, c_lv, args.verbose, src_size);
+        if ( ret ) {
           goto exit_program;
         }
         break; }
@@ -686,8 +685,8 @@ int main(int argc, char * argv[])
         }
         int c_lv = 11;
         snprintf(out_path, sizeof(out_path), "%s/%s.lz4%d", abs_output_dir, fname, c_lv);
-        if ( lz4_compress_file(src_file, out_path, c_lv, args.verbose, src_size) ) {
-          ret = 1;
+        ret = lz4_compress_file(src_file, out_path, c_lv, args.verbose, src_size);
+        if ( ret ) {
           goto exit_program;
         }
         break; }
@@ -697,8 +696,8 @@ int main(int argc, char * argv[])
         }
         int c_lv = 12;
         snprintf(out_path, sizeof(out_path), "%s/%s.lz4%d", abs_output_dir, fname, c_lv);
-        if ( lz4_compress_file(src_file, out_path, c_lv, args.verbose, src_size) ) {
-          ret = 1;
+        ret = lz4_compress_file(src_file, out_path, c_lv, args.verbose, src_size);
+        if ( ret ) {
           goto exit_program;
         }
         break; }
@@ -707,8 +706,8 @@ int main(int argc, char * argv[])
           break;
         }
         snprintf(out_path, sizeof(out_path), "%s/%s.snp", abs_output_dir, fname);
-        if ( snappy_compress_file(src_file, out_path, args.verbose, src_size) ) {
-          ret = 1;
+        ret = snappy_compress_file(src_file, out_path, args.verbose, src_size);
+        if ( ret ) {
           goto exit_program;
         }
         break;
