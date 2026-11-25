@@ -148,7 +148,7 @@ static int zstd_compress_file( FILE * restrict src_file, const char *out_path, i
 
   unsigned long read_size = fread(src_buf, 1, data_size, src_file);
   if ( read_size != data_size ) {
-    fprintf(stderr, "Error: failed to read the .dds file\n");
+    fprintf(stderr, "Error: failed to read the source file\n");
     free(src_buf);
     return emsg_could_not_read_file;
   }
@@ -306,7 +306,7 @@ static int lz4_compress_file( FILE * restrict src_file, const char *out_path, in
 
     unsigned long read_size = fread(src_buf, 1, data_size, src_file);
     if ( read_size != data_size ) {
-      fprintf(stderr, "Error: failed to read the .dds file\n");
+      fprintf(stderr, "Error: failed to read the source file\n");
       free(src_buf);
       return emsg_could_not_read_file;
     }
@@ -353,7 +353,7 @@ static int snappy_compress_file( FILE * restrict src_file, const char *out_path,
 
   unsigned long read_size = fread(src_buf, 1, data_size, src_file);
   if ( read_size != data_size ) {
-    fprintf(stderr, "Error: failed to read the .dds file\n");
+    fprintf(stderr, "Error: failed to read the source file\n");
     free(src_buf);
     return emsg_could_not_read_file;
   }
