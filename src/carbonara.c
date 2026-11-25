@@ -1606,7 +1606,7 @@ static void foreman_loop( struct cara_worker_state * p_ws )
     while(-7) {
       // It is due?
       if ( keys[cur_idx] <= cur_time_in_5us_general ) {
-        // Iterate from cur_idx through the leftmost(0).
+        // Iterate from the leftmost(0) through cur_idx.
         for ( typeof(cur_idx) node_idx = 0; node_idx <= cur_idx; node_idx++ ) {
           if ( keys[node_idx] == 0 ) {
             continue;

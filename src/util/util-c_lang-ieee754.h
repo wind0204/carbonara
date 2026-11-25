@@ -111,11 +111,11 @@ static inline bool is_close_norel_d( double a, double b, double abs_tol )
   return fabs( a - b ) <= abs_tol;
 }
 
-#define is_close_norel( a, b ) _Generic((a),  \
-    float :                                   \
-        is_close_norel_f,                     \
-    double :                                  \
-        is_close_norel_d                      \
+#define is_close_norel( a, b ) _Generic((a), \
+    float :                                  \
+        is_close_norel_f,                    \
+    double :                                 \
+        is_close_norel_d                     \
     )( (a), (b), DEF_ABS_TOL )
 
 //-------------------------------------------------------------------------------------------------

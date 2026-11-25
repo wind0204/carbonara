@@ -146,21 +146,21 @@ static inline void take_care_of_next_and_nr_nodes_after_putting_head_lists_2_fh(
 /**
  * \brief no docstring for macro :(
  */
-#define infos_take_care_of_linked_list_after_putting_head(ptr_ll) _Generic((ptr_ll),  \
-    struct infos_singly_linked_list * :                                               \
-        infos_take_care_of_next_and_nr_nodes_after_putting_head_uh,                   \
-    struct infos_singly_linked_list_fh * :                                            \
-        infos_take_care_of_next_and_nr_nodes_after_putting_head_fh,                   \
-    struct linked_list_of_lists_2 * :                                                 \
-        take_care_of_next_and_nr_nodes_after_putting_head_lists_2_uh,                 \
-    struct linked_list_of_lists_2_fh * :                                              \
-        take_care_of_next_and_nr_nodes_after_putting_head_lists_2_fh                  \
+#define infos_take_care_of_linked_list_after_putting_head(ptr_ll) _Generic((ptr_ll), \
+    struct infos_singly_linked_list * :                                              \
+        infos_take_care_of_next_and_nr_nodes_after_putting_head_uh,                  \
+    struct infos_singly_linked_list_fh * :                                           \
+        infos_take_care_of_next_and_nr_nodes_after_putting_head_fh,                  \
+    struct linked_list_of_lists_2 * :                                                \
+        take_care_of_next_and_nr_nodes_after_putting_head_lists_2_uh,                \
+    struct linked_list_of_lists_2_fh * :                                             \
+        take_care_of_next_and_nr_nodes_after_putting_head_lists_2_fh                 \
     )( (ptr_ll) )
 
-    //struct infos_linked_list * :                                                      \
-    //    infos_take_care_of_tail_next_prev_and_nr_nodes_after_putting_head_uh,         \
-    //struct infos_linked_list_fh * :                                                   \
-    //    infos_take_care_of_tail_next_prev_and_nr_nodes_after_putting_head_fh,         \
+    //struct infos_linked_list * :                                                    \
+    //    infos_take_care_of_tail_next_prev_and_nr_nodes_after_putting_head_uh,       \
+    //struct infos_linked_list_fh * :                                                 \
+    //    infos_take_care_of_tail_next_prev_and_nr_nodes_after_putting_head_fh,       \
 
 //-------------------------------------------------------------------------------------------------
 //__attribute__((always_inline))
@@ -312,24 +312,24 @@ static inline void * lll2_get_elem_fh(
 /**
  * \warning I've never tried using these functions but wrote the function-like macro just in case.
  */
-#define infos_ll_get_node(ll, idx_node) _Generic((ll),              \
-    struct infos_linked_list *  : infos_ll_get_node_uh,             \
-    struct infos_linked_list_fh *  : infos_ll_get_node_fh,          \
-    struct infos_singly_linked_list *  : infos_sll_get_node_uh,     \
-    struct infos_singly_linked_list_fh *  : infos_sll_get_node_fh   \
+#define infos_ll_get_node(ll, idx_node) _Generic((ll),            \
+    struct infos_linked_list *  : infos_ll_get_node_uh,           \
+    struct infos_linked_list_fh *  : infos_ll_get_node_fh,        \
+    struct infos_singly_linked_list *  : infos_sll_get_node_uh,   \
+    struct infos_singly_linked_list_fh *  : infos_sll_get_node_fh \
     ) ((ll), (idx_node))
 
-#define lll_get_elem_unsafe(lll_or_head, idx_elem) _Generic((lll_or_head),  \
-    const struct linked_list_of_lists *  : lll_get_elem_uh,                 \
-    struct linked_list_of_lists *  : lll_get_elem_uh,                       \
-    const struct linked_list_of_lists_fh *  : lll_get_elem_fh,              \
-    struct linked_list_of_lists_fh *  : lll_get_elem_fh,                    \
-    const struct linked_list_of_lists_2 *  : lll2_get_elem_uh,              \
-    struct linked_list_of_lists_2 *  : lll2_get_elem_uh,                    \
-    const struct linked_list_of_lists_2_fh *  : lll2_get_elem_fh,           \
-    struct linked_list_of_lists_2_fh *  : lll2_get_elem_fh,                 \
-    const struct linked_list_of_lists_node *  : lll_get_elem_from_head,     \
-    struct linked_list_of_lists_node *  : lll_get_elem_from_head            \
+#define lll_get_elem_unsafe(lll_or_head, idx_elem) _Generic((lll_or_head), \
+    const struct linked_list_of_lists *  : lll_get_elem_uh,                \
+    struct linked_list_of_lists *  : lll_get_elem_uh,                      \
+    const struct linked_list_of_lists_fh *  : lll_get_elem_fh,             \
+    struct linked_list_of_lists_fh *  : lll_get_elem_fh,                   \
+    const struct linked_list_of_lists_2 *  : lll2_get_elem_uh,             \
+    struct linked_list_of_lists_2 *  : lll2_get_elem_uh,                   \
+    const struct linked_list_of_lists_2_fh *  : lll2_get_elem_fh,          \
+    struct linked_list_of_lists_2_fh *  : lll2_get_elem_fh,                \
+    const struct linked_list_of_lists_node *  : lll_get_elem_from_head,    \
+    struct linked_list_of_lists_node *  : lll_get_elem_from_head           \
     ) ((lll_or_head), (idx_elem))
 
 //-------------------------------------------------------------------------------------------------
@@ -1519,15 +1519,15 @@ static inline bst_node_idx_t infos_bst_insert_i8( struct infos_bst * tree,
 /**
  * \brief no docstring for macros :(
  */
-#define infos_bst_insert(tree, new_key, idx_val) _Generic((new_key),  \
-    uint64_t  : infos_bst_insert_u64,                                 \
-    uint32_t  : infos_bst_insert_u32,                                 \
-    uint16_t  : infos_bst_insert_u16,                                 \
-    uint8_t  : infos_bst_insert_u8,                                   \
-    int64_t  : infos_bst_insert_i64,                                  \
-    int32_t  : infos_bst_insert_i32,                                  \
-    int16_t  : infos_bst_insert_i16,                                  \
-    int8_t  : infos_bst_insert_i8                                     \
+#define infos_bst_insert(tree, new_key, idx_val) _Generic((new_key), \
+    uint64_t : infos_bst_insert_u64,                                 \
+    uint32_t : infos_bst_insert_u32,                                 \
+    uint16_t : infos_bst_insert_u16,                                 \
+    uint8_t  : infos_bst_insert_u8,                                  \
+    int64_t  : infos_bst_insert_i64,                                 \
+    int32_t  : infos_bst_insert_i32,                                 \
+    int16_t  : infos_bst_insert_i16,                                 \
+    int8_t   : infos_bst_insert_i8                                   \
     )(tree, new_key, idx_val)
 
 
@@ -1718,15 +1718,15 @@ bst_node_idx_t infos_bst_search_for_node_idx_i8(
 /**
  * \brief no docstring for macros :(
  */
-#define infos_bst_search_for_node_idx(tree, key) _Generic((key),  \
-    uint64_t  : infos_bst_search_for_node_idx_u64,                \
-    uint32_t  : infos_bst_search_for_node_idx_u32,                \
-    uint16_t  : infos_bst_search_for_node_idx_u16,                \
-    uint8_t  : infos_bst_search_for_node_idx_u8,                  \
-    int64_t  : infos_bst_search_for_node_idx_i64,                 \
-    int32_t  : infos_bst_search_for_node_idx_i32,                 \
-    int16_t  : infos_bst_search_for_node_idx_i16,                 \
-    int8_t  : infos_bst_search_for_node_idx_i8                    \
+#define infos_bst_search_for_node_idx(tree, key) _Generic((key), \
+    uint64_t  : infos_bst_search_for_node_idx_u64,               \
+    uint32_t  : infos_bst_search_for_node_idx_u32,               \
+    uint16_t  : infos_bst_search_for_node_idx_u16,               \
+    uint8_t  : infos_bst_search_for_node_idx_u8,                 \
+    int64_t  : infos_bst_search_for_node_idx_i64,                \
+    int32_t  : infos_bst_search_for_node_idx_i32,                \
+    int16_t  : infos_bst_search_for_node_idx_i16,                \
+    int8_t  : infos_bst_search_for_node_idx_i8                   \
     )(tree, key)
 
 //-------------------------------------------------------------------------------------------------

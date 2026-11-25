@@ -431,7 +431,7 @@ uint16_t get_idx_of_nth_1( unsigned int string_len, const uint8_t string[static 
  * \brief set_bits for the insane version (Super Poor version) where bits are squashed
  *  without the order of power of two, for the maximum space utilization..
  * \warning \a arr_bits must have enough space to cover 1 mask after the last word at the end in
- *  order to prevent out-of-bounds hit
+ *  order to prevent out-of-bounds hit (64 bits)
  */
 __attribute__((always_inline))
 static inline void set_bits_sp_u64( void * arr_bits,
@@ -513,7 +513,7 @@ static inline void set_bits_sp_u64( void * arr_bits,
  * \brief set_bits for the insane version (Super Poor version) where bits are squashed
  *  without the order of power of two, for the maximum space utilization..
  * \warning \a arr_bits must have enough space to cover 1 mask after the last word at the end in
- *  order to prevent out-of-bounds hit
+ *  order to prevent out-of-bounds hit (32 bits)
  */
 __attribute__((always_inline))
 static inline void set_bits_sp_u32( void * arr_bits,
@@ -660,14 +660,14 @@ static inline void set_bits_sp_i8( void * arr_bits,
    set_bits_sp_u32( (arr_bits), (item_idx), (item_len), (value) ) )                   \
   _Pragma ( "GCC diagnostic pop" )
 //#define set_bits_sp( arr_bits, item_idx, item_len, value ) _Generic((value), \
-//    uint64_t : set_bits_sp_u64,\
-//    uint32_t : set_bits_sp_u32,\
-//    uint16_t : set_bits_sp_u16,\
-//    uint8_t : set_bits_sp_u8,\
-//    int64_t : set_bits_sp_i64,\
-//    int32_t : set_bits_sp_i32,\
-//    int16_t : set_bits_sp_i16,\
-//    int8_t : set_bits_sp_i8\
+//    uint64_t : set_bits_sp_u64,                                              \
+//    uint32_t : set_bits_sp_u32,                                              \
+//    uint16_t : set_bits_sp_u16,                                              \
+//    uint8_t : set_bits_sp_u8,                                                \
+//    int64_t : set_bits_sp_i64,                                               \
+//    int32_t : set_bits_sp_i32,                                               \
+//    int16_t : set_bits_sp_i16,                                               \
+//    int8_t : set_bits_sp_i8                                                  \
 //    )( (arr_bits), (item_idx), (item_len), (value) )
 //#undef _declare_vars_for_set_bitfield
 //#undef _set_bitfield_template

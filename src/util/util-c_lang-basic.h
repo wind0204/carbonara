@@ -355,15 +355,15 @@ uint64_t init_util_c_lang(void);
 /**
  * \brief No doxygen for macro function :(
  */
-#define is_signed(var) _Generic((var),  \
-    uint64_t  : false,                  \
-    uint32_t  : false,                  \
-    uint16_t  : false,                  \
-    uint8_t   : false,                  \
-    int64_t  : true,                    \
-    int32_t  : true,                    \
-    int16_t  : true,                    \
-    int8_t   : true                     \
+#define is_signed(var) _Generic((var), \
+    uint64_t  : false,                 \
+    uint32_t  : false,                 \
+    uint16_t  : false,                 \
+    uint8_t   : false,                 \
+    int64_t  : true,                   \
+    int32_t  : true,                   \
+    int16_t  : true,                   \
+    int8_t   : true                    \
 )
 
 //-------------------------------------------------------------------------------------------------
@@ -604,15 +604,15 @@ uint32_t util_strlen_u16( const uint16_t * str );
  * \brief You don't have to include string.h when you call this function
  * But you shouldn't use it on longer strings often, since the performance is not optimal.
  */
-#define util_strlen(str) _Generic((str),  \
-    const char* : util_strlen_u8,         \
-    char* : util_strlen_u8,               \
-    const uint8_t* : util_strlen_u8,      \
-    uint8_t* : util_strlen_u8,            \
-    const short* : util_strlen_u16,       \
-    short* : util_strlen_u16,             \
-    const uint16_t* : util_strlen_u16,    \
-    uint16_t* : util_strlen_u16           \
+#define util_strlen(str) _Generic((str), \
+    const char* : util_strlen_u8,        \
+    char* : util_strlen_u8,              \
+    const uint8_t* : util_strlen_u8,     \
+    uint8_t* : util_strlen_u8,           \
+    const short* : util_strlen_u16,      \
+    short* : util_strlen_u16,            \
+    const uint16_t* : util_strlen_u16,   \
+    uint16_t* : util_strlen_u16          \
     )((void*)str)
 
 //-------------------------------------------------------------------------------------------------

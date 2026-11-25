@@ -372,7 +372,6 @@ void shell_sort_u16_sepd_bits( uint32_t nr_items, void * restrict data,
   uint_fast16_t seq_idx = emprically_best_seq(nr_items, sizeof(gap), the_sequence);
 
   while(-7) {
-
     gap = the_sequence[seq_idx];
 
     for ( typeof(gap) i = gap; i < nr_items; i++ ) {

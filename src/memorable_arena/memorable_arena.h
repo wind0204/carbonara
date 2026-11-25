@@ -268,12 +268,12 @@ void ma_free_amap( memorable_arena_t * arena, uint8_t idx_user );
 
 //-------------------------------------------------------------------------------------------------
 #define ma_free_3(arena, idx_user, third_arg) _Generic((third_arg), \
-    memorable_arena_t * : ma_free_amap, \
-    default           : ma_free_simple_ptr \
+    memorable_arena_t * : ma_free_amap,                             \
+    default           : ma_free_simple_ptr                          \
     )(arena, idx_user, third_arg)
-#define ma_free_4(arena, idx_user, offset, sub_arena) _Generic((sub_arena), \
+#define ma_free_4(arena, idx_user, offset, sub_arena) _Generic((sub_arena),    \
     _typeof_member(struct ma_sub_arena, idx_sub_arena) : ma_free_simple_ofs_b, \
-    struct ma_sub_arena * : ma_free_simple_ofs_a, \
+    struct ma_sub_arena * : ma_free_simple_ofs_a,                              \
     )(arena, idx_user, offset, sub_arena)
 #define ma_free(...) VAFUNC(ma_free, __VA_ARGS__)
 
