@@ -169,11 +169,11 @@ int main( int argc, char * argv[] )
   //
   {
     fprintf( stdout, "\n\n\n ## Reverse a bitfield using a bunch of RCR and RCL\n\n" );
-    // _reverse_field(6) (RCR and RCL on x86-64)
-    int rf = argc - 2;
+    // reverse_rcr_rcl_..(6) (RCR and RCL on x86-64)
+    uint32_t rf = argc - 2;
     rf += 6;
-    fprintf( stdout, "_reverse_field(%d) = %lu (Must be 1610612736 when argc is 2)"
-        " (argc was %d)\n", rf, _reverse_field(rf), argc );
+    fprintf( stdout, "reverse_rcr_rcl_..(%u) = %u (Must be 1610612736 when argc is 2)"
+        " (argc was %d)\n", rf, reverse_rcr_rcl_32(rf), argc );
   }
 
 
@@ -415,7 +415,7 @@ int main( int argc, char * argv[] )
 
 
   test_nr = 9;
-  // Benchmark - _reverse_field
+  // Benchmark - reverse_rcr_rcl_..
   {
     constexpr int nr_rounds = 32;
     fprintf( stdout, "\n\n\n ## Benchmark - reverse bits\n\n" );
@@ -423,7 +423,7 @@ int main( int argc, char * argv[] )
     fprintf( stdout, "nr_rounds(each round consists of 640000 turns): %d\n",
         nr_rounds );
     uint64_t nr_tsc_from_rng = 0;
-    uint64_t nr_tsc_from_reverse32 = 0;
+    uint64_t nr_tsc_from_reverse_rcr_rcl = 0;
     uint64_t nr_tsc_from_compilerplz = 0;
     uint64_t nr_tsc_from_compilerplz_nsimd = 0;
     for ( int round = 1; round <= nr_rounds; round++ ) {
@@ -443,20 +443,20 @@ int main( int argc, char * argv[] )
       new_tsc = _rdtsc();
       nr_tsc_from_rng += new_tsc - starting_tsc;
 
-      // _reverse_field
+      // reverse_rcr_rcl_..
       bait_for_compiler = 0;
       _mm_mfence();
       _mm_lfence();
       starting_tsc = _rdtsc();
       for ( unsigned int i = 0; i < 10000; i++ ) {
         for ( unsigned int j = 0; j < 64; j++ ) {
-          bait_for_compiler += _reverse_field( numbers[j+i*64] );
+          bait_for_compiler += reverse_rcr_rcl_32( numbers[j+i*64] );
         }
       }
       _mm_mfence();
       _mm_lfence();
       new_tsc = _rdtsc();
-      nr_tsc_from_reverse32 += new_tsc - starting_tsc;
+      nr_tsc_from_reverse_rcr_rcl += new_tsc - starting_tsc;
       if ( bait_for_compiler == 0 ) {
         fprintf( stdout, "_\n" );
       }
@@ -500,19 +500,19 @@ int main( int argc, char * argv[] )
 
     }
 
-    // The result of benchmark - _reverse_field
+    // The result of benchmark - _reverse
     fprintf( stdout, "time spent in RNG = %.1fns\n"
-        "time spent in reverse_32_rcr_rcl(unvectorizable) = %.1fns\n"
+        "time spent in reverse_rcr_rcl_32(unvectorizable) = %.1fns\n"
         "time spent in compiler_reverse_plz(autovectorized) = %.1fns\n"
         "time spent in compiler_reverse_plz(unsimded) = %.1fns\n"
         "Now we know that repeating RCR and RCL for reversing bits is a bad idea!\n"
-        "reverse_32(unvectorizable) / compiler_reverse_plz(unsimded) = %f+\n"
+        "reverse_rcr_rcl_32(unvectorizable) / compiler_reverse_plz(unsimded) = %f+\n"
         "compiler_reverse_plz(unsimded) / compiler_reverse_plz(autovectorized) = %f+\n",
         (double)(timestamp_to_ns * nr_tsc_from_rng),
-        (double)(timestamp_to_ns * nr_tsc_from_reverse32),
+        (double)(timestamp_to_ns * nr_tsc_from_reverse_rcr_rcl),
         (double)(timestamp_to_ns * nr_tsc_from_compilerplz),
         (double)(timestamp_to_ns * nr_tsc_from_compilerplz_nsimd),
-        (double)nr_tsc_from_reverse32 / (double)nr_tsc_from_compilerplz_nsimd,
+        (double)nr_tsc_from_reverse_rcr_rcl / (double)nr_tsc_from_compilerplz_nsimd,
         (double)nr_tsc_from_compilerplz_nsimd / (double)nr_tsc_from_compilerplz
         );
   }

@@ -5,10 +5,12 @@
 #include <stdint.h>
 
 
-//-------------------------------------------------------------------------------------------------
-static_assert(true);
+/**
+ * \brief Slow and inefficient compared to the simple SH.-OR version and vectorized versions
+ * \warning WARNING Do not use this inefficient function
+ */
 __attribute__((always_inline))
-static inline uint64_t reverse_64( uint64_t field )
+static inline uint64_t reverse_rcr_rcl_64( uint64_t field )
 {
 #if defined(__i386) || defined(__i386__) || defined(_M_IX86) || defined(__x86_64) \
   || defined(__x86_64__) || defined(__amd64) || defined(_M_X64)
@@ -18,18 +20,18 @@ static inline uint64_t reverse_64( uint64_t field )
 #pragma GCC diagnostic ignored "-Wlanguage-extension-token"
   asm (
       ".intel_syntax noprefix\n"
-      "xor ecx, ecx\n"              // ECX = 0
-      "xor %[ret], %[ret]\n"        // ret = 0
+      "xor %[ret], %[ret]\n"        // ret = 0 (also clears CF)
       "loop_start_%=:\n"
       "rcr %[field], 1\n"           // Rotate field right, moving LSB to CF
       "rcl %[ret], 1\n"             // Rotate ret left, moving CF to LSB
-      "inc ecx\n"                   // ECX++
-      "cmp ecx, %[loop_cnt]\n"      // ECX - 64
-      "jl loop_start_%=\n"
-      : [ret] "=&r" (ret), [field] "+r" (field)   // `field` is read first and then overwritten.
-                                                  //  `ret` is clobbered early in the asm{}
-      : [loop_cnt] "r" (loop_cnt)   // Input operand
-      : "cc", "ecx" );  // Clobbers: The condition codes ("cc") are modified by RCR
+      "dec %[i]\n"           // Decrement loop counter
+      "jnz loop_start_%=\n"         // Jump if not zero
+      : [ret] "=&r" (ret), [field] "+r" (field), [i] "+r" (loop_cnt)  // `field` is read first and\
+                                                                      // then overwritten.\
+                                                                      // `ret` is clobbered early\
+                                                                      // in the asm{}
+      :  // No input-only operands
+      : "cc" );  // Clobbers: The condition codes ("cc") are modified by RCR
 #pragma GCC diagnostic pop
   return ret;
 #elif defined(TARGETING_ARM_ARCHITECTURE)
@@ -46,9 +48,12 @@ static inline uint64_t reverse_64( uint64_t field )
 #endif
 }
 
-//-------------------------------------------------------------------------------------------------
+/**
+ * \brief Slow and inefficient compared to the simple SH.-OR version and vectorized versions
+ * \warning WARNING Do not use this inefficient function
+ */
 __attribute__((always_inline))
-static inline uint32_t reverse_32( uint32_t field )
+static inline uint32_t reverse_rcr_rcl_32( uint32_t field )
 {
 #if defined(__i386) || defined(__i386__) || defined(_M_IX86) || defined(__x86_64) \
   || defined(__x86_64__) || defined(__amd64) || defined(_M_X64)
@@ -58,18 +63,18 @@ static inline uint32_t reverse_32( uint32_t field )
 #pragma GCC diagnostic ignored "-Wlanguage-extension-token"
   asm (
       ".intel_syntax noprefix\n"
-      "xor ecx, ecx\n"              // ECX = 0
-      "xor %[ret], %[ret]\n"        // ret = 0
+      "xor %[ret], %[ret]\n"        // ret = 0 (also clears CF)
       "loop_start_%=:\n"
       "rcr %[field], 1\n"           // Rotate field right, moving LSB to CF
       "rcl %[ret], 1\n"             // Rotate ret left, moving CF to LSB
-      "inc ecx\n"                   // ECX++
-      "cmp ecx, %[loop_cnt]\n"      // ECX - 32
-      "jl loop_start_%=\n"
-      : [ret] "=&r" (ret), [field] "+r" (field)   // `field` is read first and then overwritten.
-                                                  //  `ret` is clobbered early in the asm{}
-      : [loop_cnt] "r" (loop_cnt)   // Input operand
-      : "cc", "ecx" );  // Clobbers: The condition codes ("cc") are modified by RCR
+      "dec %[i]\n"           // Decrement loop counter
+      "jnz loop_start_%=\n"         // Jump if not zero
+      : [ret] "=&r" (ret), [field] "+r" (field), [i] "+r" (loop_cnt)  // `field` is read first and\
+                                                                      // then overwritten.\
+                                                                      // `ret` is clobbered early\
+                                                                      // in the asm{}
+      :  // No input-only operands
+      : "cc" );  // Clobbers: The condition codes ("cc") are modified by RCR
 #pragma GCC diagnostic pop
   return ret;
 #elif defined(TARGETING_ARM_ARCHITECTURE)
@@ -86,9 +91,12 @@ static inline uint32_t reverse_32( uint32_t field )
 #endif
 }
 
-//-------------------------------------------------------------------------------------------------
+/**
+ * \brief Slow and inefficient compared to the simple SH.-OR version and vectorized versions
+ * \warning WARNING Do not use this inefficient function
+ */
 __attribute__((always_inline))
-static inline uint16_t reverse_16( uint16_t field )
+static inline uint16_t reverse_rcr_rcl_16( uint16_t field )
 {
 #if defined(__i386) || defined(__i386__) || defined(_M_IX86) || defined(__x86_64) \
   || defined(__x86_64__) || defined(__amd64) || defined(_M_X64)
@@ -98,18 +106,18 @@ static inline uint16_t reverse_16( uint16_t field )
 #pragma GCC diagnostic ignored "-Wlanguage-extension-token"
   asm (
       ".intel_syntax noprefix\n"
-      "xor ecx, ecx\n"              // ECX = 0
-      "xor %[ret], %[ret]\n"        // ret = 0
+      "xor %[ret], %[ret]\n"        // ret = 0 (also clears CF)
       "loop_start_%=:\n"
       "rcr %[field], 1\n"           // Rotate field right, moving LSB to CF
       "rcl %[ret], 1\n"             // Rotate ret left, moving CF to LSB
-      "inc ecx\n"                   // ECX++
-      "cmp ecx, %[loop_cnt]\n"      // ECX - 16
-      "jl loop_start_%=\n"
-      : [ret] "=&r" (ret), [field] "+r" (field)   // `field` is read first and then overwritten.
-                                                  //  `ret` is clobbered early in the asm{}
-      : [loop_cnt] "r" (loop_cnt)   // Input operand
-      : "cc", "ecx" );  // Clobbers: The condition codes ("cc") are modified by RCR
+      "dec %[i]\n"           // Decrement loop counter
+      "jnz loop_start_%=\n"         // Jump if not zero
+      : [ret] "=&r" (ret), [field] "+r" (field), [i] "+r" (loop_cnt)  // `field` is read first and\
+                                                                      // then overwritten.\
+                                                                      // `ret` is clobbered early\
+                                                                      // in the asm{}
+      :  // No input-only operands
+      : "cc" );  // Clobbers: The condition codes ("cc") are modified by RCR
 #pragma GCC diagnostic pop
   return ret;
 #elif defined(TARGETING_ARM_ARCHITECTURE)
@@ -126,9 +134,12 @@ static inline uint16_t reverse_16( uint16_t field )
 #endif
 }
 
-//-------------------------------------------------------------------------------------------------
+/**
+ * \brief Slow and inefficient compared to the simple SH.-OR version and vectorized versions
+ * \warning WARNING Do not use this inefficient function
+ */
 __attribute__((always_inline))
-static inline uint8_t reverse_8( uint8_t field )
+static inline uint8_t reverse_rcr_rcl_8( uint8_t field )
 {
 #if defined(__i386) || defined(__i386__) || defined(_M_IX86) || defined(__x86_64) \
   || defined(__x86_64__) || defined(__amd64) || defined(_M_X64)
@@ -138,18 +149,18 @@ static inline uint8_t reverse_8( uint8_t field )
 #pragma GCC diagnostic ignored "-Wlanguage-extension-token"
   asm (
       ".intel_syntax noprefix\n"
-      "xor ecx, ecx\n"              // ECX = 0
-      "xor %[ret], %[ret]\n"        // ret = 0
+      "xor %[ret], %[ret]\n"        // ret = 0 (also clears CF)
       "loop_start_%=:\n"
       "rcr %[field], 1\n"           // Rotate field right, moving LSB to CF
       "rcl %[ret], 1\n"             // Rotate ret left, moving CF to LSB
-      "inc ecx\n"                   // ECX++
-      "cmp ecx, %[loop_cnt]\n"      // ECX - 8
-      "jl loop_start_%=\n"
-      : [ret] "=&r" (ret), [field] "+r" (field)   // `field` is read first and then overwritten.
-                                                  //  `ret` is clobbered early in the asm{}
-      : [loop_cnt] "r" (loop_cnt)   // Input operand
-      : "cc", "ecx" );  // Clobbers: The condition codes ("cc") are modified by RCR
+      "dec %[i]\n"           // Decrement loop counter
+      "jnz loop_start_%=\n"         // Jump if not zero
+      : [ret] "=&r" (ret), [field] "+r" (field), [i] "+r" (loop_cnt)  // `field` is read first and\
+                                                                      // then overwritten.\
+                                                                      // `ret` is clobbered early\
+                                                                      // in the asm{}
+      :  // No input-only operands
+      : "cc" );  // Clobbers: The condition codes ("cc") are modified by RCR
 #pragma GCC diagnostic pop
   return ret;
 #elif defined(TARGETING_ARM_ARCHITECTURE)
@@ -166,11 +177,150 @@ static inline uint8_t reverse_8( uint8_t field )
 #endif
 }
 
+
 //-------------------------------------------------------------------------------------------------
-#define _reverse_field(field)                                 \
-  sizeof(field) == 1 ? reverse_8(field) :                     \
-  sizeof(field) == 2 ? reverse_16(field) :                    \
-  sizeof(field) == 4 ? reverse_32(field) : reverse_64(field)
+__attribute__((always_inline))
+static inline uint8_t reverse_u8( uint8_t field )
+{
+  typeof(field) ret = 0;
+
+  constexpr unsigned int nr_bits = 8 * sizeof(field);
+  for ( unsigned int i = 0; i < nr_bits/2; i++ ) {
+    ret = ret | ( (field & 1<<i) << (31 - i - i) );
+  }
+  for ( unsigned int i = nr_bits/2; i < nr_bits; i++ ) {
+    ret = ret | ( (field & 1<<i) >> ((i - 16)*2 + 1) );
+  }
+
+  return ret;
+}
+
+__attribute__((always_inline))
+static inline uint16_t reverse_u16( uint16_t field )
+{
+  typeof(field) ret = 0;
+
+  constexpr unsigned int nr_bits = 8 * sizeof(field);
+  for ( unsigned int i = 0; i < nr_bits/2; i++ ) {
+    ret = ret | ( (field & 1<<i) << (31 - i - i) );
+  }
+  for ( unsigned int i = nr_bits/2; i < nr_bits; i++ ) {
+    ret = ret | ( (field & 1<<i) >> ((i - 16)*2 + 1) );
+  }
+
+  return ret;
+}
+
+__attribute__((always_inline))
+static inline uint32_t reverse_u32( uint32_t field )
+{
+  typeof(field) ret = 0;
+
+  constexpr unsigned int nr_bits = 8 * sizeof(field);
+  for ( unsigned int i = 0; i < nr_bits/2; i++ ) {
+    ret = ret | ( (field & 1<<i) << (31 - i - i) );
+  }
+  for ( unsigned int i = nr_bits/2; i < nr_bits; i++ ) {
+    ret = ret | ( (field & 1<<i) >> ((i - 16)*2 + 1) );
+  }
+
+  return ret;
+}
+
+__attribute__((always_inline))
+static inline uint64_t reverse_u64( uint64_t field )
+{
+  typeof(field) ret = 0;
+
+  constexpr unsigned int nr_bits = 8 * sizeof(field);
+  for ( unsigned int i = 0; i < nr_bits/2; i++ ) {
+    ret = ret | ( (field & 1<<i) << (31 - i - i) );
+  }
+  for ( unsigned int i = nr_bits/2; i < nr_bits; i++ ) {
+    ret = ret | ( (field & 1<<i) >> ((i - 16)*2 + 1) );
+  }
+
+  return ret;
+}
+
+//-------------------------------------------------------------------------------------------------
+__attribute__((always_inline))
+static inline int8_t reverse_i8( int8_t field )
+{
+  typeof(field) ret = 0;
+
+  constexpr unsigned int nr_bits = 8 * sizeof(field);
+  for ( unsigned int i = 0; i < nr_bits/2; i++ ) {
+    ret = ret | ( (field & 1<<i) << (31 - i - i) );
+  }
+  for ( unsigned int i = nr_bits/2; i < nr_bits; i++ ) {
+    ret = ret | ( (field & 1<<i) >> ((i - 16)*2 + 1) );
+  }
+
+  return ret;
+}
+
+__attribute__((always_inline))
+static inline int16_t reverse_i16( int16_t field )
+{
+  typeof(field) ret = 0;
+
+  constexpr unsigned int nr_bits = 8 * sizeof(field);
+  for ( unsigned int i = 0; i < nr_bits/2; i++ ) {
+    ret = ret | ( (field & 1<<i) << (31 - i - i) );
+  }
+  for ( unsigned int i = nr_bits/2; i < nr_bits; i++ ) {
+    ret = ret | ( (field & 1<<i) >> ((i - 16)*2 + 1) );
+  }
+
+  return ret;
+}
+
+__attribute__((always_inline))
+static inline int32_t reverse_i32( int32_t field )
+{
+  typeof(field) ret = 0;
+
+  constexpr unsigned int nr_bits = 8 * sizeof(field);
+  for ( unsigned int i = 0; i < nr_bits/2; i++ ) {
+    ret = ret | ( (field & 1<<i) << (31 - i - i) );
+  }
+  for ( unsigned int i = nr_bits/2; i < nr_bits; i++ ) {
+    ret = ret | ( (field & 1<<i) >> ((i - 16)*2 + 1) );
+  }
+
+  return ret;
+}
+
+__attribute__((always_inline))
+static inline int64_t reverse_i64( int64_t field )
+{
+  typeof(field) ret = 0;
+
+  constexpr unsigned int nr_bits = 8 * sizeof(field);
+  for ( unsigned int i = 0; i < nr_bits/2; i++ ) {
+    ret = ret | ( (field & 1<<i) << (31 - i - i) );
+  }
+  for ( unsigned int i = nr_bits/2; i < nr_bits; i++ ) {
+    ret = ret | ( (field & 1<<i) >> ((i - 16)*2 + 1) );
+  }
+
+  return ret;
+}
+
+/**
+ * \brief Reverse the bits in a variable
+ */
+#define reverse(field) _Generic((field), \
+    uint64_t : reverse_u64,              \
+    uint32_t : reverse_u32,              \
+    uint16_t : reverse_u16,              \
+    uint8_t  : reverse_u8,               \
+    int64_t  : reverse_i64,              \
+    int32_t  : reverse_i32,              \
+    int16_t  : reverse_i16,              \
+    int8_t   : reverse_i8                \
+    )( field )
 
 
 #endif  // UTIL_C_LANG_BITS2_H_

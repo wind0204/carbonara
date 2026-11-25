@@ -1464,10 +1464,10 @@ void infos_insert_sort_bst( struct infos_bst * tree )
     assume( sizeof(nr_fields) == 32/8 || sizeof(nr_fields) == 64/8 );
     switch ( sizeof(nr_fields) ) {
       case 32/8:
-        arr_blank_pos[i] = _reverse_field(j) >> ( sizeof(j)*8 - (32 - _lzcnt_u32(nr_fields)) );
+        arr_blank_pos[i] = reverse(j) >> ( sizeof(j)*8 - (32 - _lzcnt_u32(nr_fields)) );
         break;
       case 64/8:
-        arr_blank_pos[i] = _reverse_field(j) >> ( sizeof(j)*8 - (64 - _lzcnt_u64(nr_fields)) );
+        arr_blank_pos[i] = reverse(j) >> ( sizeof(j)*8 - (64 - _lzcnt_u64(nr_fields)) );
         break;
       default:
         unreachable();
@@ -1640,10 +1640,10 @@ static bst_node_idx_t insert_sort_tree_while_tracking(
     assume( sizeof(nr_fields) == 32/8 || sizeof(nr_fields) == 64/8 );
     switch ( sizeof(nr_fields) ) {
       case 32/8:
-        arr_blank_pos[i] = _reverse_field(j) >> ( sizeof(j)*8 - (32 - _lzcnt_u32(nr_fields)) );
+        arr_blank_pos[i] = reverse(j) >> ( sizeof(j)*8 - (32 - _lzcnt_u32(nr_fields)) );
         break;
       case 64/8:
-        arr_blank_pos[i] = _reverse_field(j) >> ( sizeof(j)*8 - (64 - _lzcnt_u64(nr_fields)) );
+        arr_blank_pos[i] = reverse(j) >> ( sizeof(j)*8 - (64 - _lzcnt_u64(nr_fields)) );
         break;
       default:
         unreachable();
@@ -1791,10 +1791,10 @@ static void shell_sort_tree( struct infos_bst * tree )
     assume( sizeof(nr_fields) == 32/8 || sizeof(nr_fields) == 64/8 );
     switch ( sizeof(nr_fields) ) {
       case 32/8:
-        arr_blank_pos[i] = _reverse_field(j) >> ( sizeof(j)*8 - (32 - _lzcnt_u32(nr_fields)) );
+        arr_blank_pos[i] = reverse(j) >> ( sizeof(j)*8 - (32 - _lzcnt_u32(nr_fields)) );
         break;
       case 64/8:
-        arr_blank_pos[i] = _reverse_field(j) >> ( sizeof(j)*8 - (64 - _lzcnt_u64(nr_fields)) );
+        arr_blank_pos[i] = reverse(j) >> ( sizeof(j)*8 - (64 - _lzcnt_u64(nr_fields)) );
         break;
       default:
         unreachable();
