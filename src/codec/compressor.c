@@ -1,3 +1,4 @@
+#include <assert.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -444,7 +445,7 @@ static int snappy_compress_file( FILE * restrict src_file, const char *out_path,
         "The directory where compressed data will be saved") \
     OPTIONAL_UINT_ARG(zstd, 0, "-z", "zstd compression level", \
         "The default value 0 means no zstd compression will be done; " \
-        "The valid values are 1-21") \
+        "The valid values are 1-22") \
     OPTIONAL_UINT_ARG(lz4, 0, "-l", "lz4 compression level", \
         "The default value 0 means no lz4 compression will be done; " \
         "The valid values are 1-12")
@@ -521,8 +522,8 @@ int main(int argc, char * argv[])
 
   char out_path_buf[512];
   if ( args.all ) {
-    // 34(12 + 21 + 1) compression jobs
-    for ( int c_lv = 1; c_lv <= 21; c_lv++ ) {
+    // 35(12 + 22 + 1) compression jobs
+    for ( int c_lv = 1; c_lv <= 22; c_lv++ ) {
       fseek(src_file, src_size - data_size, SEEK_SET);
       char * out_path = nullptr;
       if ( !args.benchmark ) {
@@ -561,6 +562,7 @@ int main(int argc, char * argv[])
     // 0-3 compression jobs
 
     if ( args.zstd ) {
+      assert( args.zstd <= 22 );
       fseek(src_file, src_size - data_size, SEEK_SET);
       int c_lv = args.zstd;
       char * out_path = nullptr;
@@ -574,6 +576,7 @@ int main(int argc, char * argv[])
       }
     }
     if ( args.lz4 ) {
+      assert( args.lz4 <= 12 );
       fseek(src_file, src_size - data_size, SEEK_SET);
       int c_lv = args.lz4;
       char * out_path = nullptr;
