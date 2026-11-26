@@ -434,6 +434,42 @@ static int snappy_compress_file( FILE * restrict src_file, const char *out_path,
 }
 
 
+static int make_plain_copy( FILE * restrict src_file, const char *out_path, size_t data_size )
+{
+  assume( src_file );
+
+  void * src_buf = malloc(data_size);
+  if ( !src_buf ) {
+    fprintf(stderr, "Error: malloc failed\n");
+    return emsg_out_of_memory;
+  }
+
+  unsigned long read_size = fread(src_buf, 1, data_size, src_file);
+  if ( read_size != data_size ) {
+    fprintf(stderr, "Error: failed to read the source file\n");
+    free(src_buf);
+    return emsg_could_not_read_file;
+  }
+  //fclose(src_file);
+
+  {
+    // Do write in a file only when not in benchmark mode
+    FILE *dst_file = fopen(out_path, "wb");
+    if ( !dst_file ) {
+      fprintf(stderr, "Error: cannot open '%s' for writing\n", out_path);
+      free(src_buf);
+      return emsg_could_not_write_file;
+    }
+
+    fwrite(src_buf, 1, data_size, dst_file);
+    fclose(dst_file);
+  }
+  free(src_buf);
+
+  return 0;
+}
+
+
 static const char * default_output_dir = "/dev/shm/compressor";
 #define REQUIRED_ARGS \
   REQUIRED_STRING_ARG(src, "SRC_FILE", "The source file that contains the original data")
@@ -444,15 +480,16 @@ static const char * default_output_dir = "/dev/shm/compressor";
         "; the size gets a tiny bit bigger when jobs are distributed among multiple threads") \
     OPTIONAL_STRING_ARG(output_dir, default_output_dir, "-C", "output directory", \
         "The directory where compressed data will be saved") \
-    OPTIONAL_UINT_ARG(zstd, 0, "-z", "zstd compression level", \
+    OPTIONAL_UINT_ARG(zstd, 0, "-z", "Zstd compression level", \
         "The default value 0 means no zstd compression will be done; " \
         "The valid values are 1-22") \
-    OPTIONAL_UINT_ARG(lz4, 0, "-l", "lz4 compression level", \
+    OPTIONAL_UINT_ARG(lz4, 0, "-l", "LZ4 compression level", \
         "The default value 0 means no lz4 compression will be done; " \
         "The valid values are 1-12")
 #define BOOLEAN_ARGS \
     BOOLEAN_ARG(verbose, "-v", "verbose mode") \
     BOOLEAN_ARG(snappy, "-s", "Snappy") \
+    BOOLEAN_ARG(plain, "-p", "make a plain copy (no compression)") \
     BOOLEAN_ARG(minimalist, "-m", "Minimalist: " \
         "strip DDS headers assuming the end user knows the albedo map format" \
         " (2048x2048 and 12 mip levels)") \
@@ -517,13 +554,20 @@ int main(int argc, char * argv[])
       ret = emsg_could_not_write_file;
       goto exit_program;
     }
-  } else if ( strcmp(args.output_dir, default_output_dir ) != 0 ) {
-    fprintf(stdout, "Warning: output directory parameter (-C) is not used in benchmark mode\n");
+  } else {
+    if ( strcmp(args.output_dir, default_output_dir ) != 0 ) {
+      fprintf(stdout, "Warning: output directory parameter (-C) is not used in benchmark mode\n");
+    }
+    if ( args.plain || args.all ) {
+      fprintf(stdout, "Warning: make-plain-copy(-p) is no-op in benchmark mode(-b)\n");
+    }
   }
 
   char out_path_buf[512];
   if ( args.all ) {
     // 35(12 + 22 + 1) compression jobs
+
+    // zstd
     for ( int c_lv = 1; c_lv <= 22; c_lv++ ) {
       fseek(src_file, src_size - data_size, SEEK_SET);
       char * out_path = nullptr;
@@ -536,6 +580,7 @@ int main(int argc, char * argv[])
         goto exit_program;
       }
     }
+    // LZ4
     for ( int c_lv = 1; c_lv <= 12; c_lv++ ) {
       fseek(src_file, src_size - data_size, SEEK_SET);
       char * out_path = nullptr;
@@ -548,6 +593,7 @@ int main(int argc, char * argv[])
         goto exit_program;
       }
     }
+    // Snappy
     fseek(src_file, src_size - data_size, SEEK_SET);
     char * out_path = nullptr;
     if ( !args.benchmark ) {
@@ -557,6 +603,16 @@ int main(int argc, char * argv[])
     ret = snappy_compress_file(src_file, out_path, args.verbose, data_size);
     if ( ret ) {
       goto exit_program;
+    }
+    // plain copy
+    if ( !args.benchmark ) {
+      fseek(src_file, src_size - data_size, SEEK_SET);
+      snprintf(out_path_buf, sizeof(out_path_buf), "%s/%s", abs_output_dir, fname);
+      out_path = out_path_buf;
+      ret = make_plain_copy(src_file, out_path, data_size);
+      if ( ret ) {
+        goto exit_program;
+      }
     }
 
   } else {
@@ -598,6 +654,14 @@ int main(int argc, char * argv[])
         out_path = out_path_buf;
       }
       ret = snappy_compress_file(src_file, out_path, args.verbose, data_size);
+      if ( ret ) {
+        goto exit_program;
+      }
+    }
+    if ( args.plain && !args.benchmark ) {
+      fseek(src_file, src_size - data_size, SEEK_SET);
+      snprintf(out_path_buf, sizeof(out_path_buf), "%s/%s", abs_output_dir, fname);
+      ret = make_plain_copy(src_file, out_path_buf, data_size);
       if ( ret ) {
         goto exit_program;
       }
