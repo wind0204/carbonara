@@ -434,6 +434,7 @@ static int snappy_compress_file( FILE * restrict src_file, const char *out_path,
 }
 
 
+static const char * default_output_dir = "/dev/shm/compressor";
 #define REQUIRED_ARGS \
   REQUIRED_STRING_ARG(src, "SRC_FILE", "The source file that contains the original data")
 #define OPTIONAL_ARGS \
@@ -441,7 +442,7 @@ static int snappy_compress_file( FILE * restrict src_file, const char *out_path,
         "Number of threads to use; The default value 0 means single-threaded work; " \
         "At higher zstd compression levels you need bigger SRC_FILE to actually use extra threads"\
         "; the size gets a tiny bit bigger when jobs are distributed among multiple threads") \
-    OPTIONAL_STRING_ARG(output_dir, "/dev/shm/compressor", "-C", "output directory", \
+    OPTIONAL_STRING_ARG(output_dir, default_output_dir, "-C", "output directory", \
         "The directory where compressed data will be saved") \
     OPTIONAL_UINT_ARG(zstd, 0, "-z", "zstd compression level", \
         "The default value 0 means no zstd compression will be done; " \
@@ -516,7 +517,7 @@ int main(int argc, char * argv[])
       ret = emsg_could_not_write_file;
       goto exit_program;
     }
-  } else if ( args.output_dir ) {
+  } else if ( strcmp(args.output_dir, default_output_dir ) != 0 ) {
     fprintf(stdout, "Warning: output directory parameter (-C) is not used in benchmark mode\n");
   }
 
