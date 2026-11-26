@@ -421,52 +421,21 @@ static int snappy_compress_file( FILE * restrict src_file, const char *out_path,
         "At higher zstd compression levels you need bigger SRC_FILE to actually use extra threads"\
         "; the size gets a tiny bit bigger when jobs are distributed among multiple threads") \
     OPTIONAL_STRING_ARG(output_dir, "/dev/shm/compressor", "-C", "output directory", \
-        "The directory where compressed data will be saved")
+        "The directory where compressed data will be saved") \
+    OPTIONAL_UINT_ARG(zstd, 0, "-z", "zstd compression level", \
+        "The default value 0 means no zstd compression will be done; " \
+        "The valid values are 1-21") \
+    OPTIONAL_UINT_ARG(lz4, 0, "-l", "lz4 compression level", \
+        "The default value 0 means no lz4 compression will be done; " \
+        "The valid values are 1-12")
 #define BOOLEAN_ARGS \
     BOOLEAN_ARG(verbose, "-v", "verbose mode") \
-    BOOLEAN_ARG(z1, "-z1", "zstd Lv.1") \
-    BOOLEAN_ARG(z2, "-z2", "zstd Lv.2") \
-    BOOLEAN_ARG(z3, "-z3", "zstd Lv.3") \
-    BOOLEAN_ARG(z4, "-z4", "zstd Lv.4") \
-    BOOLEAN_ARG(z18, "-z18", "zstd Lv.18") \
-    BOOLEAN_ARG(z19, "-z19", "zstd Lv.19") \
-    BOOLEAN_ARG(z20, "-z20", "zstd Lv.20") \
-    BOOLEAN_ARG(z21, "-z21", "zstd Lv.21") \
-    BOOLEAN_ARG(lz41, "-l1", "LZ4 Lv.1") \
-    BOOLEAN_ARG(lz42, "-l2", "LZ4 Lv.2") \
-    BOOLEAN_ARG(lz43, "-l3", "LZ4 Lv.3") \
-    BOOLEAN_ARG(lz44, "-l4", "LZ4 Lv.4") \
-    BOOLEAN_ARG(lz49, "-l9", "LZ4 Lv.9") \
-    BOOLEAN_ARG(lz410, "-l10", "LZ4 Lv.10") \
-    BOOLEAN_ARG(lz411, "-l11", "LZ4 Lv.11") \
-    BOOLEAN_ARG(lz412, "-l12", "LZ4 Lv.12") \
     BOOLEAN_ARG(snappy, "-s", "Snappy") \
     BOOLEAN_ARG(minimalist, "-m", "Minimalist: " \
         "strip DDS headers assuming the end user knows the albedo map format" \
         " (2048x2048 and 12 mip levels)") \
     BOOLEAN_ARG(all, "-a", "all")
 #include "easyargs.h"
-
-enum compress_task {
-  zstd1,
-  zstd2,
-  zstd3,
-  zstd4,
-  zstd18,
-  zstd19,
-  zstd20,
-  zstd21,
-  lz41,
-  lz42,
-  lz43,
-  lz44,
-  lz49,
-  lz410,
-  lz411,
-  lz412,
-  snappy,
-  compress_task_cnt,
-};
 
 int main(int argc, char * argv[])
 {
@@ -521,197 +490,59 @@ int main(int argc, char * argv[])
     goto exit_program;
   }
   char out_path[512];
-  for ( enum compress_task i = 0; i < compress_task_cnt; i++ ) {
+  if ( args.all ) {
+    // 34(12 + 21 + 1) compression jobs
+    for ( int c_lv = 1; c_lv <= 21; c_lv++ ) {
+      fseek(src_file, src_size - data_size, SEEK_SET);
+      snprintf(out_path, sizeof(out_path), "%s/%s.zstd%d", abs_output_dir, fname, c_lv);
+      ret = zstd_compress_file(src_file, out_path, c_lv, args.verbose, data_size, args.threads);
+      if ( ret ) {
+        goto exit_program;
+      }
+    }
+    for ( int c_lv = 1; c_lv <= 12; c_lv++ ) {
+      fseek(src_file, src_size - data_size, SEEK_SET);
+      snprintf(out_path, sizeof(out_path), "%s/%s.lz4%d", abs_output_dir, fname, c_lv);
+      ret = lz4_compress_file(src_file, out_path, c_lv, args.verbose, data_size);
+      if ( ret ) {
+        goto exit_program;
+      }
+    }
     fseek(src_file, src_size - data_size, SEEK_SET);
-    switch ( i ) {
-      case zstd1: {
-        if ( args.z1 == false && args.all == false ) {
-          break;
-        }
-        int c_lv = 1;
-        snprintf(out_path, sizeof(out_path), "%s/%s.zstd%d", abs_output_dir, fname, c_lv);
-        ret = zstd_compress_file(src_file, out_path, c_lv, args.verbose, data_size, args.threads);
-        if ( ret ) {
-          goto exit_program;
-        }
-        break; }
-      case zstd2: {
-        if ( args.z2 == false && args.all == false ) {
-          break;
-        }
-        int c_lv = 2;
-        snprintf(out_path, sizeof(out_path), "%s/%s.zstd%d", abs_output_dir, fname, c_lv);
-        ret = zstd_compress_file(src_file, out_path, c_lv, args.verbose, data_size, args.threads);
-        if ( ret ) {
-          goto exit_program;
-        }
-        break; }
-      case zstd3: {
-        if ( args.z3 == false && args.all == false ) {
-          break;
-        }
-        int c_lv = 3;
-        snprintf(out_path, sizeof(out_path), "%s/%s.zstd%d", abs_output_dir, fname, c_lv);
-        ret = zstd_compress_file(src_file, out_path, c_lv, args.verbose, data_size, args.threads);
-        if ( ret ) {
-          goto exit_program;
-        }
-        break; }
-      case zstd4: {
-        if ( args.z4 == false && args.all == false ) {
-          break;
-        }
-        int c_lv = 4;
-        snprintf(out_path, sizeof(out_path), "%s/%s.zstd%d", abs_output_dir, fname, c_lv);
-        ret = zstd_compress_file(src_file, out_path, c_lv, args.verbose, data_size, args.threads);
-        if ( ret ) {
-          goto exit_program;
-        }
-        break; }
-      case zstd18: {
-        if ( args.z18 == false && args.all == false ) {
-          break;
-        }
-        int c_lv = 18;
-        snprintf(out_path, sizeof(out_path), "%s/%s.zstd%d", abs_output_dir, fname, c_lv);
-        ret = zstd_compress_file(src_file, out_path, c_lv, args.verbose, data_size, args.threads);
-        if ( ret ) {
-          goto exit_program;
-        }
-        break; }
-      case zstd19: {
-        if ( args.z19 == false && args.all == false ) {
-          break;
-        }
-        int c_lv = 19;
-        snprintf(out_path, sizeof(out_path), "%s/%s.zstd%d", abs_output_dir, fname, c_lv);
-        ret = zstd_compress_file(src_file, out_path, c_lv, args.verbose, data_size, args.threads);
-        if ( ret ) {
-          goto exit_program;
-        }
-        break; }
-      case zstd20: {
-        if ( args.z20 == false && args.all == false ) {
-          break;
-        }
-        int c_lv = 20;
-        snprintf(out_path, sizeof(out_path), "%s/%s.zstd%d", abs_output_dir, fname, c_lv);
-        ret = zstd_compress_file(src_file, out_path, c_lv, args.verbose, data_size, args.threads);
-        if ( ret ) {
-          goto exit_program;
-        }
-        break; }
-      case zstd21: {
-        if ( args.z21 == false && args.all == false ) {
-          break;
-        }
-        int c_lv = 21;
-        snprintf(out_path, sizeof(out_path), "%s/%s.zstd%d", abs_output_dir, fname, c_lv);
-        ret = zstd_compress_file(src_file, out_path, c_lv, args.verbose, data_size, args.threads);
-        if ( ret ) {
-          goto exit_program;
-        }
-        break; }
-      case lz41: {
-        if ( args.lz41 == false && args.all == false ) {
-          break;
-        }
-        int c_lv = 1;
-        snprintf(out_path, sizeof(out_path), "%s/%s.lz4%d", abs_output_dir, fname, c_lv);
-        ret = lz4_compress_file(src_file, out_path, c_lv, args.verbose, data_size);
-        if ( ret ) {
-          goto exit_program;
-        }
-        break; }
-      case lz42: {
-        if ( args.lz42 == false && args.all == false ) {
-          break;
-        }
-        int c_lv = 2;
-        snprintf(out_path, sizeof(out_path), "%s/%s.lz4%d", abs_output_dir, fname, c_lv);
-        ret = lz4_compress_file(src_file, out_path, c_lv, args.verbose, data_size);
-        if ( ret ) {
-          goto exit_program;
-        }
-        break; }
-      case lz43: {
-        if ( args.lz43 == false && args.all == false ) {
-          break;
-        }
-        int c_lv = 3;
-        snprintf(out_path, sizeof(out_path), "%s/%s.lz4%d", abs_output_dir, fname, c_lv);
-        ret = lz4_compress_file(src_file, out_path, c_lv, args.verbose, data_size);
-        if ( ret ) {
-          goto exit_program;
-        }
-        break; }
-      case lz44: {
-        if ( args.lz44 == false && args.all == false ) {
-          break;
-        }
-        int c_lv = 4;
-        snprintf(out_path, sizeof(out_path), "%s/%s.lz4%d", abs_output_dir, fname, c_lv);
-        ret = lz4_compress_file(src_file, out_path, c_lv, args.verbose, data_size);
-        if ( ret ) {
-          goto exit_program;
-        }
-        break; }
-      case lz49: {
-        if ( args.lz49 == false && args.all == false ) {
-          break;
-        }
-        int c_lv = 9;
-        snprintf(out_path, sizeof(out_path), "%s/%s.lz4%d", abs_output_dir, fname, c_lv);
-        ret = lz4_compress_file(src_file, out_path, c_lv, args.verbose, data_size);
-        if ( ret ) {
-          goto exit_program;
-        }
-        break; }
-      case lz410: {
-        if ( args.lz410 == false && args.all == false ) {
-          break;
-        }
-        int c_lv = 10;
-        snprintf(out_path, sizeof(out_path), "%s/%s.lz4%d", abs_output_dir, fname, c_lv);
-        ret = lz4_compress_file(src_file, out_path, c_lv, args.verbose, data_size);
-        if ( ret ) {
-          goto exit_program;
-        }
-        break; }
-      case lz411: {
-        if ( args.lz411 == false && args.all == false ) {
-          break;
-        }
-        int c_lv = 11;
-        snprintf(out_path, sizeof(out_path), "%s/%s.lz4%d", abs_output_dir, fname, c_lv);
-        ret = lz4_compress_file(src_file, out_path, c_lv, args.verbose, data_size);
-        if ( ret ) {
-          goto exit_program;
-        }
-        break; }
-      case lz412: {
-        if ( args.lz412 == false && args.all == false ) {
-          break;
-        }
-        int c_lv = 12;
-        snprintf(out_path, sizeof(out_path), "%s/%s.lz4%d", abs_output_dir, fname, c_lv);
-        ret = lz4_compress_file(src_file, out_path, c_lv, args.verbose, data_size);
-        if ( ret ) {
-          goto exit_program;
-        }
-        break; }
-      case snappy:
-        if ( args.snappy == false && args.all == false ) {
-          break;
-        }
-        snprintf(out_path, sizeof(out_path), "%s/%s.snp", abs_output_dir, fname);
-        ret = snappy_compress_file(src_file, out_path, args.verbose, data_size);
-        if ( ret ) {
-          goto exit_program;
-        }
-        break;
-      default:
-        break;
+    snprintf(out_path, sizeof(out_path), "%s/%s.snp", abs_output_dir, fname);
+    ret = snappy_compress_file(src_file, out_path, args.verbose, data_size);
+    if ( ret ) {
+      goto exit_program;
+    }
+
+  } else {
+    // 0-3 compression jobs
+
+    if ( args.zstd ) {
+      fseek(src_file, src_size - data_size, SEEK_SET);
+      int c_lv = args.zstd;
+      snprintf(out_path, sizeof(out_path), "%s/%s.zstd%d", abs_output_dir, fname, c_lv);
+      ret = zstd_compress_file(src_file, out_path, c_lv, args.verbose, data_size, args.threads);
+      if ( ret ) {
+        goto exit_program;
+      }
+    }
+    if ( args.lz4 ) {
+      fseek(src_file, src_size - data_size, SEEK_SET);
+      int c_lv = args.lz4;
+      snprintf(out_path, sizeof(out_path), "%s/%s.lz4%d", abs_output_dir, fname, c_lv);
+      ret = lz4_compress_file(src_file, out_path, c_lv, args.verbose, data_size);
+      if ( ret ) {
+        goto exit_program;
+      }
+    }
+    if ( args.snappy ) {
+      fseek(src_file, src_size - data_size, SEEK_SET);
+      snprintf(out_path, sizeof(out_path), "%s/%s.snp", abs_output_dir, fname);
+      ret = snappy_compress_file(src_file, out_path, args.verbose, data_size);
+      if ( ret ) {
+        goto exit_program;
+      }
     }
   }
 
