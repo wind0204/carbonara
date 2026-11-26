@@ -204,27 +204,30 @@ static int zstd_compress_file( FILE * restrict src_file, const char *out_path, i
   }
   free(src_buf);
 
-  if ( verbose ) {
-    double size_ratio = (double) compressed_size / (double) data_size;
-    fprintf(stdout, "Zstd. Compression Level = %d;  Size Ratio = %f (%zu/%zu)\n",
-        level, size_ratio, compressed_size, data_size );
-  }
-
   if ( ZSTD_isError(compressed_size) ) {
     fprintf(stderr, "Error: zstd compress failed: %s\n", ZSTD_getErrorName(compressed_size));
     free(dst_buf);
     return emsg_unknown;
   }
 
-  FILE *dst_file = fopen(out_path, "wb");
-  if ( !dst_file ) {
-    fprintf(stderr, "Error: cannot open '%s' for writing\n", out_path);
-    free(dst_buf);
-    return emsg_could_not_write_file;
+  if ( verbose ) {
+    double size_ratio = (double) compressed_size / (double) data_size;
+    fprintf(stdout, "Zstd. Compression Level = %d;  Size Ratio = %f (%zu/%zu)\n",
+        level, size_ratio, compressed_size, data_size );
   }
 
-  fwrite(dst_buf, 1, compressed_size, dst_file);
-  fclose(dst_file);
+  if ( out_path ) {
+    // Do write in a file only when not in benchmark mode
+    FILE *dst_file = fopen(out_path, "wb");
+    if ( !dst_file ) {
+      fprintf(stderr, "Error: cannot open '%s' for writing\n", out_path);
+      free(dst_buf);
+      return emsg_could_not_write_file;
+    }
+
+    fwrite(dst_buf, 1, compressed_size, dst_file);
+    fclose(dst_file);
+  }
   free(dst_buf);
 
   return 0;
@@ -240,10 +243,13 @@ static int lz4_compress_file( FILE * restrict src_file, const char *out_path, in
 {
   assume( src_file );
 
-  FILE *dst_file = fopen(out_path, "wb");
-  if ( !dst_file ) {
-    fprintf(stderr, "Error: cannot open '%s' for writing\n", out_path);
-    return emsg_could_not_write_file;
+  FILE *dst_file = nullptr;
+  if ( out_path ) {
+    dst_file = fopen(out_path, "wb");
+    if ( !dst_file ) {
+      fprintf(stderr, "Error: cannot open '%s' for writing\n", out_path);
+      return emsg_could_not_write_file;
+    }
   }
 
   int compressed_size = 0;
@@ -279,8 +285,11 @@ static int lz4_compress_file( FILE * restrict src_file, const char *out_path, in
           return emsg_unknown;
         }
         compressed_size += len_compressed_block;
-        fwrite( &len_compressed_block, sizeof(int32_t), 1, dst_file );
-        fwrite( output_buf, 1, len_compressed_block, dst_file );
+        if ( out_path ) {
+          // Do write in a file when not in benchmark mode
+          fwrite( &len_compressed_block, sizeof(int32_t), 1, dst_file );
+          fwrite( output_buf, 1, len_compressed_block, dst_file );
+        }
 
         ring_buf_ofs += nr_bytes_read;
 
@@ -293,7 +302,10 @@ static int lz4_compress_file( FILE * restrict src_file, const char *out_path, in
     }
 
     int32_t zero = 0;
-    fwrite( &zero, sizeof(int32_t), 1, dst_file );
+    if ( out_path ) {
+      // Do write in a file when not in benchmark mode
+      fwrite( &zero, sizeof(int32_t), 1, dst_file );
+    }
 
   } else {
     // Slower, but slightly stronger compression
@@ -321,7 +333,10 @@ static int lz4_compress_file( FILE * restrict src_file, const char *out_path, in
     }
 
     compressed_size = LZ4_compress_HC(src_buf, dst_buf, data_size, max_size, level);
-    fwrite(dst_buf, 1, compressed_size, dst_file);
+    if ( out_path ) {
+      // Do write in a file when not in benchmark mode
+      fwrite(dst_buf, 1, compressed_size, dst_file);
+    }
     free(dst_buf);
     free(src_buf);
   }
@@ -332,7 +347,9 @@ static int lz4_compress_file( FILE * restrict src_file, const char *out_path, in
         level, size_ratio, compressed_size, data_size );
   }
 
-  fclose(dst_file);
+  if ( out_path ) {
+    fclose(dst_file);
+  }
 
   return 0;
 }
@@ -398,15 +415,18 @@ static int snappy_compress_file( FILE * restrict src_file, const char *out_path,
         size_ratio, compressed_size, data_size );
   }
 
-  FILE *dst_file = fopen(out_path, "wb");
-  if ( !dst_file ) {
-    fprintf(stderr, "Error: cannot open '%s' for writing\n", out_path);
-    free(dst_buf);
-    return emsg_could_not_write_file;
-  }
+  if ( out_path ) {
+    // Do write in a file only when not in benchmark mode
+    FILE *dst_file = fopen(out_path, "wb");
+    if ( !dst_file ) {
+      fprintf(stderr, "Error: cannot open '%s' for writing\n", out_path);
+      free(dst_buf);
+      return emsg_could_not_write_file;
+    }
 
-  fwrite(dst_buf, 1, compressed_size, dst_file);
-  fclose(dst_file);
+    fwrite(dst_buf, 1, compressed_size, dst_file);
+    fclose(dst_file);
+  }
   free(dst_buf);
 
   return 0;
@@ -434,7 +454,8 @@ static int snappy_compress_file( FILE * restrict src_file, const char *out_path,
     BOOLEAN_ARG(minimalist, "-m", "Minimalist: " \
         "strip DDS headers assuming the end user knows the albedo map format" \
         " (2048x2048 and 12 mip levels)") \
-    BOOLEAN_ARG(all, "-a", "all")
+    BOOLEAN_ARG(all, "-a", "all") \
+    BOOLEAN_ARG(benchmark, "-b", "benchmark mode")
 #include "easyargs.h"
 
 int main(int argc, char * argv[])
@@ -444,6 +465,10 @@ int main(int argc, char * argv[])
   if ( !ret ) {
     print_help(argv[0]);
     return emsg_unknown;
+  }
+
+  if ( args.benchmark ) {
+    args.verbose = true;
   }
 
   const char * src_path = args.src;
@@ -478,23 +503,32 @@ int main(int argc, char * argv[])
   }
 
   char * abs_output_dir = resolve_path(args.output_dir);
-  if ( !abs_output_dir ) {
-    ret = emsg_could_not_read_file;
-    goto exit_program;
+  if ( !args.benchmark ) {
+    if ( !abs_output_dir ) {
+      ret = emsg_could_not_read_file;
+      goto exit_program;
+    }
+
+    ret = mkdir(abs_output_dir, 0755);
+    if ( ret && errno != EEXIST) {
+      fprintf(stderr, "Error: failed to create directory '%s'. (%d)\n", abs_output_dir, errno);
+      ret = emsg_could_not_write_file;
+      goto exit_program;
+    }
+  } else if ( args.output_dir ) {
+    fprintf(stdout, "Warning: output directory parameter (-C) is not used in benchmark mode\n");
   }
 
-  ret = mkdir(abs_output_dir, 0755);
-  if ( ret && errno != EEXIST) {
-    fprintf(stderr, "Error: failed to create directory '%s'. (%d)\n", abs_output_dir, errno);
-    ret = emsg_could_not_write_file;
-    goto exit_program;
-  }
-  char out_path[512];
+  char out_path_buf[512];
   if ( args.all ) {
     // 34(12 + 21 + 1) compression jobs
     for ( int c_lv = 1; c_lv <= 21; c_lv++ ) {
       fseek(src_file, src_size - data_size, SEEK_SET);
-      snprintf(out_path, sizeof(out_path), "%s/%s.zstd%d", abs_output_dir, fname, c_lv);
+      char * out_path = nullptr;
+      if ( !args.benchmark ) {
+        snprintf(out_path_buf, sizeof(out_path_buf), "%s/%s.zstd%d", abs_output_dir, fname, c_lv);
+        out_path = out_path_buf;
+      }
       ret = zstd_compress_file(src_file, out_path, c_lv, args.verbose, data_size, args.threads);
       if ( ret ) {
         goto exit_program;
@@ -502,14 +536,22 @@ int main(int argc, char * argv[])
     }
     for ( int c_lv = 1; c_lv <= 12; c_lv++ ) {
       fseek(src_file, src_size - data_size, SEEK_SET);
-      snprintf(out_path, sizeof(out_path), "%s/%s.lz4%d", abs_output_dir, fname, c_lv);
+      char * out_path = nullptr;
+      if ( !args.benchmark ) {
+        snprintf(out_path_buf, sizeof(out_path_buf), "%s/%s.lz4%d", abs_output_dir, fname, c_lv);
+        out_path = out_path_buf;
+      }
       ret = lz4_compress_file(src_file, out_path, c_lv, args.verbose, data_size);
       if ( ret ) {
         goto exit_program;
       }
     }
     fseek(src_file, src_size - data_size, SEEK_SET);
-    snprintf(out_path, sizeof(out_path), "%s/%s.snp", abs_output_dir, fname);
+    char * out_path = nullptr;
+    if ( !args.benchmark ) {
+      snprintf(out_path_buf, sizeof(out_path_buf), "%s/%s.snp", abs_output_dir, fname);
+      out_path = out_path_buf;
+    }
     ret = snappy_compress_file(src_file, out_path, args.verbose, data_size);
     if ( ret ) {
       goto exit_program;
@@ -521,7 +563,11 @@ int main(int argc, char * argv[])
     if ( args.zstd ) {
       fseek(src_file, src_size - data_size, SEEK_SET);
       int c_lv = args.zstd;
-      snprintf(out_path, sizeof(out_path), "%s/%s.zstd%d", abs_output_dir, fname, c_lv);
+      char * out_path = nullptr;
+      if ( !args.benchmark ) {
+        snprintf(out_path_buf, sizeof(out_path_buf), "%s/%s.zstd%d", abs_output_dir, fname, c_lv);
+        out_path = out_path_buf;
+      }
       ret = zstd_compress_file(src_file, out_path, c_lv, args.verbose, data_size, args.threads);
       if ( ret ) {
         goto exit_program;
@@ -530,7 +576,11 @@ int main(int argc, char * argv[])
     if ( args.lz4 ) {
       fseek(src_file, src_size - data_size, SEEK_SET);
       int c_lv = args.lz4;
-      snprintf(out_path, sizeof(out_path), "%s/%s.lz4%d", abs_output_dir, fname, c_lv);
+      char * out_path = nullptr;
+      if ( !args.benchmark ) {
+        snprintf(out_path_buf, sizeof(out_path_buf), "%s/%s.lz4%d", abs_output_dir, fname, c_lv);
+        out_path = out_path_buf;
+      }
       ret = lz4_compress_file(src_file, out_path, c_lv, args.verbose, data_size);
       if ( ret ) {
         goto exit_program;
@@ -538,7 +588,11 @@ int main(int argc, char * argv[])
     }
     if ( args.snappy ) {
       fseek(src_file, src_size - data_size, SEEK_SET);
-      snprintf(out_path, sizeof(out_path), "%s/%s.snp", abs_output_dir, fname);
+      char * out_path = nullptr;
+      if ( !args.benchmark ) {
+        snprintf(out_path_buf, sizeof(out_path_buf), "%s/%s.snp", abs_output_dir, fname);
+        out_path = out_path_buf;
+      }
       ret = snappy_compress_file(src_file, out_path, args.verbose, data_size);
       if ( ret ) {
         goto exit_program;
