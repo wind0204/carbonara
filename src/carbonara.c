@@ -507,18 +507,6 @@ enum err_msg init_carbonara( uint32_t len_each_arena, uint64_t proc_info )
   if ( err ) {
     fprintf( stderr, "[ADS-timer] err_msg from init_appdev_support_timer = \"%s\"\n",
         arr_emsg_txt[err] );
-    switch ( err ) {
-      case emsg_not_found:
-        fprintf( stderr, "  We could not find /dev/cpu/0/msr\n" );
-        break;
-      case emsg_permission_denied:
-        fprintf( stderr, "  We could not determine the non-turbo frequency of the processor.\n" );
-        break;
-      default:
-        unreachable();
-    }
-    fprintf( stderr, "Please contact the developer to get support.\n" );
-    //return 1;
     return err;
   }
 
