@@ -499,10 +499,9 @@ enum err_msg init_carbonara( uint32_t len_each_arena, uint64_t proc_info )
 
 
   //
-  // Prepare the time system and the performance traces
+  // Prepare the timer system and the performance traces
   //
   enum err_msg err;
-#ifdef ENABLE_PROFILING
   err = init_appdev_support_timer( x86_proc_info.whole, 0 );
   if ( err ) {
     fprintf( stderr, "[ADS-timer] err_msg from init_appdev_support_timer = \"%s\"\n",
@@ -515,6 +514,7 @@ enum err_msg init_carbonara( uint32_t len_each_arena, uint64_t proc_info )
   //const __float128 pc_freq = SDL_GetPerformanceFrequency();
   //const __float128 timestamp_to_ns = (1.0 / 1000000000.0) * pc_freq;
 
+#ifdef ENABLE_PROFILING
   constexpr char fpath_spall[] = "/dev/shm/Carb.spall";
   //constexpr char fpath_spall[] = "Carb.spall";
   /*
@@ -1382,6 +1382,7 @@ void * launch_worker( void * arg )
 
   TRACE_BEGIN("worker_loop-init");
 #endif  // ENABLE_PROFILING
+
 
   // The F stands for Foreman
   constexpr char thread_name_template[] = "Carb#00(F)";
