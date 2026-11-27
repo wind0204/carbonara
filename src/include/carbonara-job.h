@@ -73,7 +73,9 @@ struct cara_worker_state {
   //struct carbonara_linked_buffer * buffer;
   static_assert( alignof(void*) >= alignof(struct cara_malloc_helper) );
   struct cara_malloc_helper malloc_helper;
-  static_assert( alignof(struct cara_malloc_helper) >= alignof(uint16_t) );
+  static_assert( alignof(struct cara_malloc_helper) >= alignof(VkAllocationCallbacks) );
+  VkAllocationCallbacks vk_alloc_cb;
+  static_assert( alignof(VkAllocationCallbacks) >= alignof(uint16_t) );
   uint16_t worker_idx;
 };
 

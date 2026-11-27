@@ -362,14 +362,16 @@ void ma_destroy_vk_mem_mgr(
     void * restrict userdata_free,
     void (*custom_free)(void * restrict userdata, void * restrict ptr),
     void * restrict userdata_malloc,
-    void * (*custom_malloc)(void * userdata, size_t alignment, size_t size)
+    void * (*custom_malloc)(void * userdata, size_t alignment, size_t size),
+    VkAllocationCallbacks * restrict vk_alloc_cb
     );
 
 //-------------------------------------------------------------------------------------------------
 enum err_msg ma_create_staging_buf(
     struct ma_vk_mem_mgr * restrict p_vmm,
     VkDevice logical_dev,
-    unsigned int buf_len
+    unsigned int buf_len,
+    VkAllocationCallbacks * restrict vk_alloc_cb
     );
 
 //-------------------------------------------------------------------------------------------------
@@ -399,7 +401,8 @@ enum err_msg ma_bind_img_to_malloc(
     uint32_t type_idx,
     VkDeviceSize req_size,  // Required allocation size in bytes
     VkDeviceSize req_alignment,  // Required allocation alignment in bytes
-    struct vk_mbind_info * p_mbind_info
+    struct vk_mbind_info * p_mbind_info,
+    VkAllocationCallbacks * restrict vk_alloc_cb
     );
 enum err_msg ma_bind_buf_to_malloc(
     struct ma_vk_mem_mgr * restrict p_vmm,
@@ -410,7 +413,8 @@ enum err_msg ma_bind_buf_to_malloc(
     uint32_t type_idx,
     VkDeviceSize req_size,  // Required allocation size in bytes
     VkDeviceSize req_alignment,  // Required allocation alignment in bytes
-    struct vk_mbind_info * p_mbind_info
+    struct vk_mbind_info * p_mbind_info,
+    VkAllocationCallbacks * restrict vk_alloc_cb
     );
 
 //-------------------------------------------------------------------------------------------------

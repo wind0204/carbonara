@@ -2,7 +2,6 @@
 #include <volk/volk.h>
 #include <vulkan/vk_enum_string_helper.h>
 
-#include "carbonara-graphics.h"
 #include "info_struct.h"
 #include "memorable_arena.h"
 #include "err_msg.h"
@@ -106,7 +105,8 @@ void ma_destroy_vk_mem_mgr(
     void * restrict userdata_free,
     void (*custom_free)(void * restrict userdata, void * restrict ptr),
     void * restrict userdata_malloc,
-    void * (*custom_malloc)(void * userdata, size_t alignment, size_t size)
+    void * (*custom_malloc)(void * userdata, size_t alignment, size_t size),
+    VkAllocationCallbacks * restrict vk_alloc_cb
     )
 {
   void (*local_free)(void * restrict userdata, void * restrict ptr);
@@ -148,7 +148,7 @@ void ma_destroy_vk_mem_mgr(
                 type_idx, block_idx, malloc_idx );
             continue;
           }
-          vkFreeMemory( logical_dev, *p_malloc, &vk_alloc_callbacks );
+          vkFreeMemory( logical_dev, *p_malloc, vk_alloc_cb );
           *p_malloc = VK_NULL_HANDLE;
 
 #if !defined( ARE_WE_SHIPPING_IT )
@@ -225,9 +225,9 @@ out_of_nested_loop:
 
   if ( p_vmm->p_staging_buf ) {
     vkUnmapMemory( logical_dev, p_vmm->staging_buf_malloc );
-    vkFreeMemory( logical_dev, p_vmm->staging_buf_malloc, &vk_alloc_callbacks );
+    vkFreeMemory( logical_dev, p_vmm->staging_buf_malloc, vk_alloc_cb );
     //vkFreeMemory( logical_dev, vmm->staging_buf_malloc, nullptr );
-    vkDestroyBuffer( logical_dev, p_vmm->staging_buf, &vk_alloc_callbacks );
+    vkDestroyBuffer( logical_dev, p_vmm->staging_buf, vk_alloc_cb );
     //vkDestroyBuffer( logical_dev, vmm->staging_buf, nullptr );
     p_vmm->p_staging_buf = nullptr;
     p_vmm->staging_buf = 0;
@@ -254,7 +254,8 @@ out_of_nested_loop:
 enum err_msg ma_create_staging_buf(
     struct ma_vk_mem_mgr * restrict p_vmm,
     VkDevice logical_dev,
-    unsigned int buf_len
+    unsigned int buf_len,
+    VkAllocationCallbacks * restrict vk_alloc_cb
     )
 {
   constexpr unsigned int default_buf_len = 1024*1024*64;
@@ -271,8 +272,7 @@ enum err_msg ma_create_staging_buf(
   buf_create_info.queueFamilyIndexCount = 0;
   buf_create_info.pQueueFamilyIndices = nullptr;
   VkResult result = vkCreateBuffer(
-      logical_dev, &buf_create_info, &vk_alloc_callbacks, &p_vmm->staging_buf
-      );
+      logical_dev, &buf_create_info, vk_alloc_cb, &p_vmm->staging_buf );
   if ( result != VK_SUCCESS ) {
     return emsg_unknown;
   }
@@ -300,9 +300,9 @@ enum err_msg ma_create_staging_buf(
   buf_malloc_info.memoryTypeIndex = type_idx;
 
   result = vkAllocateMemory( logical_dev,
-      &buf_malloc_info, &vk_alloc_callbacks, &p_vmm->staging_buf_malloc );
+      &buf_malloc_info, vk_alloc_cb, &p_vmm->staging_buf_malloc );
   if ( result != VK_SUCCESS ) {
-    vkDestroyBuffer( logical_dev, p_vmm->staging_buf, &vk_alloc_callbacks );
+    vkDestroyBuffer( logical_dev, p_vmm->staging_buf, vk_alloc_cb );
     p_vmm->staging_buf = 0;
     return emsg_out_of_memory;
   }
@@ -311,8 +311,8 @@ enum err_msg ma_create_staging_buf(
   // Bind the buffer to the memory allocation
   result = vkBindBufferMemory( logical_dev, p_vmm->staging_buf, p_vmm->staging_buf_malloc, 0 );
   if ( result != VK_SUCCESS ) {
-    vkFreeMemory( logical_dev, p_vmm->staging_buf_malloc, &vk_alloc_callbacks );
-    vkDestroyBuffer( logical_dev, p_vmm->staging_buf, &vk_alloc_callbacks );
+    vkFreeMemory( logical_dev, p_vmm->staging_buf_malloc, vk_alloc_cb );
+    vkDestroyBuffer( logical_dev, p_vmm->staging_buf, vk_alloc_cb );
     p_vmm->staging_buf = 0;
     p_vmm->staging_buf_malloc = 0;
     return emsg_unknown;
@@ -322,8 +322,8 @@ enum err_msg ma_create_staging_buf(
   // Map the memory region
   result = vkMapMemory( logical_dev, p_vmm->staging_buf_malloc, 0, buf_len, 0, &p_vmm->p_staging_buf );
   if ( result != VK_SUCCESS ) {
-    vkFreeMemory( logical_dev, p_vmm->staging_buf_malloc, &vk_alloc_callbacks );
-    vkDestroyBuffer( logical_dev, p_vmm->staging_buf, &vk_alloc_callbacks );
+    vkFreeMemory( logical_dev, p_vmm->staging_buf_malloc, vk_alloc_cb );
+    vkDestroyBuffer( logical_dev, p_vmm->staging_buf, vk_alloc_cb );
     p_vmm->staging_buf = 0;
     p_vmm->staging_buf_malloc = 0;
     p_vmm->p_staging_buf = nullptr;
@@ -373,7 +373,8 @@ enum err_msg ma_bind_img_to_malloc(
     uint32_t type_idx,
     VkDeviceSize req_size,  // Required allocation size in bytes
     VkDeviceSize req_alignment,  // Required allocation alignment in bytes
-    struct vk_mbind_info * p_mbind_info
+    struct vk_mbind_info * p_mbind_info,
+    VkAllocationCallbacks * restrict vk_alloc_cb
     )
 {
   TRACE_BEGIN("bind_img_to_m");
@@ -429,8 +430,7 @@ enum err_msg ma_bind_img_to_malloc(
           buf_malloc_info.allocationSize = len_chunk_of_pages;
           buf_malloc_info.memoryTypeIndex = type_idx;
           TRACE_BEGIN("alloc_mem");
-          result = vkAllocateMemory( log_dev,
-              &buf_malloc_info, &vk_alloc_callbacks, p_malloc );
+          result = vkAllocateMemory( log_dev, &buf_malloc_info, vk_alloc_cb, p_malloc );
           TRACE_END();
           if ( result != VK_SUCCESS ) {
             fprintf( stderr, "[Carbonara] vkAllocateMemory failed. "
@@ -571,7 +571,8 @@ enum err_msg ma_bind_buf_to_malloc(
     uint32_t type_idx,
     VkDeviceSize req_size,  // Required allocation size in bytes
     VkDeviceSize req_alignment,  // Required allocation alignment in bytes
-    struct vk_mbind_info * p_mbind_info
+    struct vk_mbind_info * p_mbind_info,
+    VkAllocationCallbacks * restrict vk_alloc_cb
     )
 {
   TRACE_BEGIN("bind_buf_to_m");
@@ -627,8 +628,7 @@ enum err_msg ma_bind_buf_to_malloc(
           buf_malloc_info.allocationSize = len_chunk_of_pages;
           buf_malloc_info.memoryTypeIndex = type_idx;
           TRACE_BEGIN("alloc_mem");
-          result = vkAllocateMemory( log_dev,
-              &buf_malloc_info, &vk_alloc_callbacks, p_malloc );
+          result = vkAllocateMemory( log_dev, &buf_malloc_info, vk_alloc_cb, p_malloc );
           TRACE_END();
           if ( result != VK_SUCCESS ) {
             fprintf( stderr, "[Carbonara] vkAllocateMemory failed. "

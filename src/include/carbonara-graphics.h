@@ -309,7 +309,6 @@ static_assert( _sizeof_member(struct dead_swapchain, destruct_time) ==
     _sizeof_member(struct cara_vk_renderer, frame_id) );
 
 extern struct cara_vk_renderer cara_vk;
-extern thread_local VkAllocationCallbacks vk_alloc_callbacks;
 
 
 //-------------------------------------------------------------------------------------------------
@@ -351,14 +350,15 @@ static inline VkCommandBuffer * cara_get_arr_cmd_bufs_for_transfer(
 /*
  * \brief Create a VkRenderPass and a VkFramebuffer
  */
-enum err_msg create_renderpass_and_framebuffer_first_time( struct cara_vk_renderer * renderer );
+enum err_msg create_renderpass_and_framebuffer_first_time(
+    struct cara_vk_renderer * renderer, VkAllocationCallbacks * restrict vk_alloc_cb );
 
 //-------------------------------------------------------------------------------------------------
 /*
  * \brief Create a VkRenderPass and a VkFramebuffer
  */
 enum err_msg expand_swapchain_and_framebuffer( struct cara_vk_renderer * renderer,
-    union extent_2d cur_dims );
+    union extent_2d cur_dims, VkAllocationCallbacks * restrict vk_alloc_cb );
 
 //-------------------------------------------------------------------------------------------------
 /*
@@ -375,7 +375,8 @@ uint8_t init_vulkan( uint32_t vendor_id_pref, uint32_t device_id_pref,
     struct cara_worker_state * restrict worker_state );
 
 //-------------------------------------------------------------------------------------------------
-void destroy_vk_objs( _typeof_member(struct ms_worker_info, idx_self) worker_idx );
+void destroy_vk_objs( _typeof_member(struct ms_worker_info, idx_self) worker_idx,
+    VkAllocationCallbacks * restrict vk_alloc_cb );
 //void acquire_swapchain_image();
 //void present_image();
 //void prepare_thread_local_vulkan_objects();

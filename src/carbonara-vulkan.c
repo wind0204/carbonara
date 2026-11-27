@@ -81,12 +81,10 @@ static constexpr unsigned int vulkan_version_major = 1;
 // Singleton
 struct cara_vk_renderer cara_vk;
 
-// I guess I wanted to watch the memory usage of vulkan programmatically
-thread_local VkAllocationCallbacks vk_alloc_callbacks;
-
 
 //-------------------------------------------------------------------------------------------------
-static enum err_msg create_2nd_renderpass( struct cara_vk_renderer * renderer );
+static enum err_msg create_2nd_renderpass( struct cara_vk_renderer * renderer,
+    VkAllocationCallbacks * restrict vk_alloc_cb );
 
 
 //-------------------------------------------------------------------------------------------------
@@ -94,7 +92,7 @@ uint8_t init_vulkan(
     [[maybe_unused]] uint32_t vendor_id_pref,
     [[maybe_unused]] uint32_t device_id_pref,
     [[maybe_unused]] memorable_arena_t * restrict arena,
-    struct cara_worker_state * restrict worker_state
+    struct cara_worker_state * restrict p_ws
     )
 {
 
@@ -126,10 +124,9 @@ uint8_t init_vulkan(
   ////
   //// Load global-level functions
   ////
-  //if ( vf_load_global_level_functions() ) {
+  //if ( vf_load_global_level_functions() ) 
   //  unload_shared_lib(vulkan_library);
   //  return 1;
-  //}
 
 
   // Enumerate the instance extensions supported by vulkan implementation
@@ -149,7 +146,7 @@ uint8_t init_vulkan(
 
   VkExtensionProperties * arr_extension_props;
   arr_extension_props = cara_malloc(
-      &worker_state->malloc_helper, alignof(VkExtensionProperties),
+      &p_ws->malloc_helper, alignof(VkExtensionProperties),
       sizeof(VkExtensionProperties) * nr_supported_extensions );
 
   result = vkEnumerateInstanceExtensionProperties(
@@ -158,7 +155,7 @@ uint8_t init_vulkan(
     fprintf( stderr, "[Vulkan] Could not enumerate instance extensions. (%s)\n",
         string_VkResult(result) );
     ma_free( cara_single.mem_arena,
-        worker_state->worker_idx, arr_extension_props );
+        p_ws->worker_idx, arr_extension_props );
     //unload_shared_lib( vulkan_library );
     return 1;
   }
@@ -204,7 +201,7 @@ uint8_t init_vulkan(
       fprintf( stderr, "[Vulkan] The required extension %s is not supported.\n",
           names_basic_instance_extensions[idx_required_extension] );
       ma_free( cara_single.mem_arena,
-          worker_state->worker_idx, arr_extension_props );
+          p_ws->worker_idx, arr_extension_props );
       //unload_shared_lib( vulkan_library );
       return 1;
     }
@@ -228,14 +225,14 @@ uint8_t init_vulkan(
       fprintf( stderr, "[Vulkan] The required extension %s is not supported.\n",
           names_instance_extensions_required[idx_required_extension] );
       ma_free( cara_single.mem_arena,
-          worker_state->worker_idx, arr_extension_props );
+          p_ws->worker_idx, arr_extension_props );
       //unload_shared_lib( vulkan_library );
       return 1;
     }
   }
 
   ma_free( cara_single.mem_arena,
-      worker_state->worker_idx, arr_extension_props );
+      p_ws->worker_idx, arr_extension_props );
 
 
 
@@ -314,11 +311,7 @@ uint8_t init_vulkan(
 
   // vkCreateInstance
   VkInstance vk_instance;
-  result = vkCreateInstance(
-      &vk_instance_create_info,
-      &vk_alloc_callbacks,
-      &vk_instance
-      );
+  result = vkCreateInstance( &vk_instance_create_info, &p_ws->vk_alloc_cb, &vk_instance );
   if ( (result != VK_SUCCESS) ||
       (vk_instance == VK_NULL_HANDLE) ) {
     fprintf( stderr, "[Vulkan] Could not create Vulkan instance. (%s)\n", string_VkResult(result) );
@@ -333,7 +326,7 @@ uint8_t init_vulkan(
   ////
   //if ( vf_load_instance_level_functions(vk_instance,
   //      names_basic_instance_extensions, nr_required_extensions) ) {
-  //  vkDestroyInstance(vk_instance, &cara_vk.vk_alloc_callbacks);
+  //  vkDestroyInstance(vk_instance, &p_ws->vk_alloc_cb);
   //  //unload_shared_lib(vulkan_library);
   //  return 1;
   //}
@@ -346,21 +339,21 @@ uint8_t init_vulkan(
       (nr_phys_devices == 0) ) {
     fprintf( stderr, "[Vulkan] Could not get the number of available physical devices. (%s)\n",
        string_VkResult(result) );
-    vkDestroyInstance(vk_instance, &vk_alloc_callbacks);
+    vkDestroyInstance( vk_instance, &p_ws->vk_alloc_cb );
     //vkDestroyInstance(vk_instance, nullptr);
     //unload_shared_lib(vulkan_library);
     return 1;
   }
 
   VkPhysicalDevice * const arr_phys_devices = cara_malloc(
-      &worker_state->malloc_helper, _alignof_arr_elem(arr_phys_devices),
+      &p_ws->malloc_helper, _alignof_arr_elem(arr_phys_devices),
       _sizeof_arr_elem(arr_phys_devices) * nr_phys_devices );
 
   result = vkEnumeratePhysicalDevices( vk_instance, &nr_phys_devices, arr_phys_devices );
   if ( result != VK_SUCCESS ) {
     fprintf( stderr, "[Vulkan] Could not enumerate physical devices. (%s)\n",
         string_VkResult(result) );
-    vkDestroyInstance( vk_instance, &vk_alloc_callbacks );
+    vkDestroyInstance( vk_instance, &p_ws->vk_alloc_cb );
     //vkDestroyInstance(vk_instance, nullptr);
     //unload_shared_lib( vulkan_library );
     return 1;
@@ -384,8 +377,8 @@ uint8_t init_vulkan(
       fprintf( stderr, "[Vulkan] Could not get the number of device extensions. (result=%s)\n",
           string_VkResult(result) );
       ma_free( cara_single.mem_arena,
-          worker_state->worker_idx, arr_phys_devices);
-      vkDestroyInstance(vk_instance, &vk_alloc_callbacks);
+          p_ws->worker_idx, arr_phys_devices);
+      vkDestroyInstance( vk_instance, &p_ws->vk_alloc_cb );
       //vkDestroyInstance(vk_instance, nullptr);
       //unload_shared_lib(vulkan_library);
       return 1;
@@ -396,7 +389,7 @@ uint8_t init_vulkan(
 #endif
 
     arr_extension_props = cara_malloc(
-        &worker_state->malloc_helper, alignof(VkExtensionProperties),
+        &p_ws->malloc_helper, alignof(VkExtensionProperties),
         sizeof(VkExtensionProperties) * nr_supported_extensions );
 
     result = vkEnumerateDeviceExtensionProperties( arr_phys_devices[idx_phys_dev],
@@ -405,10 +398,10 @@ uint8_t init_vulkan(
       fprintf( stderr, "[Vulkan] Could not enumerate device extensions. (%s)\n",
           string_VkResult(result) );
       ma_free( cara_single.mem_arena,
-          worker_state->worker_idx, arr_extension_props );
+          p_ws->worker_idx, arr_extension_props );
       ma_free( cara_single.mem_arena,
-          worker_state->worker_idx, arr_phys_devices);
-      vkDestroyInstance( vk_instance, &vk_alloc_callbacks );
+          p_ws->worker_idx, arr_phys_devices);
+      vkDestroyInstance( vk_instance, &p_ws->vk_alloc_cb );
       //vkDestroyInstance(vk_instance, nullptr);
       //unload_shared_lib( vulkan_library );
       return 1;
@@ -438,7 +431,7 @@ uint8_t init_vulkan(
     }
 
     ma_free( cara_single.mem_arena,
-        worker_state->worker_idx, arr_extension_props );
+        p_ws->worker_idx, arr_extension_props );
   }
 
 
@@ -450,7 +443,7 @@ uint8_t init_vulkan(
   VkPhysicalDeviceDescriptorIndexingPropertiesEXT arr_descriptor_indexing_props[nr_phys_devices];
 
   arr_device_props = cara_malloc(
-      &worker_state->malloc_helper, _alignof_arr_elem(arr_device_props),
+      &p_ws->malloc_helper, _alignof_arr_elem(arr_device_props),
       _sizeof_arr_elem(arr_device_props) * nr_phys_devices );
 
   for ( uint_fast8_t idx_phys_dev = 0;
@@ -923,17 +916,15 @@ uint8_t init_vulkan(
   }
 
   VkSurfaceKHR presentation_surface;
-  if ( !SDL_Vulkan_CreateSurface( window,
-        vk_instance,
-        &vk_alloc_callbacks,
-        &presentation_surface) ) {
+  if ( !SDL_Vulkan_CreateSurface(
+        window, vk_instance, &p_ws->vk_alloc_cb, &presentation_surface) ) {
     fprintf( stderr, "[Vulkan] Failed to create a vulkan surface.\n" );
     SDL_DestroyWindow( window );
 error_after_window_early:
-    vkDestroyInstance(vk_instance, &vk_alloc_callbacks);
-    ma_free( cara_single.mem_arena, worker_state->worker_idx, arr_device_props );
+    vkDestroyInstance( vk_instance, &p_ws->vk_alloc_cb );
+    ma_free( cara_single.mem_arena, p_ws->worker_idx, arr_device_props );
     ma_free( cara_single.mem_arena,
-        worker_state->worker_idx, arr_phys_devices );
+        p_ws->worker_idx, arr_phys_devices );
     //unload_shared_lib( vulkan_library );
     return 1;
   }
@@ -1016,7 +1007,7 @@ error_after_window_early:
     }
 
     arr_qfam_props = cara_malloc(
-        &worker_state->malloc_helper, _alignof_arr_elem(arr_qfam_props),
+        &p_ws->malloc_helper, _alignof_arr_elem(arr_qfam_props),
         _sizeof_arr_elem(arr_qfam_props) * nr_q_fams[idx_phys_dev] );
     for ( unsigned int qfam_idx = 0; qfam_idx < nr_q_fams[idx_phys_dev]; qfam_idx++ ) {
       memset( &arr_qfam_props[qfam_idx], 0, _sizeof_arr_elem(arr_qfam_props) );
@@ -1035,7 +1026,7 @@ error_after_window_early:
           arr_device_props[idx_phys_dev].properties.deviceName );
       arr_phys_devices[idx_phys_dev] = 0;
       ma_free( cara_single.mem_arena,
-          worker_state->worker_idx, arr_qfam_props );
+          p_ws->worker_idx, arr_qfam_props );
       continue;
     }
 
@@ -1086,7 +1077,7 @@ error_after_window_early:
       // Mark as unusable if we have not found all the required queue family capabilities.
       arr_phys_devices[idx_phys_dev] = 0;
       ma_free( cara_single.mem_arena,
-          worker_state->worker_idx, arr_qfam_props );
+          p_ws->worker_idx, arr_qfam_props );
       continue;
     }
 
@@ -1118,7 +1109,7 @@ error_after_window_early:
       nr_discrete_gpus++;
     }
 
-    ma_free(cara_single.mem_arena, worker_state->worker_idx, arr_qfam_props);
+    ma_free(cara_single.mem_arena, p_ws->worker_idx, arr_qfam_props);
   }
 
 
@@ -1151,7 +1142,7 @@ error_after_window_early:
       continue;
     }
 
-    _carbonara_malloc_array( &worker_state->malloc_helper,
+    _carbonara_malloc_array( &p_ws->malloc_helper,
         &arr_qfam_props, nr_q_fams[idx_phys_dev] );
     for ( unsigned int qfam_idx = 0; qfam_idx < nr_q_fams[idx_phys_dev]; qfam_idx++ ) {
       memset( &arr_qfam_props[qfam_idx], 0, _sizeof_arr_elem(arr_qfam_props) );
@@ -1164,7 +1155,7 @@ error_after_window_early:
       fprintf( stdout, "[Vulkan] Could not acquire the properties of the queue families of '%s'.\n",
           arr_device_props[idx_phys_dev].properties.deviceName );
       // arr_phys_devices[idx_phys_dev] = 0;
-      ma_free( cara_single.mem_arena, worker_state->worker_idx, arr_qfam_props );
+      ma_free( cara_single.mem_arena, p_ws->worker_idx, arr_qfam_props );
       continue;
     }
 
@@ -1399,7 +1390,7 @@ look_for_generalist_compute_q_fam:
               " VK_QUEUE_COMPUTE_BIT capability from '%s'\n",
               arr_device_props[idx_phys_dev].properties.deviceName );
           // arr_phys_devices[idx_phys_dev] = 0;
-          ma_free( cara_single.mem_arena, worker_state->worker_idx, arr_qfam_props );
+          ma_free( cara_single.mem_arena, p_ws->worker_idx, arr_qfam_props );
           continue;
         }
       }
@@ -1454,7 +1445,7 @@ look_for_graphics_q_fam:
             " VK_QUEUE_GRAPHICS_BIT capability from '%s'\n",
             arr_device_props[idx_phys_dev].properties.deviceName );
         // arr_phys_devices[idx_phys_dev] = 0;
-        ma_free( cara_single.mem_arena, worker_state->worker_idx, arr_qfam_props );
+        ma_free( cara_single.mem_arena, p_ws->worker_idx, arr_qfam_props );
         continue;
       }
     }
@@ -1621,7 +1612,7 @@ we_have_already_recorded_that_q_fam:
   VkDevice new_log_dev;
 
   result = vkCreateDevice( arr_phys_devices[idx_phys_deviced_picked],
-      &device_create_info, &vk_alloc_callbacks, &new_log_dev );
+      &device_create_info, &p_ws->vk_alloc_cb, &new_log_dev );
       //&device_create_info, nullptr, &new_log_dev );
   if ( result != VK_SUCCESS || new_log_dev == VK_NULL_HANDLE ) {
     fprintf( stderr, "[Vulkan] Could not create a logical device. (%s)\n",
@@ -1710,7 +1701,7 @@ we_have_already_recorded_that_q_fam:
   }
 
   VkPresentModeKHR * arr_available_present_modes;
-  _carbonara_malloc_array( &worker_state->malloc_helper,
+  _carbonara_malloc_array( &p_ws->malloc_helper,
       &arr_available_present_modes, nr_supported_present_modes );
 
   result = vkGetPhysicalDeviceSurfacePresentModesKHR(
@@ -1744,7 +1735,7 @@ we_have_already_recorded_that_q_fam:
   }
 
   ma_free( cara_single.mem_arena,
-      worker_state->worker_idx, arr_available_present_modes );
+      p_ws->worker_idx, arr_available_present_modes );
 
   if ( chosen_present_mode == VK_PRESENT_MODE_MAX_ENUM_KHR ) {
     fprintf( stderr,
@@ -1828,7 +1819,7 @@ we_have_already_recorded_that_q_fam:
   }
 
   VkSurfaceFormatKHR * arr_supported_surface_formats;
-  _carbonara_malloc_array( &worker_state->malloc_helper,
+  _carbonara_malloc_array( &p_ws->malloc_helper,
       &arr_supported_surface_formats, nr_supported_surface_formats );
 
   result = vkGetPhysicalDeviceSurfaceFormatsKHR(
@@ -1837,7 +1828,7 @@ we_have_already_recorded_that_q_fam:
   if( result != VK_SUCCESS || nr_supported_surface_formats == 0 ) {
     fprintf( stderr, "[Vulkan] Could not enumerate supported surface formats.(%s)\n", string_VkResult(result) );
     ma_free( cara_single.mem_arena,
-        worker_state->worker_idx, arr_supported_surface_formats );
+        p_ws->worker_idx, arr_supported_surface_formats );
     goto error_after_logical_device;
   }
 
@@ -1896,12 +1887,12 @@ end_of_nested_loop:
           "[Vulkan] Could not find a compatible surface format and colorspace supported "
           "by the newly created presentation surface on the selected GPU and screen.\n" );
       ma_free( cara_single.mem_arena,
-          worker_state->worker_idx, arr_supported_surface_formats );
+          p_ws->worker_idx, arr_supported_surface_formats );
       goto error_after_logical_device;
     }
   }
   ma_free( cara_single.mem_arena,
-      worker_state->worker_idx, arr_supported_surface_formats );
+      p_ws->worker_idx, arr_supported_surface_formats );
 
 #ifdef DEBUG_MODE
   fprintf( stdout, "[Vulkan] Going with {colorSpace = %#08x + format = %#08x}\n",
@@ -1941,11 +1932,8 @@ end_of_nested_loop:
     .oldSwapchain = old_swapchain,
   };
 
-  result = vkCreateSwapchainKHR(
-      new_log_dev,
-      &swapchain_create_info,
-      &vk_alloc_callbacks,
-      &swapchain );
+  result = vkCreateSwapchainKHR( new_log_dev,
+      &swapchain_create_info, &p_ws->vk_alloc_cb, &swapchain );
   if ( result != VK_SUCCESS || swapchain == VK_NULL_HANDLE ) {
     fprintf( stderr, "[Vulkan] Could not create a swapchain.\n" );
     goto error_after_logical_device;
@@ -1964,8 +1952,8 @@ end_of_nested_loop:
 
   VkImage * arr_swapchain_images;
   VkImageView * arr_swapchain_img_views;
-  _carbonara_malloc_array( &worker_state->malloc_helper, &arr_swapchain_images, nr_swapchain_imgs );
-  _carbonara_malloc_array( &worker_state->malloc_helper,
+  _carbonara_malloc_array( &p_ws->malloc_helper, &arr_swapchain_images, nr_swapchain_imgs );
+  _carbonara_malloc_array( &p_ws->malloc_helper,
       &arr_swapchain_img_views, nr_swapchain_imgs );
 
   result = vkGetSwapchainImagesKHR( new_log_dev, swapchain,
@@ -2003,8 +1991,8 @@ end_of_nested_loop:
   TRACE_BEGIN("vk_create_swapchain_ivs");
   for ( unsigned int sci_idx = 0; sci_idx < nr_swapchain_imgs; sci_idx++ ) {
     iv_create_info.image = arr_swapchain_images[sci_idx];
-    result = vkCreateImageView( new_log_dev, &iv_create_info, &vk_alloc_callbacks,
-        &arr_swapchain_img_views[sci_idx] );
+    result = vkCreateImageView(
+        new_log_dev, &iv_create_info, &p_ws->vk_alloc_cb, &arr_swapchain_img_views[sci_idx] );
     if ( result != VK_SUCCESS ) {
       fprintf( stderr, "[Carbonara] Error occurred in vkCreateImageView. '%s'\n",
           string_VkResult(result) );
@@ -2021,7 +2009,7 @@ end_of_nested_loop:
 
   // Prepare graphics command buffers  (1 buffer per 1 subpass in the first renderpass)
   cara_vk.arr_graphics_cmdbuf_sets[0].arr_cmd_pools =
-    cara_malloc( &worker_state->malloc_helper,
+    cara_malloc( &p_ws->malloc_helper,
       alignof(VkCommandPool),
       cara_max_nr_fif * (
         sizeof(VkCommandPool) * (1 + cara_single.proc_map->nr_processors) +
@@ -2081,12 +2069,10 @@ end_of_nested_loop:
 
     for ( uint_fast8_t worker_idx = 0;
         worker_idx < cara_single.proc_map->nr_processors; worker_idx++ ) {
-      result = vkCreateCommandPool(
-          new_log_dev,
+      result = vkCreateCommandPool( new_log_dev,
           &cmd_pool_create_info,
-          &vk_alloc_callbacks,
-          &cara_vk.arr_graphics_cmdbuf_sets[fif_idx].arr_cmd_pools[worker_idx]
-          );
+          &p_ws->vk_alloc_cb,
+          &cara_vk.arr_graphics_cmdbuf_sets[fif_idx].arr_cmd_pools[worker_idx] );
       if ( result != VK_SUCCESS ) {
         fprintf( stderr, "[Vulkan] Could not prepare a Vulkan command pool for graphics commands. "
             "(%s)\n", string_VkResult(result) );
@@ -2116,10 +2102,9 @@ end_of_nested_loop:
     }
 
     // Prepare one primary command buffer for graphics commands
-    result = vkCreateCommandPool(
-        new_log_dev,
+    result = vkCreateCommandPool( new_log_dev,
         &cmd_pool_create_info,
-        &vk_alloc_callbacks,
+        &p_ws->vk_alloc_cb,
         &cara_vk.arr_graphics_cmdbuf_sets[fif_idx].arr_cmd_pools[
           cara_single.proc_map->nr_processors ]
         );
@@ -2163,7 +2148,7 @@ end_of_nested_loop:
     static_assert( alignof(VkCommandPool) >= alignof(VkCommandBuffer),
         "should be aligned in order." );
     cara_vk.arr_trans_cmdbuf_sets[set_idx].arr_cmd_pools =
-      cara_malloc( &worker_state->malloc_helper,
+      cara_malloc( &p_ws->malloc_helper,
         alignof(VkCommandPool),
         sizeof(VkCommandPool) * (1 + cara_single.proc_map->nr_processors) +
         sizeof(VkCommandBuffer) * cara_single.proc_map->nr_processors );
@@ -2174,12 +2159,10 @@ end_of_nested_loop:
 
     for ( uint_fast8_t worker_idx = 0;
         worker_idx < cara_single.proc_map->nr_processors; worker_idx++ ) {
-      result = vkCreateCommandPool(
-          new_log_dev,
+      result = vkCreateCommandPool( new_log_dev,
           &cmd_pool_create_info,
-          &vk_alloc_callbacks,
-          &cara_vk.arr_trans_cmdbuf_sets[set_idx].arr_cmd_pools[worker_idx]
-          );
+          &p_ws->vk_alloc_cb,
+          &cara_vk.arr_trans_cmdbuf_sets[set_idx].arr_cmd_pools[worker_idx] );
       if ( result != VK_SUCCESS ) {
         fprintf( stderr, "[Vulkan] Could not prepare a Vulkan command pool for transfer commands."
             "(%s)\n", string_VkResult(result) );
@@ -2204,10 +2187,9 @@ end_of_nested_loop:
     }
 
     // Prepare one primary command buffer for transfer commands
-    result = vkCreateCommandPool(
-        new_log_dev,
+    result = vkCreateCommandPool( new_log_dev,
         &cmd_pool_create_info,
-        &vk_alloc_callbacks,
+        &p_ws->vk_alloc_cb,
         &cara_vk.arr_trans_cmdbuf_sets[set_idx].arr_cmd_pools[cara_single.proc_map->nr_processors]
         );
     if ( result != VK_SUCCESS ) {
@@ -2239,7 +2221,7 @@ end_of_nested_loop:
   //  result = vkCreateCommandPool(
   //      new_log_dev,
   //      &cmd_pool_create_info,
-  //      &vk_alloc_callbacks,
+  //      &p_ws->vk_alloc_cb,
   //      &cara_vk.dummy_pool[fif_idx]
   //      );
   //  if ( result != VK_SUCCESS || cara_vk.dummy_pool[fif_idx] == VK_NULL_HANDLE ) {
@@ -2281,12 +2263,7 @@ end_of_nested_loop:
 
   VkSemaphore semaphore;
   for ( unsigned int fif_idx = 0; fif_idx < cara_max_nr_fif; fif_idx++ ) {
-    result = vkCreateSemaphore( new_log_dev,
-        &sempho_create_info,
-        &vk_alloc_callbacks,
-        //nullptr,
-        &semaphore
-        );
+    result = vkCreateSemaphore( new_log_dev, &sempho_create_info, &p_ws->vk_alloc_cb, &semaphore );
     if ( result != VK_SUCCESS || !semaphore ) {
       fprintf( stderr, "[Vulkan] Failed to create a semaphore. (%s)\n", string_VkResult(result) );
       fprintf( stderr, "[Vulkan] (main_semaphore_before_A)\n" );
@@ -2296,12 +2273,7 @@ end_of_nested_loop:
   }
 
   for ( unsigned int fif_idx = 0; fif_idx < cara_max_nr_fif; fif_idx++ ) {
-    result = vkCreateSemaphore( new_log_dev,
-        &sempho_create_info,
-        &vk_alloc_callbacks,
-        //nullptr,
-        &semaphore
-        );
+    result = vkCreateSemaphore( new_log_dev, &sempho_create_info, &p_ws->vk_alloc_cb, &semaphore );
     if ( result != VK_SUCCESS || !semaphore ) {
       fprintf( stderr, "[Vulkan] Failed to create a semaphore. (%s)\n", string_VkResult(result) );
       fprintf( stderr, "[Vulkan] (main_semaphore_after_A)\n" );
@@ -2312,7 +2284,7 @@ end_of_nested_loop:
 
   // We need binary semaphores for WSI functions
   sempho_create_info.pNext = nullptr;
-  cara_vk.arr_sc_present_semphos = cara_malloc( &worker_state->malloc_helper,
+  cara_vk.arr_sc_present_semphos = cara_malloc( &p_ws->malloc_helper,
         alignof(VkSemaphore), sizeof(VkSemaphore) * nr_swapchain_imgs );
   if ( !cara_vk.arr_sc_present_semphos ) {
     fprintf( stderr, "[Vulkan] %s\n", arr_emsg_txt[emsg_out_of_memory] );
@@ -2321,12 +2293,7 @@ end_of_nested_loop:
   memset( cara_vk.arr_sc_present_semphos, 0, sizeof(VkSemaphore) * nr_swapchain_imgs );
   for ( unsigned int swapchain_img_idx = 0;
       swapchain_img_idx < nr_swapchain_imgs; swapchain_img_idx++ ) {
-    result = vkCreateSemaphore( new_log_dev,
-        &sempho_create_info,
-        &vk_alloc_callbacks,
-        //nullptr,
-        &semaphore
-        );
+    result = vkCreateSemaphore( new_log_dev, &sempho_create_info, &p_ws->vk_alloc_cb, &semaphore );
     if ( result != VK_SUCCESS || !semaphore ) {
       fprintf( stderr, "[Vulkan] Failed to create a semaphore. (%s)\n", string_VkResult(result) );
       fprintf( stderr, "[Vulkan] (wsi_semaphore_present)\n" );
@@ -2336,12 +2303,7 @@ end_of_nested_loop:
   }
 
   for ( unsigned int fif_idx = 0; fif_idx < cara_max_nr_fif; fif_idx++ ) {
-    result = vkCreateSemaphore( new_log_dev,
-        &sempho_create_info,
-        &vk_alloc_callbacks,
-        //nullptr,
-        &semaphore
-        );
+    result = vkCreateSemaphore( new_log_dev, &sempho_create_info, &p_ws->vk_alloc_cb, &semaphore );
     if ( result != VK_SUCCESS || !semaphore ) {
       fprintf( stderr, "[Vulkan] Failed to create a semaphore. (%s)\n", string_VkResult(result) );
       fprintf( stderr, "[Vulkan] (wsi_semaphore_acquire)\n" );
@@ -2357,13 +2319,13 @@ end_of_nested_loop:
       arr_phys_devices[idx_phys_deviced_picked], &memory_properties );
   if ( ma_init_vk_mem_mgr(&cara_vk.vmm, &memory_properties,
         &arr_device_props[idx_phys_deviced_picked].properties.limits,
-        &worker_state->malloc_helper, cara_malloc) != emsg_no_error ) {
+        &p_ws->malloc_helper, cara_malloc) != emsg_no_error ) {
     cara_vk.vmm.arr_sizes = nullptr;
     goto error_after_swapchain_images;
   }
 
   if ( !infos_al_create_prealloc(&cara_vk.old_swapchains,
-        &vk_alloc_callbacks, vk_malloc_wrapper,
+        &p_ws->vk_alloc_cb, vk_malloc_wrapper,
         4096,
         _align_to_the_close_power_of_two(sizeof(struct dead_swapchain)),
         true) ) {
@@ -2523,7 +2485,7 @@ error_after_swapchain_images:
             cara_vk.arr_sc_present_semphos[swapchain_img_idx] = VK_NULL_HANDLE;
           }
         }
-        ma_free( cara_single.mem_arena, worker_state->worker_idx,
+        ma_free( cara_single.mem_arena, p_ws->worker_idx,
             cara_vk.arr_sc_present_semphos );
         cara_vk.arr_sc_present_semphos = nullptr;
       }
@@ -2538,16 +2500,16 @@ error_after_swapchain_images:
         }
       }
       ma_free( cara_single.mem_arena,
-          worker_state->worker_idx,
+          p_ws->worker_idx,
           arr_swapchain_images );
       if ( arr_swapchain_img_views ) {
         for ( unsigned int i = 0; i < nr_swapchain_imgs; i++ ) {
           if ( arr_swapchain_img_views[i] != VK_NULL_HANDLE ) {
-            vkDestroyImageView( cara_vk.log_dev, arr_swapchain_img_views[i], &vk_alloc_callbacks );
+            vkDestroyImageView( cara_vk.log_dev, arr_swapchain_img_views[i], &p_ws->vk_alloc_cb );
           }
         }
         ma_free( cara_single.mem_arena,
-            worker_state->worker_idx,
+            p_ws->worker_idx,
             arr_swapchain_img_views );
       }
 error_after_logical_device:
@@ -2560,13 +2522,13 @@ error_after_logical_device:
             if ( cara_vk.arr_trans_cmdbuf_sets[set_idx].arr_cmd_pools[cmd_pool_idx] ) {
               vkDestroyCommandPool( cara_vk.log_dev,
                   cara_vk.arr_trans_cmdbuf_sets[set_idx].arr_cmd_pools[cmd_pool_idx],
-                  &vk_alloc_callbacks
+                  &p_ws->vk_alloc_cb
                   );
 
               cara_vk.arr_trans_cmdbuf_sets[set_idx].arr_cmd_pools[cmd_pool_idx] = 0;
             }
           }
-          ma_free( cara_single.mem_arena, worker_state->worker_idx,
+          ma_free( cara_single.mem_arena, p_ws->worker_idx,
               cara_vk.arr_trans_cmdbuf_sets[set_idx].arr_cmd_pools );
           cara_vk.arr_trans_cmdbuf_sets[set_idx].arr_cmd_pools = nullptr;
         }
@@ -2579,54 +2541,38 @@ error_after_logical_device:
             if ( cara_vk.arr_graphics_cmdbuf_sets[fif_idx].arr_cmd_pools[cmd_pool_idx] ) {
               vkDestroyCommandPool( new_log_dev,
                   cara_vk.arr_graphics_cmdbuf_sets[fif_idx].arr_cmd_pools[cmd_pool_idx],
-                  &vk_alloc_callbacks
+                  &p_ws->vk_alloc_cb
                   );
 
               cara_vk.arr_graphics_cmdbuf_sets[fif_idx].arr_cmd_pools[cmd_pool_idx] = 0;
             }
           }
-          ma_free( cara_single.mem_arena, worker_state->worker_idx,
+          ma_free( cara_single.mem_arena, p_ws->worker_idx,
               cara_vk.arr_graphics_cmdbuf_sets[fif_idx].arr_cmd_pools );
           cara_vk.arr_graphics_cmdbuf_sets[fif_idx].arr_cmd_pools = nullptr;
         }
 
-        vkDestroyCommandPool( cara_vk.log_dev,
-            cara_vk.dummy_pool[fif_idx],
-            &vk_alloc_callbacks
-            );
+        vkDestroyCommandPool( cara_vk.log_dev, cara_vk.dummy_pool[fif_idx], &p_ws->vk_alloc_cb );
       }
 
-      vkDestroyDevice(
-          new_log_dev,
-          &vk_alloc_callbacks
-          //nullptr
-          );
+      vkDestroyDevice( new_log_dev, &p_ws->vk_alloc_cb );
 error_after_arr_q_create_info:
       ma_free( cara_single.mem_arena,
-          worker_state->worker_idx,
+          p_ws->worker_idx,
           arr_q_create_info );
       ma_free( cara_single.mem_arena,
-          worker_state->worker_idx,
+          p_ws->worker_idx,
           arr_qfam_props );
 error_after_presentation_surface:
       //vkDestroySurfaceKHR( vk_instance, presentation_surface,
       //    &cara_vk.vulkan_alloc_callbacks );
-      SDL_Vulkan_DestroySurface(
-          vk_instance,
-          presentation_surface,
-          &vk_alloc_callbacks
-          //nullptr
-          );
+      SDL_Vulkan_DestroySurface( vk_instance, presentation_surface, &p_ws->vk_alloc_cb );
       SDL_DestroyWindow(window);
       //ma_free(cara_single.mem_arena, worker_state->worker_info->idx_self, window);
-      vkDestroyInstance(
-          vk_instance,
-          &vk_alloc_callbacks
-          //nullptr
-          );
-      ma_free(cara_single.mem_arena, worker_state->worker_idx, arr_device_props);
+      vkDestroyInstance( vk_instance, &p_ws->vk_alloc_cb );
+      ma_free(cara_single.mem_arena, p_ws->worker_idx, arr_device_props);
       ma_free( cara_single.mem_arena,
-          worker_state->worker_idx, arr_phys_devices );
+          p_ws->worker_idx, arr_phys_devices );
       //unload_shared_lib( vulkan_library );
       return 1;
     }
@@ -2734,10 +2680,10 @@ error_after_presentation_surface:
 #endif
 
 
-  ma_free(cara_single.mem_arena, worker_state->worker_idx, arr_q_create_info);
-  ma_free(cara_single.mem_arena, worker_state->worker_idx, arr_qfam_props);
-  ma_free(cara_single.mem_arena, worker_state->worker_idx, arr_device_props);
-  ma_free(cara_single.mem_arena, worker_state->worker_idx, arr_phys_devices);
+  ma_free(cara_single.mem_arena, p_ws->worker_idx, arr_q_create_info);
+  ma_free(cara_single.mem_arena, p_ws->worker_idx, arr_qfam_props);
+  ma_free(cara_single.mem_arena, p_ws->worker_idx, arr_device_props);
+  ma_free(cara_single.mem_arena, p_ws->worker_idx, arr_phys_devices);
   //atomic_store_explicit( &cara_vk.tmp_var_ready, -7, memory_order_release);
 
   return 0;
@@ -2747,7 +2693,8 @@ error_after_presentation_surface:
 
 
 //-------------------------------------------------------------------------------------------------
-void destroy_vk_objs( _typeof_member(struct ms_worker_info, idx_self) worker_idx )
+void destroy_vk_objs( _typeof_member( struct ms_worker_info, idx_self) worker_idx,
+    VkAllocationCallbacks * restrict vk_alloc_cb )
 {
   // TODO Host access to all VkQueue objects created from `device` must be externally synchronized
   const VkResult result = vkDeviceWaitIdle(cara_vk.log_dev);
@@ -2768,7 +2715,7 @@ void destroy_vk_objs( _typeof_member(struct ms_worker_info, idx_self) worker_idx
   for ( unsigned int i = 0; i < cara_vk.nr_old_swapchains; i++ ) {
     struct dead_swapchain * p_dead = infos_al_get_elem_unsafe( &cara_vk.old_swapchains, i );
 
-    vkDestroySwapchainKHR( cara_vk.log_dev, p_dead->swapchain, &vk_alloc_callbacks );
+    vkDestroySwapchainKHR( cara_vk.log_dev, p_dead->swapchain, vk_alloc_cb );
 
     // Destroy the old framebuffers and replace them with the newly created ones
     for ( unsigned int fif_idx = 0; fif_idx < cara_max_nr_fif; fif_idx++ ) {
@@ -2776,7 +2723,7 @@ void destroy_vk_objs( _typeof_member(struct ms_worker_info, idx_self) worker_idx
         // vkDestroyFramebuffer
         if ( p_dead->arr_framebuffers[fif_idx][rp_idx] ) {
           vkDestroyFramebuffer( cara_vk.log_dev,
-              p_dead->arr_framebuffers[fif_idx][rp_idx], &vk_alloc_callbacks );
+              p_dead->arr_framebuffers[fif_idx][rp_idx], vk_alloc_cb );
           //p_dead->arr_framebuffers[fif_idx][rp_idx] = VK_NULL_HANDLE;
         }
       }
@@ -2800,12 +2747,12 @@ void destroy_vk_objs( _typeof_member(struct ms_worker_info, idx_self) worker_idx
         required_props = 0;
         tolerable_props = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT;
         enum err_msg err = ma_report_vk_malloc_rel( &cara_vk.vmm,
-            &vk_alloc_callbacks, vk_malloc_wrapper,
+            vk_alloc_cb, vk_malloc_wrapper,
             ma_pick_best_mtype(&cara_vk.vmm, &req,
               required_props, preferred_props, tolerable_props),
             p_dead->arr_mbi_zbuf_n_cbuf[fif_idx][fb_idx] );
         //enum err_msg err = ma_report_vk_malloc_rel( &cara_vk.vmm,
-        //    &vk_alloc_callbacks, vk_malloc_wrapper,
+        //    &p_ws->vk_alloc_cb, vk_malloc_wrapper,
         //    p_dead->mtype[fif_idx][fb_idx],
         //    p_dead->arr_mbi_zbuf_n_cbuf[fif_idx][fb_idx] );
         if ( err ) {
@@ -2816,7 +2763,7 @@ void destroy_vk_objs( _typeof_member(struct ms_worker_info, idx_self) worker_idx
               [[fallthrough]];
             case emsg_unknown:  // VkDeviceMemory object is somehow missing
               vkDestroyImage( cara_vk.log_dev,
-                  p_dead->arr_zbuf_n_cbuf[fif_idx][fb_idx], &vk_alloc_callbacks );
+                  p_dead->arr_zbuf_n_cbuf[fif_idx][fb_idx], vk_alloc_cb );
               p_dead->arr_zbuf_n_cbuf[fif_idx][fb_idx] = VK_NULL_HANDLE;
               p_dead->arr_mbi_zbuf_n_cbuf[fif_idx][fb_idx].range = invalid_range;
               p_dead->arr_mbi_zbuf_n_cbuf[fif_idx][fb_idx].malloc = VK_NULL_HANDLE;
@@ -2827,7 +2774,7 @@ void destroy_vk_objs( _typeof_member(struct ms_worker_info, idx_self) worker_idx
         }  // if ( err )
         else {
           vkDestroyImage( cara_vk.log_dev,
-              p_dead->arr_zbuf_n_cbuf[fif_idx][fb_idx], &vk_alloc_callbacks );
+              p_dead->arr_zbuf_n_cbuf[fif_idx][fb_idx], vk_alloc_cb );
           p_dead->arr_zbuf_n_cbuf[fif_idx][fb_idx] = VK_NULL_HANDLE;
           p_dead->arr_mbi_zbuf_n_cbuf[fif_idx][fb_idx].range = invalid_range;
           p_dead->arr_mbi_zbuf_n_cbuf[fif_idx][fb_idx].malloc = VK_NULL_HANDLE;
@@ -2836,7 +2783,7 @@ void destroy_vk_objs( _typeof_member(struct ms_worker_info, idx_self) worker_idx
         // vkDestroyImageView as well
         if ( p_dead->arr_zbuf_n_cbuf_iv[fif_idx][fb_idx] != VK_NULL_HANDLE ) {
           vkDestroyImageView( cara_vk.log_dev,
-              p_dead->arr_zbuf_n_cbuf_iv[fif_idx][fb_idx], &vk_alloc_callbacks );
+              p_dead->arr_zbuf_n_cbuf_iv[fif_idx][fb_idx], vk_alloc_cb );
           p_dead->arr_zbuf_n_cbuf_iv[fif_idx][fb_idx] = VK_NULL_HANDLE;
         }
 
@@ -2851,32 +2798,32 @@ void destroy_vk_objs( _typeof_member(struct ms_worker_info, idx_self) worker_idx
 
   }
 
-  infos_al_destroy_except_preallocated_struct( &cara_vk.old_swapchains,
-      &vk_alloc_callbacks, vk_free_wrapper );
+  infos_al_destroy_except_preallocated_struct(
+      &cara_vk.old_swapchains, vk_alloc_cb, vk_free_wrapper );
 
   if ( cara_vk.sm_simple_frag ) {
-    vkDestroyShaderModule( cara_vk.log_dev, cara_vk.sm_simple_frag, &vk_alloc_callbacks );
+    vkDestroyShaderModule( cara_vk.log_dev, cara_vk.sm_simple_frag, vk_alloc_cb );
     cara_vk.sm_simple_frag = VK_NULL_HANDLE;
   }
   if ( cara_vk.sm_simple_vert ) {
-    vkDestroyShaderModule( cara_vk.log_dev, cara_vk.sm_simple_vert, &vk_alloc_callbacks );
+    vkDestroyShaderModule( cara_vk.log_dev, cara_vk.sm_simple_vert, vk_alloc_cb );
     cara_vk.sm_simple_vert = VK_NULL_HANDLE;
   }
   if ( cara_vk.sm_z_only ) {
-    vkDestroyShaderModule( cara_vk.log_dev, cara_vk.sm_z_only, &vk_alloc_callbacks );
+    vkDestroyShaderModule( cara_vk.log_dev, cara_vk.sm_z_only, vk_alloc_cb );
     cara_vk.sm_z_only = VK_NULL_HANDLE;
   }
   if ( cara_vk.sm_z_only_frag ) {
-    vkDestroyShaderModule( cara_vk.log_dev, cara_vk.sm_z_only_frag,
-        &vk_alloc_callbacks );
+    vkDestroyShaderModule(
+        cara_vk.log_dev, cara_vk.sm_z_only_frag, vk_alloc_cb );
     cara_vk.sm_z_only_frag = VK_NULL_HANDLE;
   }
   if ( cara_vk.sm_cp2sc_vert ) {
-    vkDestroyShaderModule( cara_vk.log_dev, cara_vk.sm_cp2sc_vert, &vk_alloc_callbacks );
+    vkDestroyShaderModule( cara_vk.log_dev, cara_vk.sm_cp2sc_vert, vk_alloc_cb );
     cara_vk.sm_cp2sc_vert = VK_NULL_HANDLE;
   }
   if ( cara_vk.sm_cp2sc_frag ) {
-    vkDestroyShaderModule( cara_vk.log_dev, cara_vk.sm_cp2sc_frag, &vk_alloc_callbacks );
+    vkDestroyShaderModule( cara_vk.log_dev, cara_vk.sm_cp2sc_frag, vk_alloc_cb );
     cara_vk.sm_cp2sc_frag = VK_NULL_HANDLE;
   }
 
@@ -2884,8 +2831,8 @@ void destroy_vk_objs( _typeof_member(struct ms_worker_info, idx_self) worker_idx
     for ( unsigned int rp_idx = 0; rp_idx < cara_nr_renderpasses; rp_idx++ ) {
       // vkDestroyFramebuffer
       if ( cara_vk.arr_framebuffers[fif_idx][rp_idx] ) {
-        vkDestroyFramebuffer( cara_vk.log_dev,
-            cara_vk.arr_framebuffers[fif_idx][rp_idx], &vk_alloc_callbacks );
+        vkDestroyFramebuffer(
+            cara_vk.log_dev, cara_vk.arr_framebuffers[fif_idx][rp_idx], vk_alloc_cb );
         cara_vk.arr_framebuffers[fif_idx][rp_idx] = VK_NULL_HANDLE;
       }
     }
@@ -2905,7 +2852,7 @@ void destroy_vk_objs( _typeof_member(struct ms_worker_info, idx_self) worker_idx
       required_props = 0;
       tolerable_props = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT;
       enum err_msg err = ma_report_vk_malloc_rel( &cara_vk.vmm,
-          &vk_alloc_callbacks, vk_malloc_wrapper,
+          vk_alloc_cb, vk_malloc_wrapper,
           ma_pick_best_mtype(&cara_vk.vmm, &req, required_props, preferred_props, tolerable_props),
           cara_vk.mbi_zbuf_n_cbuf[fif_idx][fb_idx] );
       if ( err ) {
@@ -2915,7 +2862,7 @@ void destroy_vk_objs( _typeof_member(struct ms_worker_info, idx_self) worker_idx
           case emsg_already_done:
             [[fallthrough]];
           case emsg_unknown:  // VkDeviceMemory object is somehow missing
-            vkDestroyImage( cara_vk.log_dev, cara_vk.zbuf_n_cbuf[fif_idx][fb_idx], &vk_alloc_callbacks );
+            vkDestroyImage( cara_vk.log_dev, cara_vk.zbuf_n_cbuf[fif_idx][fb_idx], vk_alloc_cb );
             cara_vk.zbuf_n_cbuf[fif_idx][fb_idx] = VK_NULL_HANDLE;
             cara_vk.mbi_zbuf_n_cbuf[fif_idx][fb_idx].range = invalid_range;
             cara_vk.mbi_zbuf_n_cbuf[fif_idx][fb_idx].malloc = VK_NULL_HANDLE;
@@ -2925,7 +2872,7 @@ void destroy_vk_objs( _typeof_member(struct ms_worker_info, idx_self) worker_idx
         }
       }  // if ( err )
       else {
-        vkDestroyImage( cara_vk.log_dev, cara_vk.zbuf_n_cbuf[fif_idx][fb_idx], &vk_alloc_callbacks );
+        vkDestroyImage( cara_vk.log_dev, cara_vk.zbuf_n_cbuf[fif_idx][fb_idx], vk_alloc_cb );
         cara_vk.zbuf_n_cbuf[fif_idx][fb_idx] = VK_NULL_HANDLE;
         cara_vk.mbi_zbuf_n_cbuf[fif_idx][fb_idx].range = invalid_range;
         cara_vk.mbi_zbuf_n_cbuf[fif_idx][fb_idx].malloc = VK_NULL_HANDLE;
@@ -2935,35 +2882,28 @@ void destroy_vk_objs( _typeof_member(struct ms_worker_info, idx_self) worker_idx
       if ( cara_vk.zbuf_n_cbuf_iv[fif_idx][fb_idx] == VK_NULL_HANDLE ) {
         continue;
       }
-      vkDestroyImageView( cara_vk.log_dev,
-          cara_vk.zbuf_n_cbuf_iv[fif_idx][fb_idx], &vk_alloc_callbacks );
+      vkDestroyImageView( cara_vk.log_dev, cara_vk.zbuf_n_cbuf_iv[fif_idx][fb_idx], vk_alloc_cb );
       cara_vk.zbuf_n_cbuf_iv[fif_idx][fb_idx] = VK_NULL_HANDLE;
     }
   }
 
   for ( unsigned int rp_idx = 0; rp_idx < cara_nr_renderpasses; rp_idx++ ) {
     if ( cara_vk.arr_renderpasses[rp_idx] ) {
-      vkDestroyRenderPass( cara_vk.log_dev, cara_vk.arr_renderpasses[rp_idx], &vk_alloc_callbacks );
+      vkDestroyRenderPass( cara_vk.log_dev, cara_vk.arr_renderpasses[rp_idx], vk_alloc_cb );
       cara_vk.arr_renderpasses[rp_idx] = VK_NULL_HANDLE;
     }
   }
 
   if ( cara_vk.pll_z_only ) {
-    vkDestroyPipelineLayout( cara_vk.log_dev, cara_vk.pll_z_only,
-        &vk_alloc_callbacks
-        );
+    vkDestroyPipelineLayout( cara_vk.log_dev, cara_vk.pll_z_only, vk_alloc_cb );
     cara_vk.pll_z_only = VK_NULL_HANDLE;
   }
   if ( cara_vk.pll_main_render ) {
-    vkDestroyPipelineLayout( cara_vk.log_dev, cara_vk.pll_main_render,
-        &vk_alloc_callbacks
-        );
+    vkDestroyPipelineLayout( cara_vk.log_dev, cara_vk.pll_main_render, vk_alloc_cb );
     cara_vk.pll_main_render = VK_NULL_HANDLE;
   }
   if ( cara_vk.pll_cp2sc ) {
-    vkDestroyPipelineLayout( cara_vk.log_dev, cara_vk.pll_cp2sc,
-        &vk_alloc_callbacks
-        );
+    vkDestroyPipelineLayout( cara_vk.log_dev, cara_vk.pll_cp2sc, vk_alloc_cb );
     cara_vk.pll_cp2sc = VK_NULL_HANDLE;
   }
 
@@ -2971,13 +2911,13 @@ void destroy_vk_objs( _typeof_member(struct ms_worker_info, idx_self) worker_idx
       sp_idx < (unsigned int)cara_nr_subpasses + cara_nr_subpasses_in_2nd_rp;
       sp_idx++ ) {
     if ( cara_vk.arr_pipelines[sp_idx] ) {
-      vkDestroyPipeline( cara_vk.log_dev, cara_vk.arr_pipelines[sp_idx], &vk_alloc_callbacks );
+      vkDestroyPipeline( cara_vk.log_dev, cara_vk.arr_pipelines[sp_idx], vk_alloc_cb );
       cara_vk.arr_pipelines[sp_idx] = VK_NULL_HANDLE;
     }
   }
   //for ( unsigned int sp_idx = 0; sp_idx < cara_nr_subpasses_in_2nd_rp; sp_idx++ ) {
   //  if ( cara_vk.arr_pipelines2[sp_idx] ) {
-  //    vkDestroyPipeline( cara_vk.log_dev, cara_vk.arr_pipelines2[sp_idx], &vk_alloc_callbacks );
+  //    vkDestroyPipeline( cara_vk.log_dev, cara_vk.arr_pipelines2[sp_idx], &p_ws->vk_alloc_cb );
   //    cara_vk.arr_pipelines2[sp_idx] = VK_NULL_HANDLE;
   //  }
   //}
@@ -2999,56 +2939,51 @@ void destroy_vk_objs( _typeof_member(struct ms_worker_info, idx_self) worker_idx
   }
 
   if ( cara_vk.descriptor_pool_main_img ) {
-    vkDestroyDescriptorPool( cara_vk.log_dev, cara_vk.descriptor_pool_main_img, &vk_alloc_callbacks );
+    vkDestroyDescriptorPool( cara_vk.log_dev, cara_vk.descriptor_pool_main_img, vk_alloc_cb );
     cara_vk.descriptor_pool_main_img = VK_NULL_HANDLE;
   }
   if ( cara_vk.descriptor_pool_main_sampler ) {
-    vkDestroyDescriptorPool(
-        cara_vk.log_dev, cara_vk.descriptor_pool_main_sampler, &vk_alloc_callbacks );
+    vkDestroyDescriptorPool( cara_vk.log_dev, cara_vk.descriptor_pool_main_sampler, vk_alloc_cb );
     cara_vk.descriptor_pool_main_sampler = VK_NULL_HANDLE;
   }
   if ( cara_vk.descriptor_pool_cbuf ) {
-    vkDestroyDescriptorPool( cara_vk.log_dev, cara_vk.descriptor_pool_cbuf, &vk_alloc_callbacks );
+    vkDestroyDescriptorPool( cara_vk.log_dev, cara_vk.descriptor_pool_cbuf, vk_alloc_cb );
     cara_vk.descriptor_pool_cbuf = VK_NULL_HANDLE;
   }
 
   if ( cara_vk.dsl_z_only ) {
-    vkDestroyDescriptorSetLayout( cara_vk.log_dev, cara_vk.dsl_z_only,
-        &vk_alloc_callbacks );
+    vkDestroyDescriptorSetLayout( cara_vk.log_dev, cara_vk.dsl_z_only, vk_alloc_cb );
     cara_vk.dsl_z_only = VK_NULL_HANDLE;
   }
   if ( cara_vk.dsl_main_render_img ) {
-    vkDestroyDescriptorSetLayout( cara_vk.log_dev, cara_vk.dsl_main_render_img,
-        &vk_alloc_callbacks );
+    vkDestroyDescriptorSetLayout( cara_vk.log_dev, cara_vk.dsl_main_render_img, vk_alloc_cb );
     cara_vk.dsl_main_render_img = VK_NULL_HANDLE;
   }
   if ( cara_vk.dsl_main_render_sampler ) {
-    vkDestroyDescriptorSetLayout( cara_vk.log_dev, cara_vk.dsl_main_render_sampler,
-        &vk_alloc_callbacks );
+    vkDestroyDescriptorSetLayout( cara_vk.log_dev, cara_vk.dsl_main_render_sampler, vk_alloc_cb );
     cara_vk.dsl_main_render_sampler = VK_NULL_HANDLE;
   }
   if ( cara_vk.dsl_cp2sc ) {
-    vkDestroyDescriptorSetLayout( cara_vk.log_dev, cara_vk.dsl_cp2sc,
-        &vk_alloc_callbacks );
+    vkDestroyDescriptorSetLayout( cara_vk.log_dev, cara_vk.dsl_cp2sc, vk_alloc_cb );
     cara_vk.dsl_cp2sc = VK_NULL_HANDLE;
   }
 
   if ( cara_vk.cbuf_sampler ) {
-    vkDestroySampler( cara_vk.log_dev, cara_vk.cbuf_sampler, &vk_alloc_callbacks );
+    vkDestroySampler( cara_vk.log_dev, cara_vk.cbuf_sampler, vk_alloc_cb );
     cara_vk.cbuf_sampler = VK_NULL_HANDLE;
   }
   if ( cara_vk.albmap_sampler ) {
-    vkDestroySampler( cara_vk.log_dev, cara_vk.albmap_sampler, &vk_alloc_callbacks );
+    vkDestroySampler( cara_vk.log_dev, cara_vk.albmap_sampler, vk_alloc_cb );
     cara_vk.albmap_sampler = VK_NULL_HANDLE;
   }
   for ( unsigned int img_id = 0; img_id < _arr_elem_cnt(cara_vk.albmaps); img_id++ ) {
     if ( cara_vk.albmap_ivs[img_id] ) {
-      vkDestroyImageView( cara_vk.log_dev, cara_vk.albmap_ivs[img_id], &vk_alloc_callbacks );
+      vkDestroyImageView( cara_vk.log_dev, cara_vk.albmap_ivs[img_id], vk_alloc_cb );
       cara_vk.albmap_ivs[img_id] = VK_NULL_HANDLE;
     }
     if ( cara_vk.albmaps[img_id] ) {
       enum err_msg err = ma_report_vk_malloc_rel( &cara_vk.vmm,
-          &vk_alloc_callbacks, vk_malloc_wrapper,
+          vk_alloc_cb, vk_malloc_wrapper,
           cara_vk.vmm.arr_mtype_used[vk_buf_type_texarr_2048],
           cara_vk.mbi_albmaps[img_id] );
       if ( err ) {
@@ -3060,7 +2995,7 @@ void destroy_vk_objs( _typeof_member(struct ms_worker_info, idx_self) worker_idx
           case emsg_unknown:  // VkDeviceMemory object is somehow missing
             cara_vk.mbi_albmaps[img_id].range = invalid_range;
             cara_vk.mbi_albmaps[img_id].malloc = VK_NULL_HANDLE;
-            vkDestroyImage( cara_vk.log_dev, cara_vk.albmaps[img_id], &vk_alloc_callbacks );
+            vkDestroyImage( cara_vk.log_dev, cara_vk.albmaps[img_id], vk_alloc_cb );
             cara_vk.albmaps[img_id] = VK_NULL_HANDLE;
             break;
           default:
@@ -3070,7 +3005,7 @@ void destroy_vk_objs( _typeof_member(struct ms_worker_info, idx_self) worker_idx
       else {  // No error occurred
         cara_vk.mbi_albmaps[img_id].range = invalid_range;
         cara_vk.mbi_albmaps[img_id].malloc = VK_NULL_HANDLE;
-        vkDestroyImage( cara_vk.log_dev, cara_vk.albmaps[img_id], &vk_alloc_callbacks );
+        vkDestroyImage( cara_vk.log_dev, cara_vk.albmaps[img_id], vk_alloc_cb );
         cara_vk.albmaps[img_id] = VK_NULL_HANDLE;
       }
     }
@@ -3084,10 +3019,8 @@ void destroy_vk_objs( _typeof_member(struct ms_worker_info, idx_self) worker_idx
     VkMemoryPropertyFlags tolerable_props = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT;
     uint32_t mtype_idx = ma_pick_best_mtype(
       &cara_vk.vmm, &req, required_props, preferred_props, tolerable_props );
-    enum err_msg err = ma_report_vk_malloc_rel( &cara_vk.vmm,
-        &vk_alloc_callbacks, vk_malloc_wrapper,
-        mtype_idx,
-        cara_vk.mbi_vbuf );
+    enum err_msg err = ma_report_vk_malloc_rel(
+        &cara_vk.vmm, vk_alloc_cb, vk_malloc_wrapper, mtype_idx, cara_vk.mbi_vbuf );
     if ( err ) {
       fprintf( stderr, "[Carbonara] Failure occurred in ma_report_vk_malloc_rel!! %s:%d "
           "'%s'\n", __FILE__, __LINE__, arr_emsg_txt[err] );
@@ -3097,7 +3030,7 @@ void destroy_vk_objs( _typeof_member(struct ms_worker_info, idx_self) worker_idx
         case emsg_unknown:  // VkDeviceMemory object is somehow missing
           cara_vk.mbi_vbuf.range = invalid_range;
           cara_vk.mbi_vbuf.malloc = VK_NULL_HANDLE;
-          vkDestroyBuffer( cara_vk.log_dev, cara_vk.vert_buf, &vk_alloc_callbacks );
+          vkDestroyBuffer( cara_vk.log_dev, cara_vk.vert_buf, vk_alloc_cb );
           cara_vk.vert_buf = VK_NULL_HANDLE;
           break;
         default:
@@ -3107,7 +3040,7 @@ void destroy_vk_objs( _typeof_member(struct ms_worker_info, idx_self) worker_idx
     else {  // No error occurred
       cara_vk.mbi_vbuf.range = invalid_range;
       cara_vk.mbi_vbuf.malloc = VK_NULL_HANDLE;
-      vkDestroyBuffer( cara_vk.log_dev, cara_vk.vert_buf, &vk_alloc_callbacks );
+      vkDestroyBuffer( cara_vk.log_dev, cara_vk.vert_buf, vk_alloc_cb );
       cara_vk.vert_buf = VK_NULL_HANDLE;
     }
   }
@@ -3120,10 +3053,8 @@ void destroy_vk_objs( _typeof_member(struct ms_worker_info, idx_self) worker_idx
     VkMemoryPropertyFlags tolerable_props = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT;
     uint32_t mtype_idx = ma_pick_best_mtype(
       &cara_vk.vmm, &req, required_props, preferred_props, tolerable_props );
-    enum err_msg err = ma_report_vk_malloc_rel( &cara_vk.vmm,
-        &vk_alloc_callbacks, vk_malloc_wrapper,
-        mtype_idx,
-        cara_vk.mbi_abuf );
+    enum err_msg err = ma_report_vk_malloc_rel(
+        &cara_vk.vmm, vk_alloc_cb, vk_malloc_wrapper, mtype_idx, cara_vk.mbi_abuf );
     if ( err ) {
       fprintf( stderr, "[Carbonara] Failure occurred in ma_report_vk_malloc_rel!! %s:%d '%s'\n",
           __FILE__, __LINE__, arr_emsg_txt[err] );
@@ -3133,7 +3064,7 @@ void destroy_vk_objs( _typeof_member(struct ms_worker_info, idx_self) worker_idx
         case emsg_unknown:  // VkDeviceMemory object is somehow missing
           cara_vk.mbi_abuf.range = invalid_range;
           cara_vk.mbi_abuf.malloc = VK_NULL_HANDLE;
-          vkDestroyBuffer( cara_vk.log_dev, cara_vk.attr_buf, &vk_alloc_callbacks );
+          vkDestroyBuffer( cara_vk.log_dev, cara_vk.attr_buf, vk_alloc_cb );
           cara_vk.attr_buf = VK_NULL_HANDLE;
           break;
         default:
@@ -3143,7 +3074,7 @@ void destroy_vk_objs( _typeof_member(struct ms_worker_info, idx_self) worker_idx
     else {
       cara_vk.mbi_abuf.range = invalid_range;
       cara_vk.mbi_abuf.malloc = VK_NULL_HANDLE;
-      vkDestroyBuffer( cara_vk.log_dev, cara_vk.attr_buf, &vk_alloc_callbacks );
+      vkDestroyBuffer( cara_vk.log_dev, cara_vk.attr_buf, vk_alloc_cb );
       cara_vk.attr_buf = VK_NULL_HANDLE;
     }
   }
@@ -3156,10 +3087,8 @@ void destroy_vk_objs( _typeof_member(struct ms_worker_info, idx_self) worker_idx
     VkMemoryPropertyFlags tolerable_props = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT;
     uint32_t mtype_idx = ma_pick_best_mtype(
       &cara_vk.vmm, &req, required_props, preferred_props, tolerable_props );
-    enum err_msg err = ma_report_vk_malloc_rel( &cara_vk.vmm,
-        &vk_alloc_callbacks, vk_malloc_wrapper,
-        mtype_idx,
-        cara_vk.mbi_ibuf );
+    enum err_msg err = ma_report_vk_malloc_rel(
+        &cara_vk.vmm, vk_alloc_cb, vk_malloc_wrapper, mtype_idx, cara_vk.mbi_ibuf );
     if ( err ) {
       fprintf( stderr, "[Carbonara] Failure occurred in ma_report_vk_malloc_rel!! %s:%d "
           "'%s'\n", __FILE__, __LINE__, arr_emsg_txt[err] );
@@ -3169,7 +3098,7 @@ void destroy_vk_objs( _typeof_member(struct ms_worker_info, idx_self) worker_idx
         case emsg_unknown:  // VkDeviceMemory object is somehow missing
           cara_vk.mbi_ibuf.range = invalid_range;
           cara_vk.mbi_ibuf.malloc = VK_NULL_HANDLE;
-          vkDestroyBuffer( cara_vk.log_dev, cara_vk.ind_buf, &vk_alloc_callbacks );
+          vkDestroyBuffer( cara_vk.log_dev, cara_vk.ind_buf, vk_alloc_cb );
           cara_vk.ind_buf = VK_NULL_HANDLE;
           break;
         default:
@@ -3179,7 +3108,7 @@ void destroy_vk_objs( _typeof_member(struct ms_worker_info, idx_self) worker_idx
     else {  // No error occurred
       cara_vk.mbi_ibuf.range = invalid_range;
       cara_vk.mbi_ibuf.malloc = VK_NULL_HANDLE;
-      vkDestroyBuffer( cara_vk.log_dev, cara_vk.ind_buf, &vk_alloc_callbacks );
+      vkDestroyBuffer( cara_vk.log_dev, cara_vk.ind_buf, vk_alloc_cb );
       cara_vk.ind_buf = VK_NULL_HANDLE;
     }
   }
@@ -3187,8 +3116,7 @@ void destroy_vk_objs( _typeof_member(struct ms_worker_info, idx_self) worker_idx
   // FIXME Host access to `semaphore` must be externally synchronized (vkDestroySemaphore)
   for ( unsigned int fif_idx = 0; fif_idx < cara_max_nr_fif; fif_idx++ ) {
     if( cara_vk.arr_sc_acquire_semphos[fif_idx] != VK_NULL_HANDLE ) {
-      vkDestroySemaphore( cara_vk.log_dev, cara_vk.arr_sc_acquire_semphos[fif_idx],
-          &vk_alloc_callbacks );
+      vkDestroySemaphore( cara_vk.log_dev, cara_vk.arr_sc_acquire_semphos[fif_idx], vk_alloc_cb );
       cara_vk.arr_sc_acquire_semphos[fif_idx] = VK_NULL_HANDLE;
     }
   }
@@ -3197,9 +3125,8 @@ void destroy_vk_objs( _typeof_member(struct ms_worker_info, idx_self) worker_idx
         swapchain_img_idx < cara_vk.nr_swapchain_imgs;
         swapchain_img_idx++ ) {
       if( cara_vk.arr_sc_present_semphos[swapchain_img_idx] != VK_NULL_HANDLE ) {
-        vkDestroySemaphore( cara_vk.log_dev,
-            cara_vk.arr_sc_present_semphos[swapchain_img_idx],
-            &vk_alloc_callbacks );
+        vkDestroySemaphore(
+            cara_vk.log_dev, cara_vk.arr_sc_present_semphos[swapchain_img_idx], vk_alloc_cb );
         cara_vk.arr_sc_present_semphos[swapchain_img_idx] = VK_NULL_HANDLE;
       }
     }
@@ -3208,20 +3135,17 @@ void destroy_vk_objs( _typeof_member(struct ms_worker_info, idx_self) worker_idx
   }
   for ( unsigned int fif_idx = 0; fif_idx < cara_max_nr_fif; fif_idx++ ) {
     if( cara_vk.arr_semphos_tr[fif_idx] != VK_NULL_HANDLE ) {
-      vkDestroySemaphore( cara_vk.log_dev, cara_vk.arr_semphos_tr[fif_idx], &vk_alloc_callbacks );
+      vkDestroySemaphore( cara_vk.log_dev, cara_vk.arr_semphos_tr[fif_idx], vk_alloc_cb );
       cara_vk.arr_semphos_tr[fif_idx] = VK_NULL_HANDLE;
     }
     if( cara_vk.arr_semphos_gr[fif_idx] != VK_NULL_HANDLE ) {
-      vkDestroySemaphore( cara_vk.log_dev, cara_vk.arr_semphos_gr[fif_idx], &vk_alloc_callbacks );
+      vkDestroySemaphore( cara_vk.log_dev, cara_vk.arr_semphos_gr[fif_idx], vk_alloc_cb );
       cara_vk.arr_semphos_gr[fif_idx] = VK_NULL_HANDLE;
     }
   }
 
   if ( cara_vk.swapchain ) {
-    vkDestroySwapchainKHR( cara_vk.log_dev,
-        cara_vk.swapchain,
-        &vk_alloc_callbacks
-        );
+    vkDestroySwapchainKHR( cara_vk.log_dev, cara_vk.swapchain, vk_alloc_cb );
     cara_vk.swapchain = VK_NULL_HANDLE;
 
     if ( cara_vk.arr_swapchain_iv ) {
@@ -3229,7 +3153,7 @@ void destroy_vk_objs( _typeof_member(struct ms_worker_info, idx_self) worker_idx
         if ( cara_vk.arr_swapchain_iv[i] == VK_NULL_HANDLE ) {
           continue;
         }
-        vkDestroyImageView( cara_vk.log_dev, cara_vk.arr_swapchain_iv[i], &vk_alloc_callbacks );
+        vkDestroyImageView( cara_vk.log_dev, cara_vk.arr_swapchain_iv[i], vk_alloc_cb );
       }
       ma_free( cara_single.mem_arena, worker_idx, cara_vk.arr_swapchain_iv );
       cara_vk.arr_swapchain_iv = nullptr;
@@ -3244,7 +3168,7 @@ void destroy_vk_objs( _typeof_member(struct ms_worker_info, idx_self) worker_idx
   if ( cara_vk.vmm.arr_usages ) {
     // This function will put nullptr in the struct
     ma_destroy_vk_mem_mgr( &cara_vk.vmm, cara_vk.log_dev,
-        ui2ptr(worker_idx), cara_free, &vk_alloc_callbacks, vk_malloc_wrapper );
+        ui2ptr(worker_idx), cara_free, vk_alloc_cb, vk_malloc_wrapper, vk_alloc_cb );
   }
 
   for ( uint_fast8_t set_idx = 0;
@@ -3256,8 +3180,7 @@ void destroy_vk_objs( _typeof_member(struct ms_worker_info, idx_self) worker_idx
         if ( cara_vk.arr_trans_cmdbuf_sets[set_idx].arr_cmd_pools[cmd_pool_idx] ) {
           vkDestroyCommandPool( cara_vk.log_dev,
               cara_vk.arr_trans_cmdbuf_sets[set_idx].arr_cmd_pools[cmd_pool_idx],
-              &vk_alloc_callbacks
-              );
+              vk_alloc_cb );
 
           cara_vk.arr_trans_cmdbuf_sets[set_idx].arr_cmd_pools[cmd_pool_idx] = 0;
         }
@@ -3279,15 +3202,10 @@ void destroy_vk_objs( _typeof_member(struct ms_worker_info, idx_self) worker_idx
           //    (uintptr_t)cara_vk.arr_framebufs[idx_framebuffer].arr_cmd_pools[idx_command_pool] );
           vkDestroyCommandPool( cara_vk.log_dev,
               cara_vk.arr_graphics_cmdbuf_sets[fif_idx].arr_cmd_pools[idx_command_pool],
-              &vk_alloc_callbacks
-              //nullptr
-              );
+              vk_alloc_cb );
         }
       }
-      vkDestroyCommandPool( cara_vk.log_dev,
-          cara_vk.dummy_pool[fif_idx],
-          &vk_alloc_callbacks
-          );
+      vkDestroyCommandPool( cara_vk.log_dev, cara_vk.dummy_pool[fif_idx], vk_alloc_cb );
     }
     ma_free( cara_single.mem_arena, worker_idx, cara_vk.arr_graphics_cmdbuf_sets[0].arr_cmd_pools );
     cara_vk.arr_graphics_cmdbuf_sets[0].arr_cmd_pools = nullptr;
@@ -3299,12 +3217,7 @@ void destroy_vk_objs( _typeof_member(struct ms_worker_info, idx_self) worker_idx
     //cara_vk.presentation_surface,
     //&cara_vk.vulkan_alloc_callbacks
     //);
-    SDL_Vulkan_DestroySurface(
-        cara_vk.vk_instance,
-        cara_vk.presentation_surface,
-        &vk_alloc_callbacks
-        //nullptr
-        );
+    SDL_Vulkan_DestroySurface( cara_vk.vk_instance, cara_vk.presentation_surface, vk_alloc_cb );
     cara_vk.presentation_surface = VK_NULL_HANDLE;
   }
 
@@ -3314,13 +3227,13 @@ void destroy_vk_objs( _typeof_member(struct ms_worker_info, idx_self) worker_idx
   }
 
   if ( cara_vk.log_dev ) {
-    vkDestroyDevice( cara_vk.log_dev, &vk_alloc_callbacks );
+    vkDestroyDevice( cara_vk.log_dev, vk_alloc_cb );
     //vkDestroyDevice( cara_vk.log_dev, nullptr );
     cara_vk.log_dev = VK_NULL_HANDLE;
   }
 
   if ( cara_vk.vk_instance ) {
-    vkDestroyInstance( cara_vk.vk_instance, &vk_alloc_callbacks );
+    vkDestroyInstance( cara_vk.vk_instance, vk_alloc_cb );
     //vkDestroyInstance( cara_vk.vk_instance, nullptr );
     cara_vk.vk_instance = VK_NULL_HANDLE;
   }
@@ -3335,7 +3248,8 @@ void destroy_vk_objs( _typeof_member(struct ms_worker_info, idx_self) worker_idx
 
 
 //-------------------------------------------------------------------------------------------------
-static enum err_msg create_2nd_renderpass( struct cara_vk_renderer * renderer )
+static enum err_msg create_2nd_renderpass( struct cara_vk_renderer * renderer,
+    VkAllocationCallbacks * restrict vk_alloc_cb )
 {
   //
   // Define attachments
@@ -3486,9 +3400,8 @@ static enum err_msg create_2nd_renderpass( struct cara_vk_renderer * renderer )
   };
   TRACE_BEGIN("vkCreateRenderPass2");
   VkResult result;
-  result = vkCreateRenderPass2( renderer->log_dev, &rp_create_info,
-      &vk_alloc_callbacks,
-      &renderer->arr_renderpasses[1] );
+  result = vkCreateRenderPass2(
+      renderer->log_dev, &rp_create_info, vk_alloc_cb, &renderer->arr_renderpasses[1] );
   TRACE_END();
   if ( result != VK_SUCCESS ) {
     fprintf( stderr, "[Carbonara] Error occurred creating a render pass. '%s'\n",
@@ -3502,7 +3415,8 @@ static enum err_msg create_2nd_renderpass( struct cara_vk_renderer * renderer )
 
 
 //-------------------------------------------------------------------------------------------------
-enum err_msg create_renderpass_and_framebuffer_first_time( struct cara_vk_renderer * renderer )
+enum err_msg create_renderpass_and_framebuffer_first_time(
+    struct cara_vk_renderer * renderer, VkAllocationCallbacks * restrict vk_alloc_cb )
 {
   //
   // Define attachments
@@ -3678,10 +3592,8 @@ enum err_msg create_renderpass_and_framebuffer_first_time( struct cara_vk_render
   };
   TRACE_BEGIN("vkCreateRenderPass2");
   VkResult result;
-  result = vkCreateRenderPass2( renderer->log_dev, &rp_create_info,
-      &vk_alloc_callbacks,
-      //nullptr,
-      &renderer->arr_renderpasses[0] );
+  result = vkCreateRenderPass2(
+      renderer->log_dev, &rp_create_info, vk_alloc_cb, &renderer->arr_renderpasses[0] );
   TRACE_END();
   if ( result != VK_SUCCESS ) {
     fprintf( stderr, "[Carbonara] Error occurred creating a render pass. '%s'\n",
@@ -3689,7 +3601,7 @@ enum err_msg create_renderpass_and_framebuffer_first_time( struct cara_vk_render
     goto stop_everything_after_failure;
   }
 
-  enum err_msg err = create_2nd_renderpass( renderer );
+  enum err_msg err = create_2nd_renderpass( renderer, vk_alloc_cb );
   if ( err ) {
     goto stop_everything_after_failure;
   }
@@ -3772,8 +3684,8 @@ enum err_msg create_renderpass_and_framebuffer_first_time( struct cara_vk_render
     fb_atts_create_info.attachmentImageInfoCount = _arr_elem_cnt( fb_att_img_info1 );
     fb_atts_create_info.pAttachmentImageInfos = fb_att_img_info1;
     TRACE_BEGIN("vkCreateFramebuffer");
-    result = vkCreateFramebuffer( renderer->log_dev, &fb_create_info, &vk_alloc_callbacks,
-        &renderer->arr_framebuffers[fif_idx][0] );
+    result = vkCreateFramebuffer(
+        renderer->log_dev, &fb_create_info, vk_alloc_cb, &renderer->arr_framebuffers[fif_idx][0] );
     TRACE_END();
     if ( result != VK_SUCCESS ) {
       fprintf( stderr, "[Carbonara] Error occurred in vkCreateFramebuffer. '%s'\n",
@@ -3786,8 +3698,8 @@ enum err_msg create_renderpass_and_framebuffer_first_time( struct cara_vk_render
     fb_atts_create_info.attachmentImageInfoCount = _arr_elem_cnt( fb_att_img_info2 );
     fb_atts_create_info.pAttachmentImageInfos = fb_att_img_info2;
     TRACE_BEGIN("vkCreateFramebuffer");
-    result = vkCreateFramebuffer( renderer->log_dev, &fb_create_info, &vk_alloc_callbacks,
-        &renderer->arr_framebuffers[fif_idx][1] );
+    result = vkCreateFramebuffer(
+        renderer->log_dev, &fb_create_info, vk_alloc_cb, &renderer->arr_framebuffers[fif_idx][1] );
     TRACE_END();
     if ( result != VK_SUCCESS ) {
       fprintf( stderr, "[Carbonara] Error occurred in vkCreateFramebuffer. '%s'\n",
@@ -3822,8 +3734,8 @@ enum err_msg create_renderpass_and_framebuffer_first_time( struct cara_vk_render
     img_create_info.format = renderer->zbuf_fmt;
     img_create_info.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
     TRACE_BEGIN("vkCreateImage");
-    result = vkCreateImage( renderer->log_dev, &img_create_info, &vk_alloc_callbacks,
-        &renderer->zbuf_n_cbuf[fif_idx][fb_zbuf] );
+    result = vkCreateImage( renderer->log_dev,
+        &img_create_info, vk_alloc_cb, &renderer->zbuf_n_cbuf[fif_idx][fb_zbuf] );
     TRACE_END();
     if ( result != VK_SUCCESS ) {
       fprintf( stderr, "[Carbonara] Error occurred in vkCreateImage. '%s'\n",
@@ -3834,8 +3746,8 @@ enum err_msg create_renderpass_and_framebuffer_first_time( struct cara_vk_render
     img_create_info.usage =
       VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
     TRACE_BEGIN("vkCreateImage");
-    result = vkCreateImage( renderer->log_dev, &img_create_info, &vk_alloc_callbacks,
-        &renderer->zbuf_n_cbuf[fif_idx][fb_cbuf] );
+    result = vkCreateImage( renderer->log_dev,
+        &img_create_info, vk_alloc_cb, &renderer->zbuf_n_cbuf[fif_idx][fb_cbuf] );
     TRACE_END();
     if ( result != VK_SUCCESS ) {
       fprintf( stderr, "[Carbonara] Error occurred in vkCreateImage. '%s'\n",
@@ -3866,9 +3778,9 @@ enum err_msg create_renderpass_and_framebuffer_first_time( struct cara_vk_render
       // Bind the image to a vulkan memory object
       struct vk_mbind_info mbind_info;
       err = ma_bind_img_to_malloc( &renderer->vmm,
-          &vk_alloc_callbacks, vk_malloc_wrapper,
+          vk_alloc_cb, vk_malloc_wrapper,
           renderer->log_dev, renderer->zbuf_n_cbuf[fif_idx][fb_idx],
-          mtype_idx, req.size, req.alignment, &mbind_info );
+          mtype_idx, req.size, req.alignment, &mbind_info, vk_alloc_cb );
       if ( err ) {
         fprintf( stderr, "Error occured in ma_bind_img_to_malloc. (%s)\n", arr_emsg_txt[err] );
         goto stop_everything_after_failure;
@@ -3902,8 +3814,8 @@ enum err_msg create_renderpass_and_framebuffer_first_time( struct cara_vk_render
     iv_create_info.format = renderer->zbuf_fmt;
     iv_create_info.image = renderer->zbuf_n_cbuf[fif_idx][fb_zbuf];
     TRACE_BEGIN("vkCreateImageView");
-    result = vkCreateImageView( renderer->log_dev, &iv_create_info, &vk_alloc_callbacks,
-        &renderer->zbuf_n_cbuf_iv[fif_idx][fb_zbuf] );
+    result = vkCreateImageView( renderer->log_dev,
+        &iv_create_info, vk_alloc_cb, &renderer->zbuf_n_cbuf_iv[fif_idx][fb_zbuf] );
     TRACE_END();
     if ( result != VK_SUCCESS ) {
       fprintf( stderr, "[Carbonara] Error occurred in vkCreateImageView. '%s'\n",
@@ -3914,8 +3826,8 @@ enum err_msg create_renderpass_and_framebuffer_first_time( struct cara_vk_render
     iv_create_info.format = VK_FORMAT_R8G8B8A8_UNORM;
     iv_create_info.image = renderer->zbuf_n_cbuf[fif_idx][fb_cbuf];
     TRACE_BEGIN("vkCreateImageView");
-    result = vkCreateImageView( renderer->log_dev, &iv_create_info, &vk_alloc_callbacks,
-        &renderer->zbuf_n_cbuf_iv[fif_idx][fb_cbuf] );
+    result = vkCreateImageView( renderer->log_dev,
+        &iv_create_info, vk_alloc_cb, &renderer->zbuf_n_cbuf_iv[fif_idx][fb_cbuf] );
     TRACE_END();
     if ( result != VK_SUCCESS ) {
       fprintf( stderr, "[Carbonara] Error occurred in vkCreateImageView. '%s'\n",
@@ -3937,8 +3849,8 @@ stop_everything_after_failure:
     for ( unsigned int rp_idx = 0; rp_idx < cara_nr_renderpasses; rp_idx++ ) {
       // vkDestroyFramebuffer
       if ( renderer->arr_framebuffers[fif_idx][rp_idx] ) {
-        vkDestroyFramebuffer( renderer->log_dev,
-            renderer->arr_framebuffers[fif_idx][rp_idx], &vk_alloc_callbacks );
+        vkDestroyFramebuffer(
+            renderer->log_dev, renderer->arr_framebuffers[fif_idx][rp_idx], vk_alloc_cb );
         renderer->arr_framebuffers[fif_idx][rp_idx] = VK_NULL_HANDLE;
       }
     }
@@ -3958,7 +3870,7 @@ stop_everything_after_failure:
       required_props = 0;
       tolerable_props = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT;
       err = ma_report_vk_malloc_rel( &renderer->vmm,
-          &vk_alloc_callbacks, vk_malloc_wrapper,
+          vk_alloc_cb, vk_malloc_wrapper,
           ma_pick_best_mtype(&renderer->vmm, &req,
             required_props, preferred_props, tolerable_props),
           renderer->mbi_zbuf_n_cbuf[fif_idx][fb_idx] );
@@ -3969,8 +3881,8 @@ stop_everything_after_failure:
           case emsg_already_done:
             [[fallthrough]];
           case emsg_unknown:  // VkDeviceMemory object is somehow missing
-            vkDestroyImage( renderer->log_dev,
-                renderer->zbuf_n_cbuf[fif_idx][fb_idx], &vk_alloc_callbacks );
+            vkDestroyImage(
+                renderer->log_dev, renderer->zbuf_n_cbuf[fif_idx][fb_idx], vk_alloc_cb );
             renderer->zbuf_n_cbuf[fif_idx][fb_idx] = VK_NULL_HANDLE;
             renderer->mbi_zbuf_n_cbuf[fif_idx][fb_idx].range = invalid_range;
             renderer->mbi_zbuf_n_cbuf[fif_idx][fb_idx].malloc = VK_NULL_HANDLE;
@@ -3980,8 +3892,7 @@ stop_everything_after_failure:
         }
       }  // if ( err )
       else {
-        vkDestroyImage( renderer->log_dev,
-            renderer->zbuf_n_cbuf[fif_idx][fb_idx], &vk_alloc_callbacks );
+        vkDestroyImage( renderer->log_dev, renderer->zbuf_n_cbuf[fif_idx][fb_idx], vk_alloc_cb );
         renderer->zbuf_n_cbuf[fif_idx][fb_idx] = VK_NULL_HANDLE;
         renderer->mbi_zbuf_n_cbuf[fif_idx][fb_idx].range = invalid_range;
         renderer->mbi_zbuf_n_cbuf[fif_idx][fb_idx].malloc = VK_NULL_HANDLE;
@@ -3991,16 +3902,15 @@ stop_everything_after_failure:
       if ( renderer->zbuf_n_cbuf_iv[fif_idx][fb_idx] == VK_NULL_HANDLE ) {
         continue;
       }
-      vkDestroyImageView( renderer->log_dev,
-          renderer->zbuf_n_cbuf_iv[fif_idx][fb_idx], &vk_alloc_callbacks );
+      vkDestroyImageView(
+          renderer->log_dev, renderer->zbuf_n_cbuf_iv[fif_idx][fb_idx], vk_alloc_cb );
       renderer->zbuf_n_cbuf_iv[fif_idx][fb_idx] = VK_NULL_HANDLE;
     }
   }
 
   for ( unsigned int rp_idx = 0; rp_idx < cara_nr_renderpasses; rp_idx++ ) {
     if ( renderer->arr_renderpasses[rp_idx] ) {
-      vkDestroyRenderPass( renderer->log_dev, renderer->arr_renderpasses[rp_idx],
-          &vk_alloc_callbacks );
+      vkDestroyRenderPass( renderer->log_dev, renderer->arr_renderpasses[rp_idx], vk_alloc_cb );
       renderer->arr_renderpasses[rp_idx] = VK_NULL_HANDLE;
     }
   }
@@ -4010,9 +3920,9 @@ stop_everything_after_failure:
 
 
 //-------------------------------------------------------------------------------------------------
-enum err_msg expand_swapchain_and_framebuffer(
-    struct cara_vk_renderer * renderer,
-    union extent_2d cur_dims )
+enum err_msg expand_swapchain_and_framebuffer( struct cara_vk_renderer * renderer,
+    union extent_2d cur_dims,
+    VkAllocationCallbacks * restrict vk_alloc_cb )
 {
   unsigned int new_width = cur_dims.parts.width;
   if ( renderer->max_win_size.parts.width > new_width ) {
@@ -4110,8 +4020,8 @@ enum err_msg expand_swapchain_and_framebuffer(
     fb_atts_create_info.attachmentImageInfoCount = _arr_elem_cnt( fb_att_img_info1 );
     fb_atts_create_info.pAttachmentImageInfos = fb_att_img_info1;
     TRACE_BEGIN("vkCreateFramebuffer");
-    result = vkCreateFramebuffer( renderer->log_dev, &fb_create_info, &vk_alloc_callbacks,
-        &new_framebuffers[fif_idx][0] );
+    result = vkCreateFramebuffer(
+        renderer->log_dev, &fb_create_info, vk_alloc_cb, &new_framebuffers[fif_idx][0] );
     TRACE_END();
     if ( result != VK_SUCCESS ) {
       fprintf( stderr, "[Carbonara] Error occurred in vkCreateFramebuffer. '%s'\n",
@@ -4124,8 +4034,8 @@ enum err_msg expand_swapchain_and_framebuffer(
     fb_atts_create_info.attachmentImageInfoCount = _arr_elem_cnt( fb_att_img_info2 );
     fb_atts_create_info.pAttachmentImageInfos = fb_att_img_info2;
     TRACE_BEGIN("vkCreateFramebuffer");
-    result = vkCreateFramebuffer( renderer->log_dev, &fb_create_info, &vk_alloc_callbacks,
-        &new_framebuffers[fif_idx][1] );
+    result = vkCreateFramebuffer(
+        renderer->log_dev, &fb_create_info, vk_alloc_cb, &new_framebuffers[fif_idx][1] );
     TRACE_END();
     if ( result != VK_SUCCESS ) {
       fprintf( stderr, "[Carbonara] Error occurred in vkCreateFramebuffer. '%s'\n",
@@ -4161,7 +4071,7 @@ enum err_msg expand_swapchain_and_framebuffer(
     img_create_info.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
     TRACE_BEGIN("vkCreateImage");
     result = vkCreateImage( renderer->log_dev,
-        &img_create_info, &vk_alloc_callbacks, &arr_new_zbuf_n_cbuf_img[fif_idx][fb_zbuf] );
+        &img_create_info, vk_alloc_cb, &arr_new_zbuf_n_cbuf_img[fif_idx][fb_zbuf] );
     TRACE_END();
     if ( result != VK_SUCCESS ) {
       fprintf( stderr, "[Carbonara] Error occurred in vkCreateImage. '%s'\n",
@@ -4173,7 +4083,7 @@ enum err_msg expand_swapchain_and_framebuffer(
       VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
     TRACE_BEGIN("vkCreateImage");
     result = vkCreateImage( renderer->log_dev,
-        &img_create_info, &vk_alloc_callbacks, &arr_new_zbuf_n_cbuf_img[fif_idx][fb_cbuf] );
+        &img_create_info, vk_alloc_cb, &arr_new_zbuf_n_cbuf_img[fif_idx][fb_cbuf] );
     TRACE_END();
     if ( result != VK_SUCCESS ) {
       fprintf( stderr, "[Carbonara] Error occurred in vkCreateImage. '%s'\n",
@@ -4202,9 +4112,9 @@ enum err_msg expand_swapchain_and_framebuffer(
       // Bind the image to a vulkan memory object
       struct vk_mbind_info mbind_info;
       enum err_msg err = ma_bind_img_to_malloc( &renderer->vmm,
-          &vk_alloc_callbacks, vk_malloc_wrapper,
+          vk_alloc_cb, vk_malloc_wrapper,
           renderer->log_dev, arr_new_zbuf_n_cbuf_img[fif_idx][fb_idx],
-          mtype_idx, req.size, req.alignment, &mbind_info );
+          mtype_idx, req.size, req.alignment, &mbind_info, vk_alloc_cb );
       if ( err ) {
         fprintf( stderr, "Error occured in ma_bind_img_to_malloc. (%s)\n", arr_emsg_txt[err] );
         goto stop_everything_after_failure;
@@ -4240,7 +4150,7 @@ enum err_msg expand_swapchain_and_framebuffer(
     iv_create_info.image = arr_new_zbuf_n_cbuf_img[fif_idx][fb_zbuf];
     TRACE_BEGIN("vkCreateImageView");
     result = vkCreateImageView( renderer->log_dev,
-        &iv_create_info, &vk_alloc_callbacks, &arr_new_zbuf_n_cbuf_iv[fif_idx][fb_zbuf] );
+        &iv_create_info, vk_alloc_cb, &arr_new_zbuf_n_cbuf_iv[fif_idx][fb_zbuf] );
     TRACE_END();
     if ( result != VK_SUCCESS ) {
       fprintf( stderr, "[Carbonara] Error occurred in vkCreateImageView. '%s'\n",
@@ -4252,7 +4162,7 @@ enum err_msg expand_swapchain_and_framebuffer(
     iv_create_info.image = arr_new_zbuf_n_cbuf_img[fif_idx][fb_cbuf];
     TRACE_BEGIN("vkCreateImageView");
     result = vkCreateImageView( renderer->log_dev,
-        &iv_create_info, &vk_alloc_callbacks, &arr_new_zbuf_n_cbuf_iv[fif_idx][fb_cbuf] );
+        &iv_create_info, vk_alloc_cb, &arr_new_zbuf_n_cbuf_iv[fif_idx][fb_cbuf] );
     TRACE_END();
     if ( result != VK_SUCCESS ) {
       fprintf( stderr, "[Carbonara] Error occurred in vkCreateImageView. '%s'\n",
@@ -4269,8 +4179,7 @@ enum err_msg expand_swapchain_and_framebuffer(
   VkSwapchainKHR old_swapchain;
   old_swapchain = renderer->swapchain;
   struct dead_swapchain * p_dead = infos_al_get_elem( &renderer->old_swapchains,
-      &vk_alloc_callbacks, vk_malloc_wrapper, false, 0,
-      renderer->nr_old_swapchains );
+      vk_alloc_cb, vk_malloc_wrapper, false, 0, renderer->nr_old_swapchains );
   p_dead->swapchain = old_swapchain;
   p_dead->destruct_time = atomic_load_explicit( &renderer->frame_id, memory_order_acquire ) +
     renderer->nr_swapchain_imgs + 240/4;  // TODO Add `avg_fps/4`
@@ -4304,10 +4213,7 @@ enum err_msg expand_swapchain_and_framebuffer(
 
   TRACE_BEGIN("vkCreateSwapchainKHR");
   result = vkCreateSwapchainKHR(
-      renderer->log_dev,
-      &swapchain_create_info,
-      &vk_alloc_callbacks,
-      &swapchain );
+      renderer->log_dev, &swapchain_create_info, vk_alloc_cb, &swapchain );
   TRACE_END();
   if ( result != VK_SUCCESS || swapchain == VK_NULL_HANDLE ) {
     fprintf( stderr, "[Vulkan] Could not create a swapchain.\n" );
@@ -4325,8 +4231,8 @@ enum err_msg expand_swapchain_and_framebuffer(
       nr_swapchain_imgs );
 #endif
 
-  _vk_malloc_array( &vk_alloc_callbacks, &arr_swapchain_images, nr_swapchain_imgs );
-  _vk_malloc_array( &vk_alloc_callbacks, &arr_swapchain_img_views, nr_swapchain_imgs );
+  _vk_malloc_array( vk_alloc_cb, &arr_swapchain_images, nr_swapchain_imgs );
+  _vk_malloc_array( vk_alloc_cb, &arr_swapchain_img_views, nr_swapchain_imgs );
 
   result = vkGetSwapchainImagesKHR( renderer->log_dev, swapchain, &nr_swapchain_imgs,
       arr_swapchain_images );
@@ -4345,8 +4251,8 @@ enum err_msg expand_swapchain_and_framebuffer(
   TRACE_BEGIN("vk_create_swapchain_ivs");
   for ( unsigned int i = 0; i < nr_swapchain_imgs; i++ ) {
     iv_create_info.image = arr_swapchain_images[i];
-    result = vkCreateImageView( renderer->log_dev, &iv_create_info, &vk_alloc_callbacks,
-        &arr_swapchain_img_views[i] );
+    result = vkCreateImageView(
+        renderer->log_dev, &iv_create_info, vk_alloc_cb, &arr_swapchain_img_views[i] );
     if ( result != VK_SUCCESS ) {
       fprintf( stderr, "[Carbonara] Error occurred in vkCreateImageView. '%s'\n",
           string_VkResult(result) );
@@ -4402,14 +4308,14 @@ enum err_msg expand_swapchain_and_framebuffer(
     }
   }
 
-  vk_alloc_callbacks.pfnFree( vk_alloc_callbacks.pUserData, renderer->arr_swapchain_imgs );
+  vk_alloc_cb->pfnFree( vk_alloc_cb->pUserData, renderer->arr_swapchain_imgs );
   for ( unsigned int i = 0; i < renderer->nr_swapchain_imgs; i++ ) {
     if ( renderer->arr_swapchain_iv[i] == VK_NULL_HANDLE ) {
       continue;
     }
-    vkDestroyImageView( renderer->log_dev, renderer->arr_swapchain_iv[i], &vk_alloc_callbacks );
+    vkDestroyImageView( renderer->log_dev, renderer->arr_swapchain_iv[i], vk_alloc_cb );
   }
-  vk_alloc_callbacks.pfnFree( vk_alloc_callbacks.pUserData, renderer->arr_swapchain_iv );
+  vk_alloc_cb->pfnFree( vk_alloc_cb->pUserData, renderer->arr_swapchain_iv );
   renderer->arr_swapchain_imgs = arr_swapchain_images;
   renderer->arr_swapchain_iv = arr_swapchain_img_views;
   renderer->swapchain = swapchain;
@@ -4424,8 +4330,7 @@ stop_everything_after_failure:
     for ( unsigned int rp_idx = 0; rp_idx < cara_nr_renderpasses; rp_idx++ ) {
       // vkDestroyFramebuffer
       if ( new_framebuffers[fif_idx][rp_idx] ) {
-        vkDestroyFramebuffer( renderer->log_dev,
-            new_framebuffers[fif_idx][rp_idx], &vk_alloc_callbacks );
+        vkDestroyFramebuffer( renderer->log_dev, new_framebuffers[fif_idx][rp_idx], vk_alloc_cb );
         new_framebuffers[fif_idx][rp_idx] = VK_NULL_HANDLE;
       }
     }
@@ -4446,7 +4351,7 @@ stop_everything_after_failure:
       required_props = 0;
       tolerable_props = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT;
       enum err_msg err = ma_report_vk_malloc_rel( &renderer->vmm,
-          &vk_alloc_callbacks, vk_malloc_wrapper,
+          vk_alloc_cb, vk_malloc_wrapper,
           ma_pick_best_mtype(&renderer->vmm, &req,
             required_props, preferred_props, tolerable_props),
           arr_new_mbind_infos_zbuf_and_cbuf[fif_idx][fb_idx] );
@@ -4457,8 +4362,8 @@ stop_everything_after_failure:
           case emsg_already_done:
             [[fallthrough]];
           case emsg_unknown:  // VkDeviceMemory object is somehow missing
-            vkDestroyImage( renderer->log_dev,
-                arr_new_zbuf_n_cbuf_img[fif_idx][fb_idx], &vk_alloc_callbacks );
+            vkDestroyImage(
+                renderer->log_dev, arr_new_zbuf_n_cbuf_img[fif_idx][fb_idx], vk_alloc_cb );
             arr_new_zbuf_n_cbuf_img[fif_idx][fb_idx] = VK_NULL_HANDLE;
             arr_new_mbind_infos_zbuf_and_cbuf[fif_idx][fb_idx].range = invalid_range;
             arr_new_mbind_infos_zbuf_and_cbuf[fif_idx][fb_idx].malloc = VK_NULL_HANDLE;
@@ -4468,8 +4373,7 @@ stop_everything_after_failure:
         }
       }  // if ( err )
       else {
-        vkDestroyImage( renderer->log_dev,
-            arr_new_zbuf_n_cbuf_img[fif_idx][fb_idx], &vk_alloc_callbacks );
+        vkDestroyImage( renderer->log_dev, arr_new_zbuf_n_cbuf_img[fif_idx][fb_idx], vk_alloc_cb );
         arr_new_zbuf_n_cbuf_img[fif_idx][fb_idx] = VK_NULL_HANDLE;
         arr_new_mbind_infos_zbuf_and_cbuf[fif_idx][fb_idx].range = invalid_range;
         arr_new_mbind_infos_zbuf_and_cbuf[fif_idx][fb_idx].malloc = VK_NULL_HANDLE;
@@ -4477,8 +4381,8 @@ stop_everything_after_failure:
 
       // vkDestroyImageView
       if ( arr_new_zbuf_n_cbuf_iv[fif_idx][fb_idx] != VK_NULL_HANDLE ) {
-        vkDestroyImageView( renderer->log_dev,
-            arr_new_zbuf_n_cbuf_iv[fif_idx][fb_idx], &vk_alloc_callbacks );
+        vkDestroyImageView(
+            renderer->log_dev, arr_new_zbuf_n_cbuf_iv[fif_idx][fb_idx], vk_alloc_cb );
         arr_new_zbuf_n_cbuf_iv[fif_idx][fb_idx] = VK_NULL_HANDLE;
       }
     }
@@ -4488,8 +4392,8 @@ stop_everything_after_failure:
     for ( unsigned int rp_idx = 0; rp_idx < cara_nr_renderpasses; rp_idx++ ) {
       // vkDestroyFramebuffer
       if ( renderer->arr_framebuffers[fif_idx][rp_idx] ) {
-        vkDestroyFramebuffer( renderer->log_dev,
-            renderer->arr_framebuffers[fif_idx][rp_idx], &vk_alloc_callbacks );
+        vkDestroyFramebuffer(
+            renderer->log_dev, renderer->arr_framebuffers[fif_idx][rp_idx], vk_alloc_cb );
         renderer->arr_framebuffers[fif_idx][rp_idx] = VK_NULL_HANDLE;
       }
     }
@@ -4500,13 +4404,13 @@ stop_everything_after_failure:
       if ( arr_swapchain_img_views[i] == VK_NULL_HANDLE ) {
         continue;
       }
-      vkDestroyImageView( renderer->log_dev, arr_swapchain_img_views[i], &vk_alloc_callbacks );
+      vkDestroyImageView( renderer->log_dev, arr_swapchain_img_views[i], vk_alloc_cb );
     }
-    vk_alloc_callbacks.pfnFree( vk_alloc_callbacks.pUserData, arr_swapchain_img_views );
+    vk_alloc_cb->pfnFree( vk_alloc_cb->pUserData, arr_swapchain_img_views );
   }
 
   if ( arr_swapchain_images ) {
-    vk_alloc_callbacks.pfnFree( vk_alloc_callbacks.pUserData, arr_swapchain_images );
+    vk_alloc_cb->pfnFree( vk_alloc_cb->pUserData, arr_swapchain_images );
   }
 
   return emsg_unknown;
